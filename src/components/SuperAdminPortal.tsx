@@ -133,10 +133,8 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => {
-                if (window.confirm('هل أنت متأكد من رغبتك في تفريغ أي بيانات قديمة وبدء السجل نظيفاً فقط للمدارس الجديدة؟')) {
-                  localStorage.clear();
-                  window.location.href = window.location.pathname;
-                }
+                localStorage.clear();
+                window.location.href = window.location.pathname;
               }}
               className="p-2.5 rounded-2xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-400/30 text-rose-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
               title="تفريغ ذاكرة المتصفح وبدء المنظومة نظيفة للمدارس الحقيقية فقط"

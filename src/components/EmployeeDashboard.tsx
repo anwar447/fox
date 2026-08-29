@@ -138,6 +138,12 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
   const [isEditSchoolModalOpen, setIsEditSchoolModalOpen] = useState(false);
   const [schoolToEdit, setSchoolToEdit] = useState<School | null>(null);
   const [schoolToDelete, setSchoolToDelete] = useState<School | null>(null);
+  const [schoolToWipe, setSchoolToWipe] = useState<School | null>(null);
+
+  // Clean Production Wipe state (Dell Server Ready)
+  const [isWipeProductionModalOpen, setIsWipeProductionModalOpen] = useState(false);
+  const [cleanSchoolName, setCleanSchoolName] = useState('ثانوية الراية للبنين');
+  const [cleanAdminName, setCleanAdminName] = useState('أ. أنور الشمري');
 
   // Assistant deletion state
   const [assistantToDelete, setAssistantToDelete] = useState<User | null>(null);
@@ -2129,12 +2135,7 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
 
                     {/* Clean School Test Records */}
                     <button
-                      onClick={() => {
-                        if (window.confirm(`هل أنت متأكد من رغبتك في تصفير وتنظيف جميع سجلات وسجلات حضور وسلوك وطلاب مدرسة (${sch.name}) لتبدأ بسجلات نظيفة تماماً؟`)) {
-                          wipeSchoolStudentData(sch.code);
-                          window.location.reload();
-                        }
-                      }}
+                      onClick={() => setSchoolToWipe(sch)}
                       className="w-full py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold text-[11px] border border-amber-200 transition-colors cursor-pointer flex items-center justify-center gap-1.5"
                       title="تنظيف بيانات المدرسة من السجلات التجريبية"
                     >
@@ -2160,14 +2161,7 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
             </div>
 
             <button
-              onClick={() => {
-                const schoolName = window.prompt('أدخل اسم مدرستك الرسمية للبدء النظيف:', 'ثانوية الراية للبنين') || 'المدرسة الرئيسية';
-                const adminName = window.prompt('أدخل اسم مدير المدرسة / المشرف المسؤول:', 'أ. أنور الشمري') || 'مدير المدرسة';
-                if (window.confirm(`⚠️ تأكيد نهائي: سيتم تصفير كافة البيانات التجريبية واعتماد مدرسة (${schoolName}) النظيفة بحساب المسؤول (${adminName}) [رقم الهوية: 1000000000 | كلمة المرور: admin]. هل أنت جاهز؟`)) {
-                  wipeAllToPristineProduction(adminName, schoolName);
-                  window.location.reload();
-                }
-              }}
+              onClick={() => setIsWipeProductionModalOpen(true)}
               className="px-6 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs transition-all shadow-lg hover:shadow-emerald-500/20 shrink-0 cursor-pointer flex items-center gap-2"
             >
               <RefreshCw className="w-4 h-4" />
@@ -3117,8 +3111,8 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
 
       {/* MODAL 3.5: Delete All Students Confirmation Modal (حذف جميع الطلاب دفعة واحدة) */}
       {isDeleteAllStudentsModalOpen && (
-        <div className="fixed inset-0 z-60 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl text-right">
+        <div className="fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl text-right animate-fadeIn">
             <div className="w-14 h-14 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
               <AlertTriangle className="w-7 h-7" />
             </div>
@@ -3151,6 +3145,125 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
                 <Trash2 className="w-4 h-4" />
                 <span>تأكيد حذف جميع الطلاب ({schoolStudents.length})</span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3.6: Wipe Single School Records Confirmation Modal */}
+      {schoolToWipe && (
+        <div className="fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl text-right animate-fadeIn">
+            <div className="w-14 h-14 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center mx-auto">
+              <RefreshCw className="w-7 h-7" />
+            </div>
+
+            <div className="text-center space-y-2">
+              <h3 className="text-lg font-black text-amber-900">
+                تصفير وتنظيف سجلات المدرسة للبدء النظيف
+              </h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                هل ترغب في مسح سجلات الحضور وسلوك الطلاب في مدرسة <strong className="text-slate-900">({schoolToWipe.name})</strong> لبدء العام الدراسي بسجلات نظيفة؟
+              </p>
+            </div>
+
+            <div className="flex items-center justify-center gap-3 pt-3 border-t">
+              <button
+                type="button"
+                onClick={() => setSchoolToWipe(null)}
+                className="px-4 py-2 rounded-xl text-slate-600 font-bold text-xs hover:bg-slate-100 cursor-pointer"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  wipeSchoolStudentData(schoolToWipe.code);
+                  setSchoolToWipe(null);
+                  if (onRefreshData) onRefreshData();
+                  setBehaviorToast(`✓ تم تصفير سجلات مدرسة (${schoolToWipe.name}) بنجاح.`);
+                  setTimeout(() => setBehaviorToast(''), 4000);
+                }}
+                className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
+              >
+                <Check className="w-4 h-4" />
+                <span>تأكيد تنظيف السجلات</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3.7: Pristine Production Clean Reset Modal (Dell Server Ready) */}
+      {isWipeProductionModalOpen && (
+        <div className="fixed inset-0 z-[100] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 space-y-4 shadow-2xl text-right animate-fadeIn">
+            <div className="flex items-center justify-between border-b pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 rounded-2xl bg-emerald-50 text-emerald-700">
+                  <Sparkles className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">بدء التشغيل النظيف للإنتاج الفعلي</h3>
+                  <p className="text-xs text-slate-500">تصفير كافة البيانات التجريبية واعتماد مدرستك الحقيقية</p>
+                </div>
+              </div>
+              <button onClick={() => setIsWipeProductionModalOpen(false)} className="text-slate-400 hover:text-slate-700">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3.5 text-xs">
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl text-amber-900 leading-relaxed">
+                ⚠️ <strong>تنبيه:</strong> سيتم مسح كافة المدارس والطلاب والبيانات التجريبية نهائياً، وإنشاء مدرستك الرسمية بحساب مدير النظام الرئيسي [رقم الهوية: <strong>1000000000</strong> | كلمة المرور: <strong>admin</strong>].
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">اسم مدرستك الرسمية</label>
+                <input
+                  type="text"
+                  value={cleanSchoolName}
+                  onChange={(e) => setCleanSchoolName(e.target.value)}
+                  placeholder="مثال: ثانوية الراية للبنين"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-slate-900 font-bold"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">اسم مدير المدرسة / المسؤول</label>
+                <input
+                  type="text"
+                  value={cleanAdminName}
+                  onChange={(e) => setCleanAdminName(e.target.value)}
+                  placeholder="مثال: أ. أنور الشمري"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-slate-900 font-bold"
+                  required
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t">
+                <button
+                  type="button"
+                  onClick={() => setIsWipeProductionModalOpen(false)}
+                  className="px-4 py-2.5 rounded-xl text-slate-600 font-bold hover:bg-slate-100 cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    wipeAllToPristineProduction(cleanAdminName.trim() || 'مدير المدرسة', cleanSchoolName.trim() || 'المدرسة الرئيسية');
+                    setIsWipeProductionModalOpen(false);
+                    if (onRefreshData) onRefreshData();
+                    window.location.reload();
+                  }}
+                  className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  <span>تأكيد والبدء النظيف فوراً ↵</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -3394,9 +3507,9 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
       {isInviteTeacherModalOpen && (
         <div 
           onClick={(e) => { if (e.target === e.currentTarget) setIsInviteTeacherModalOpen(false); }}
-          className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto"
+          className="fixed inset-0 z-[100] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto"
         >
-          <div className="relative bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 space-y-4 shadow-2xl border border-slate-200 my-auto text-right">
+          <div className="relative bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 space-y-4 shadow-2xl border border-slate-200 text-right animate-fadeIn">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -3415,8 +3528,8 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
               </button>
             </div>
 
-            <div className="space-y-3.5">
-              <div className="text-xs text-slate-600">
+            <div className="space-y-3.5 text-xs">
+              <div className="text-slate-600">
                 يمكنك نسخ هذه الرسالة وإرسالها فوراً لجميع المعلمين في المدرسة للبدء في استخدام المنظومة ورصد الحصص:
               </div>
 

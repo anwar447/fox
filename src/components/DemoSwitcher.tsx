@@ -215,12 +215,11 @@ export const DemoSwitcher: React.FC<DemoSwitcherProps> = ({
             <button
               id="demo-reset-data-btn"
               onClick={() => {
-                if (window.confirm('هل تريد استعادة البيانات التجريبية الأولية وإعادة ضبط التغييرات؟')) {
-                  onResetData();
-                  onClose();
-                }
+                onResetData();
+                onClose();
               }}
               className="flex items-center gap-1.5 text-slate-500 hover:text-red-600 font-semibold text-[11px] transition-colors cursor-pointer"
+              title="إعادة ضبط البيانات للأصل"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               إعادة ضبط البيانات للأصل

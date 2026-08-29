@@ -565,50 +565,51 @@ export function importStudentsBatch(
   let addedCount = 0;
   let updatedCount = 0;
 
-  // Track discovered classes
-  const currentClasses = getSchoolClasses(schoolCode);
-  const classMap = new Map<string, Set<string>>();
-  currentClasses.forEach((c) => {
-    classMap.set(c.className, new Set(c.sections));
-    if (c.classCode) classMap.set(c.classCode, new Set(c.sections));
-  });
+  // Retrieve current school classes
+  const existingClasses = getSchoolClasses(schoolCode);
+  const classesList: SchoolClassSection[] = existingClasses.map((c) => ({
+    ...c,
+    sections: [...c.sections],
+  }));
 
-  // Match with existing classes by classCode or className
-  const resolveTargetClass = (rawClass: string): { className: string; classCode?: string } => {
-    const trimmed = rawClass.trim();
-    // 1. Direct classCode match (e.g. "1314" -> "الأول الثانوي")
-    const matchByCode = currentClasses.find((c) => c.classCode && (c.classCode === trimmed || c.classCode.toLowerCase() === trimmed.toLowerCase()));
-    if (matchByCode) {
-      return { className: matchByCode.className, classCode: matchByCode.classCode };
-    }
+  // Helper to match or create class accurately
+  const getOrCreateClass = (rawClassName: string): string => {
+    const trimmed = rawClassName.trim();
+    // 1. Direct classCode match
+    const matchByCode = classesList.find((c) => c.classCode && (c.classCode === trimmed || c.classCode.toLowerCase() === trimmed.toLowerCase()));
+    if (matchByCode) return matchByCode.className;
+
     // 2. Direct className match
-    const matchByName = currentClasses.find((c) => c.className === trimmed || c.className.toLowerCase() === trimmed.toLowerCase());
-    if (matchByName) {
-      return { className: matchByName.className, classCode: matchByName.classCode };
-    }
-    // 3. Partial contains match
-    const matchPartial = currentClasses.find((c) => c.className.includes(trimmed) || trimmed.includes(c.className));
-    if (matchPartial) {
-      return { className: matchPartial.className, classCode: matchPartial.classCode };
-    }
-    // 4. Default return as is
-    return { className: trimmed };
+    const matchByName = classesList.find((c) => c.className === trimmed || c.className.toLowerCase() === trimmed.toLowerCase());
+    if (matchByName) return matchByName.className;
+
+    // 3. Partial match
+    const matchPartial = classesList.find((c) => c.className.includes(trimmed) || trimmed.includes(c.className));
+    if (matchPartial) return matchPartial.className;
+
+    // 4. Create new class entry
+    classesList.push({
+      id: `cls-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+      className: trimmed,
+      sections: ['1'],
+    });
+    return trimmed;
   };
 
   newStudents.forEach((st) => {
-    const resolved = resolveTargetClass(st.className);
-    const targetClassName = resolved.className;
+    const targetClassName = getOrCreateClass(st.className);
     const targetSectionName = st.sectionName ? String(st.sectionName).trim() : '1';
 
-    const existingIndex = users.findIndex(
-      (u) => u.nationalId === st.nationalId || (u.name === st.name && u.schoolCode === schoolCode)
-    );
-
-    // Update discovered classes
-    if (!classMap.has(targetClassName)) {
-      classMap.set(targetClassName, new Set());
+    // Ensure section is registered in class
+    const clsObj = classesList.find((c) => c.className === targetClassName);
+    if (clsObj && !clsObj.sections.includes(targetSectionName)) {
+      clsObj.sections.push(targetSectionName);
+      clsObj.sections.sort();
     }
-    classMap.get(targetClassName)?.add(targetSectionName);
+
+    const existingIndex = users.findIndex(
+      (u) => u.nationalId === st.nationalId || (u.name === st.name && (u.schoolCode === schoolCode || u.schoolCode === 'RAYA-1448'))
+    );
 
     const pass = st.nationalId.length >= 4 ? st.nationalId.slice(-4) : '1234';
 
@@ -658,17 +659,7 @@ export function importStudentsBatch(
     }
   });
 
-  // Re-save custom classes
-  const updatedClasses: SchoolClassSection[] = [];
-  classMap.forEach((sections, cName) => {
-    updatedClasses.push({
-      id: `cls-${cName}`,
-      className: cName,
-      sections: Array.from(sections).sort(),
-    });
-  });
-  saveSchoolClasses(schoolCode, updatedClasses);
-
+  saveSchoolClasses(schoolCode, classesList);
   saveUsers(users);
   saveAttendances(attendances);
 
@@ -1042,8 +1033,8 @@ export function promoteStudentsAcademicYear(
  */
 export function deleteAllSchoolStudents(schoolCode: string): { deletedCount: number } {
   const users = getUsers();
-  const studentsToDelete = users.filter((u) => u.role === 'student' && (u.schoolCode === schoolCode || u.schoolCode === 'RAYA-1448'));
-  const remainingUsers = users.filter((u) => !(u.role === 'student' && (u.schoolCode === schoolCode || u.schoolCode === 'RAYA-1448')));
+  const studentsToDelete = users.filter((u) => u.role === 'student' && (u.schoolCode === schoolCode || (schoolCode === 'RAYA-1448' || u.schoolCode === 'RAYA-1448')));
+  const remainingUsers = users.filter((u) => !(u.role === 'student' && (u.schoolCode === schoolCode || (schoolCode === 'RAYA-1448' || u.schoolCode === 'RAYA-1448'))));
   
   saveUsers(remainingUsers);
 
@@ -1056,6 +1047,16 @@ export function deleteAllSchoolStudents(schoolCode: string): { deletedCount: num
   const deductions = getBehaviorDeductions();
   const remainingDeductions = deductions.filter((d) => d.schoolCode !== schoolCode && d.schoolCode !== 'RAYA-1448');
   saveBehaviorDeductions(remainingDeductions);
+
+  // Also clean up excuses for this school
+  const excuses = getExcuses();
+  const remainingExcuses = excuses.filter((e) => e.schoolCode !== schoolCode && e.schoolCode !== 'RAYA-1448');
+  saveExcuses(remainingExcuses);
+
+  // Also clean up behavior notes for this school
+  const notes = getBehaviorNotes();
+  const remainingNotes = notes.filter((n) => n.schoolCode !== schoolCode && n.schoolCode !== 'RAYA-1448');
+  saveBehaviorNotes(remainingNotes);
 
   return { deletedCount: studentsToDelete.length };
 }
