@@ -66,7 +66,7 @@ interface EmployeeDashboardProps {
   onRefreshData?: () => void;
 }
 
-type TabType = 'live' | 'truant' | 'directory' | 'behavior' | 'excuses' | 'emergency' | 'assistants' | 'schools' | 'reports';
+type TabType = 'live' | 'truant' | 'directory' | 'teachers' | 'behavior' | 'excuses' | 'emergency' | 'assistants' | 'schools' | 'reports';
 
 export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
   currentUser,
@@ -147,6 +147,9 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
 
   // Assistant deletion state
   const [assistantToDelete, setAssistantToDelete] = useState<User | null>(null);
+
+  // Teacher deletion state
+  const [teacherToDelete, setTeacherToDelete] = useState<User | null>(null);
 
   // Form state for new branch school
   const [branchName, setBranchName] = useState('');
@@ -548,6 +551,15 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
     if (onRefreshData) onRefreshData();
   };
 
+  const handleConfirmDeleteTeacher = () => {
+    if (!teacherToDelete) return;
+    if (onDeleteUser) {
+      onDeleteUser(teacherToDelete.id);
+    }
+    setTeacherToDelete(null);
+    if (onRefreshData) onRefreshData();
+  };
+
   const handleCreateBranchSchoolSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!branchName.trim()) return;
@@ -768,6 +780,16 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
               <span>طالب جديد</span>
             </button>
 
+            {/* Invite Teachers Direct WhatsApp Button */}
+            <button
+              onClick={() => setIsInviteTeacherModalOpen(true)}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3.5 py-3 rounded-2xl flex items-center gap-1.5 transition-colors cursor-pointer border border-emerald-400/40 shadow-sm"
+              title="دعوة المعلمين عبر رابط واتساب المباشر"
+            >
+              <Share2 className="w-4 h-4 text-white" />
+              <span>دعوة المعلمين</span>
+            </button>
+
           </div>
 
         </div>
@@ -813,6 +835,7 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
           { id: 'live', label: 'الرصد المباشر والانضباط', icon: UserCheck, count: null },
           { id: 'truant', label: 'كشف التباين والهروب', icon: ShieldAlert, count: truantList.length, alert: truantList.length > 0 },
           { id: 'directory', label: 'دليل الطلاب والكادر', icon: Users, count: schoolStudents.length },
+          { id: 'teachers', label: 'إدارة ودعوة المعلمين', icon: GraduationCap, count: schoolTeachers.length },
           { id: 'behavior', label: 'السلوك والمواظبة (100 درجة)', icon: Scale, count: pendingBehaviorNotes.length, alert: pendingBehaviorNotes.length > 0 },
           { id: 'excuses', label: 'مراجعة الأعذار المرفوعة', icon: FileText, count: pendingExcusesCount, alert: pendingExcusesCount > 0 },
           { id: 'emergency', label: 'بث وتنبيهات الطوارئ', icon: Bell, count: schoolEmergencies.length },
@@ -1900,6 +1923,157 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
               <span>إرسال البث العاجل فوراً لجميع الهواتف</span>
             </button>
           </form>
+        </div>
+      )}
+
+      {/* TAB: TEACHERS MANAGEMENT & INVITATIONS (إدارة ودعوة المعلمين) */}
+      {activeTab === 'teachers' && (
+        <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+            <div>
+              <div className="flex items-center gap-2">
+                <GraduationCap className="w-6 h-6 text-teal-700" />
+                <h3 className="text-lg font-black text-slate-900">
+                  إدارة ودعوة المعلمين ({schoolTeachers.length})
+                </h3>
+                <span className="bg-teal-100 text-teal-800 text-xs font-black px-2.5 py-0.5 rounded-full font-mono">
+                  {schoolTeachers.length} معلم مسجل
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-1">
+                إرسال رابط الدعوة وكلمات المرور للمعلمين، أو إضافة معلم جديد بحسابه الوطني وكلمة المرور
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => setIsInviteTeacherModalOpen(true)}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black px-4 py-2.5 rounded-xl flex items-center gap-2 transition-colors cursor-pointer shadow-sm"
+              >
+                <Share2 className="w-4 h-4" />
+                <span>إرسال دعوة بالواتساب</span>
+              </button>
+
+              <button
+                onClick={() => setIsAddTeacherModalOpen(true)}
+                className="bg-teal-700 hover:bg-teal-800 text-white text-xs font-black px-4 py-2.5 rounded-xl flex items-center gap-2 transition-colors cursor-pointer shadow-sm"
+              >
+                <Plus className="w-4 h-4" />
+                <span>إضافة معلم جديد</span>
+              </button>
+            </div>
+          </div>
+
+          {/* WhatsApp Direct Invite Banner Card */}
+          <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-slate-50 border border-emerald-200/80 rounded-2xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="flex h-3 w-3 relative">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                </span>
+                <h4 className="text-sm font-black text-emerald-950">
+                  دعوة سريعة لجميع المعلمين في قروب المدرسة
+                </h4>
+              </div>
+              <p className="text-xs text-emerald-800/90 leading-relaxed">
+                اضغط على زر المشاركة لتوليد رسالة مجهزة تشمل رابط المنظومة وبيانات تسجيل الدخول الافتراضية للمعلمين.
+              </p>
+            </div>
+
+            <button
+              onClick={() => setIsInviteTeacherModalOpen(true)}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-5 py-3 rounded-xl flex items-center justify-center gap-2 transition-transform active:scale-95 shadow-md cursor-pointer whitespace-nowrap shrink-0"
+            >
+              <MessageSquare className="w-4 h-4" />
+              <span>مشاركة رابط الدعوة فوراً</span>
+            </button>
+          </div>
+
+          {/* Teachers Grid */}
+          {schoolTeachers.length === 0 ? (
+            <div className="p-12 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 space-y-3">
+              <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
+                <GraduationCap className="w-6 h-6" />
+              </div>
+              <p className="text-sm font-bold text-slate-700">لا يوجد معلمون مسجلون في هذه المدرسة حالياً</p>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                يمكنك إضافة حساب معلم جديد أو إرسال رابط الدعوة ليدخل برقم الهوية وكلمة المرور الافتراضية.
+              </p>
+              <div className="flex items-center justify-center gap-2 pt-2">
+                <button
+                  onClick={() => setIsAddTeacherModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold px-4 py-2 rounded-xl cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>إضافة معلم الآن</span>
+                </button>
+                <button
+                  onClick={() => setIsInviteTeacherModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-xl cursor-pointer"
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  <span>رابط الدعوة</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {schoolTeachers.map((teacher) => (
+                <div key={teacher.id} className="p-5 rounded-2xl border border-slate-200 bg-slate-50/70 hover:bg-white hover:border-teal-300 hover:shadow-md transition-all space-y-3 shadow-xs">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-teal-100 text-teal-800 flex items-center justify-center font-black text-sm">
+                        {teacher.name.charAt(0)}
+                      </div>
+                      <div>
+                        <strong className="text-slate-900 font-black text-sm block">{teacher.name}</strong>
+                        <span className="text-xs font-mono text-slate-500 block mt-0.5">هوية: {teacher.nationalId}</span>
+                      </div>
+                    </div>
+                    <span className="text-[10px] bg-teal-100 text-teal-800 border border-teal-200 px-2 py-0.5 rounded-md font-bold whitespace-nowrap">
+                      معلم
+                    </span>
+                  </div>
+
+                  {teacher.mobile && (
+                    <div className="text-xs text-slate-600 flex items-center gap-1.5 bg-white p-2 rounded-xl border border-slate-200/60 font-mono">
+                      <Phone className="w-3.5 h-3.5 text-slate-400" />
+                      <span>{teacher.mobile}</span>
+                      <a
+                        href={`https://wa.me/${teacher.mobile.startsWith('0') ? '966' + teacher.mobile.slice(1) : teacher.mobile}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mr-auto text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2 py-0.5 rounded-md transition-colors"
+                      >
+                        مراسلة واتساب
+                      </a>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between pt-3 border-t border-slate-200/80">
+                    <button
+                      onClick={() => { setResetModalUser(teacher); setNewPasswordVal(''); }}
+                      className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                      title="إعادة تعيين كلمة المرور للمعلم"
+                    >
+                      <KeyRound className="w-3.5 h-3.5" />
+                      <span>تغيير المرور</span>
+                    </button>
+
+                    <button
+                      onClick={() => setTeacherToDelete(teacher)}
+                      className="px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors border border-rose-200"
+                      title="حذف المعلم نهائياً من المدرسة"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>حذف المعلم</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -3582,6 +3756,47 @@ ${window.location.origin.includes('localhost') ? 'https://novo-school.duckdns.or
                   <span>إرسال عبر واتساب</span>
                 </a>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Teacher Modal Confirmation */}
+      {teacherToDelete && (
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) setTeacherToDelete(null); }}
+          className="fixed inset-0 z-[100] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto"
+        >
+          <div className="relative bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200 text-right animate-fadeIn">
+            <div className="flex items-center gap-3 text-rose-600">
+              <div className="p-3 bg-rose-50 rounded-2xl border border-rose-200">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-slate-900">تأكيد حذف المعلم</h3>
+                <p className="text-xs text-slate-500">حذف الحساب نهائياً من المدرسة</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed bg-slate-50 p-4 rounded-2xl border border-slate-200">
+              هل أنت متأكد من رغبتك في حذف المعلم <strong className="text-slate-900 font-bold">({teacherToDelete.name})</strong> رقم الهوية (<span className="font-mono">{teacherToDelete.nationalId}</span>)؟
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setTeacherToDelete(null)}
+                className="px-4 py-2.5 rounded-xl text-slate-600 font-bold hover:bg-slate-100 transition-colors text-xs"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteTeacher}
+                className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md transition-colors"
+              >
+                تأكيد الحذف
+              </button>
             </div>
           </div>
         </div>
