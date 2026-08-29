@@ -24,6 +24,7 @@ import {
   transferStudentClass,
   deleteStudent,
   promoteStudentsAcademicYear,
+  deleteAllSchoolStudents,
   GRADE_PROGRESSION_MAP,
   wipeSchoolStudentData,
   wipeAllToPristineProduction
@@ -111,6 +112,7 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
 
   // Student Delete State (حذف طالب عند النقل)
   const [studentToDelete, setStudentToDelete] = useState<User | null>(null);
+  const [isDeleteAllStudentsModalOpen, setIsDeleteAllStudentsModalOpen] = useState(false);
 
   // Behavior Management State
   const [behaviorToast, setBehaviorToast] = useState('');
@@ -328,6 +330,14 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
     setBehaviorToast(`تم حذف الطالب (${studentToDelete.name}) وسجلاته بنجاح ✓`);
     setStudentToDelete(null);
     setTimeout(() => setBehaviorToast(''), 3000);
+    if (onRefreshData) onRefreshData();
+  };
+
+  const handleConfirmDeleteAllStudents = () => {
+    const res = deleteAllSchoolStudents(currentSchool.code);
+    setIsDeleteAllStudentsModalOpen(false);
+    setBehaviorToast(`تم حذف جميع سجلات الطلاب (${res.deletedCount} طالب) بنجاح لتمكين إعادة استيرادهم وتوزيعهم ✓`);
+    setTimeout(() => setBehaviorToast(''), 4000);
     if (onRefreshData) onRefreshData();
   };
 
@@ -1106,6 +1116,15 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>إضافة طالب</span>
+              </button>
+
+              <button
+                onClick={() => setIsDeleteAllStudentsModalOpen(true)}
+                className="bg-rose-700 hover:bg-rose-800 text-white text-xs font-bold px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+                title="حذف جميع الطلاب دفعة واحدة لإعادة تسكينهم واستيرادهم"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>حذف جميع الطلاب</span>
               </button>
             </div>
           </div>
@@ -3096,6 +3115,47 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
         </div>
       )}
 
+      {/* MODAL 3.5: Delete All Students Confirmation Modal (حذف جميع الطلاب دفعة واحدة) */}
+      {isDeleteAllStudentsModalOpen && (
+        <div className="fixed inset-0 z-60 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl text-right">
+            <div className="w-14 h-14 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+              <AlertTriangle className="w-7 h-7" />
+            </div>
+
+            <div className="text-center space-y-2">
+              <h3 className="text-lg font-black text-rose-700">
+                حذف جميع طلاب المدرسة دفعة واحدة
+              </h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                هل أنت متأكد من رغبتك في حذف جميع سجلات الطلاب الحالية في مدرسة <strong className="text-slate-900">({currentSchool.name})</strong> البالغ عددهم <strong className="text-rose-600 font-black">({schoolStudents.length}) طالب</strong>؟
+              </p>
+              <p className="text-[11px] bg-rose-50 border border-rose-200 text-rose-800 p-2.5 rounded-xl text-right leading-relaxed">
+                ⚠️ سيتم مسح سجلات الطلاب وحضورهم وسلوكهم في هذه المدرسة، مما يتيح لك إعادة ضبط وتسكين الفصول واستيراد كشوفات الطلاب الجديدة بصيغة نظيفة ومطابقة 100%.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-center gap-3 pt-3 border-t">
+              <button
+                type="button"
+                onClick={() => setIsDeleteAllStudentsModalOpen(false)}
+                className="px-4 py-2.5 rounded-xl text-slate-600 font-bold text-xs hover:bg-slate-100 cursor-pointer"
+              >
+                إلغاء التراجع
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteAllStudents}
+                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-lg cursor-pointer flex items-center gap-1.5"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>تأكيد حذف جميع الطلاب ({schoolStudents.length})</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MODAL 4: Teacher Behavior Note Action Resolution Modal */}
       {selectedNoteForAction && (
         <div className="fixed inset-0 z-60 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -3234,10 +3294,13 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
 
       {/* MODAL 5: Add Teacher Modal (إضافة معلم جديد) */}
       {isAddTeacherModalOpen && (
-        <div className="fixed inset-0 z-60 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-7 space-y-4 shadow-2xl animate-fadeIn">
-            <div className="flex items-center justify-between border-b pb-3">
-              <div className="flex items-center gap-2">
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) setIsAddTeacherModalOpen(false); }}
+          className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto"
+        >
+          <div className="relative bg-white rounded-3xl max-w-md w-full p-6 sm:p-7 space-y-4 shadow-2xl border border-slate-200 my-auto text-right">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
                 <div className="p-2 rounded-xl bg-teal-50 text-teal-700 border border-teal-200">
                   <Plus className="w-5 h-5" />
                 </div>
@@ -3246,7 +3309,10 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
                   <p className="text-xs text-slate-500">مدرسة: {currentSchool.name}</p>
                 </div>
               </div>
-              <button onClick={() => setIsAddTeacherModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+              <button 
+                onClick={() => setIsAddTeacherModalOpen(false)} 
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -3300,21 +3366,21 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
                 </div>
               </div>
 
-              <div className="p-3 bg-teal-50/80 rounded-xl border border-teal-200 text-teal-900 text-[11px] leading-relaxed">
+              <div className="p-3 bg-teal-50/90 rounded-2xl border border-teal-200 text-teal-900 text-[11px] leading-relaxed">
                 💡 <strong>ملاحظة:</strong> سيتمكن المعلم فور حفظه من الدخول للبوابة برقم هويته وكلمة المرور هذه، ورصد الحصص والغياب والملاحظات السلوكية مباشرة من جواله.
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-3 border-t">
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setIsAddTeacherModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-slate-600 font-bold hover:bg-slate-100"
+                  className="px-4 py-2.5 rounded-xl text-slate-600 font-bold hover:bg-slate-100 transition-colors"
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-bold shadow-sm"
+                  className="px-6 py-2.5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-bold shadow-md transition-colors"
                 >
                   حفظ وتفعيل حساب المعلم
                 </button>
@@ -3326,10 +3392,13 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
 
       {/* MODAL 6: Invite Teachers via WhatsApp (رسالة دعوة ورابط المعلمين) */}
       {isInviteTeacherModalOpen && (
-        <div className="fixed inset-0 z-60 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 space-y-4 shadow-2xl animate-fadeIn">
-            <div className="flex items-center justify-between border-b pb-3">
-              <div className="flex items-center gap-2">
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) setIsInviteTeacherModalOpen(false); }}
+          className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto"
+        >
+          <div className="relative bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 space-y-4 shadow-2xl border border-slate-200 my-auto text-right">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
                 <div className="p-2 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200">
                   <Share2 className="w-5 h-5" />
                 </div>
@@ -3338,12 +3407,15 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
                   <p className="text-xs text-slate-500">جاهزة للإرسال في جروب واتساب المعلمين</p>
                 </div>
               </div>
-              <button onClick={() => setIsInviteTeacherModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+              <button 
+                onClick={() => setIsInviteTeacherModalOpen(false)} 
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-3.5">
               <div className="text-xs text-slate-600">
                 يمكنك نسخ هذه الرسالة وإرسالها فوراً لجميع المعلمين في المدرسة للبدء في استخدام المنظومة ورصد الحصص:
               </div>
@@ -3367,7 +3439,7 @@ ${window.location.origin.includes('localhost') ? 'https://novo-school.duckdns.or
               </div>
 
               {inviteCopiedToast && (
-                <div className="bg-emerald-600 text-white p-2.5 rounded-xl text-center text-xs font-bold animate-fadeIn">
+                <div className="bg-emerald-600 text-white p-2.5 rounded-xl text-center text-xs font-bold shadow-sm">
                   ✓ تم نسخ رسالة الدعوة والرابط إلى الحافظة بنجاح!
                 </div>
               )}

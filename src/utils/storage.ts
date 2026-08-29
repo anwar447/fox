@@ -573,23 +573,49 @@ export function importStudentsBatch(
     if (c.classCode) classMap.set(c.classCode, new Set(c.sections));
   });
 
+  // Match with existing classes by classCode or className
+  const resolveTargetClass = (rawClass: string): { className: string; classCode?: string } => {
+    const trimmed = rawClass.trim();
+    // 1. Direct classCode match (e.g. "1314" -> "الأول الثانوي")
+    const matchByCode = currentClasses.find((c) => c.classCode && (c.classCode === trimmed || c.classCode.toLowerCase() === trimmed.toLowerCase()));
+    if (matchByCode) {
+      return { className: matchByCode.className, classCode: matchByCode.classCode };
+    }
+    // 2. Direct className match
+    const matchByName = currentClasses.find((c) => c.className === trimmed || c.className.toLowerCase() === trimmed.toLowerCase());
+    if (matchByName) {
+      return { className: matchByName.className, classCode: matchByName.classCode };
+    }
+    // 3. Partial contains match
+    const matchPartial = currentClasses.find((c) => c.className.includes(trimmed) || trimmed.includes(c.className));
+    if (matchPartial) {
+      return { className: matchPartial.className, classCode: matchPartial.classCode };
+    }
+    // 4. Default return as is
+    return { className: trimmed };
+  };
+
   newStudents.forEach((st) => {
+    const resolved = resolveTargetClass(st.className);
+    const targetClassName = resolved.className;
+    const targetSectionName = st.sectionName ? String(st.sectionName).trim() : '1';
+
     const existingIndex = users.findIndex(
       (u) => u.nationalId === st.nationalId || (u.name === st.name && u.schoolCode === schoolCode)
     );
 
     // Update discovered classes
-    if (!classMap.has(st.className)) {
-      classMap.set(st.className, new Set());
+    if (!classMap.has(targetClassName)) {
+      classMap.set(targetClassName, new Set());
     }
-    classMap.get(st.className)?.add(st.sectionName || '1');
+    classMap.get(targetClassName)?.add(targetSectionName);
 
     const pass = st.nationalId.length >= 4 ? st.nationalId.slice(-4) : '1234';
 
     if (existingIndex >= 0) {
       users[existingIndex].name = st.name;
-      users[existingIndex].className = st.className;
-      users[existingIndex].sectionName = st.sectionName || '1';
+      users[existingIndex].className = targetClassName;
+      users[existingIndex].sectionName = targetSectionName;
       if (st.parentMobile) users[existingIndex].parentMobile = st.parentMobile;
       users[existingIndex].schoolCode = schoolCode;
       updatedCount++;
@@ -603,8 +629,8 @@ export function importStudentsBatch(
         password: pass,
         role: 'student',
         schoolCode: schoolCode,
-        className: st.className,
-        sectionName: st.sectionName || '1',
+        className: targetClassName,
+        sectionName: targetSectionName,
       };
       users.push(newUser);
       addedCount++;
@@ -1010,4 +1036,28 @@ export function promoteStudentsAcademicYear(
   saveUsers(users);
   return { promotedCount, graduatedCount, affectedStudents };
 }
+
+/**
+ * Delete all students in a specific school (with their attendance and behavior records)
+ */
+export function deleteAllSchoolStudents(schoolCode: string): { deletedCount: number } {
+  const users = getUsers();
+  const studentsToDelete = users.filter((u) => u.role === 'student' && (u.schoolCode === schoolCode || u.schoolCode === 'RAYA-1448'));
+  const remainingUsers = users.filter((u) => !(u.role === 'student' && (u.schoolCode === schoolCode || u.schoolCode === 'RAYA-1448')));
+  
+  saveUsers(remainingUsers);
+
+  // Also clean up attendances for deleted students in this school
+  const attendances = getAttendances();
+  const remainingAttendances = attendances.filter((a) => a.schoolCode !== schoolCode && a.schoolCode !== 'RAYA-1448');
+  saveAttendances(remainingAttendances);
+
+  // Also clean up behavior deductions for this school
+  const deductions = getBehaviorDeductions();
+  const remainingDeductions = deductions.filter((d) => d.schoolCode !== schoolCode && d.schoolCode !== 'RAYA-1448');
+  saveBehaviorDeductions(remainingDeductions);
+
+  return { deletedCount: studentsToDelete.length };
+}
+
 

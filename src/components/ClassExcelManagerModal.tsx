@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { School, SchoolClassSection, User } from '../types';
 import { 
   parseExcelFileBuffer, 
@@ -8,7 +8,7 @@ import {
 import { 
   X, UploadCloud, FileSpreadsheet, Plus, Trash2, CheckCircle2, 
   AlertCircle, Download, Layers, Users, Phone, Hash, BookOpen, 
-  GraduationCap, RefreshCw, ArrowRight, ShieldAlert 
+  GraduationCap, RefreshCw, ArrowRight, ShieldAlert, Edit2, Check 
 } from 'lucide-react';
 
 interface ClassExcelManagerModalProps {
@@ -39,6 +39,15 @@ export function ClassExcelManagerModal({
   const [activeTab, setActiveTab] = useState<'excel' | 'classes'>('excel');
   const [classesList, setClassesList] = useState<SchoolClassSection[]>(currentClasses);
 
+  useEffect(() => {
+    setClassesList(currentClasses);
+  }, [currentClasses]);
+
+  // Editing state for a class
+  const [editingClassId, setEditingClassId] = useState<string | null>(null);
+  const [editClassName, setEditClassName] = useState('');
+  const [editClassCode, setEditClassCode] = useState('');
+
   // New Class Form State
   const [newClassName, setNewClassName] = useState('');
   const [newClassCode, setNewClassCode] = useState('');
@@ -54,6 +63,31 @@ export function ClassExcelManagerModal({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
+
+  // Start editing class
+  const handleStartEditClass = (cls: SchoolClassSection) => {
+    setEditingClassId(cls.id);
+    setEditClassName(cls.className);
+    setEditClassCode(cls.classCode || '');
+  };
+
+  // Save edited class
+  const handleSaveEditClass = (classId: string) => {
+    if (!editClassName.trim()) return;
+    const updated = classesList.map((c) => {
+      if (c.id === classId) {
+        return {
+          ...c,
+          className: editClassName.trim(),
+          classCode: editClassCode.trim() || undefined,
+        };
+      }
+      return c;
+    });
+    setClassesList(updated);
+    onSaveClasses(updated);
+    setEditingClassId(null);
+  };
 
   // Handle Class Management
   const handleAddClass = (e: React.FormEvent) => {
@@ -97,6 +131,24 @@ export function ClassExcelManagerModal({
       if (c.id === classId) {
         const set = new Set([...c.sections, sectionName.trim()]);
         return { ...c, sections: Array.from(set).sort() };
+      }
+      return c;
+    });
+
+    setClassesList(updated);
+    onSaveClasses(updated);
+  };
+
+  const handleEditSectionName = (classId: string, oldSection: string) => {
+    const newSection = prompt(`تعديل اسم أو رقم الفصل "${oldSection}" إلى:`, oldSection);
+    if (!newSection || !newSection.trim() || newSection.trim() === oldSection) return;
+
+    const updated = classesList.map((c) => {
+      if (c.id === classId) {
+        return {
+          ...c,
+          sections: c.sections.map((s) => (s === oldSection ? newSection.trim() : s)),
+        };
       }
       return c;
     });
@@ -464,25 +516,77 @@ export function ClassExcelManagerModal({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {classesList.map((cls) => (
                     <div key={cls.id} className="border border-slate-200 rounded-2xl p-4 bg-white shadow-sm space-y-3 hover:border-emerald-300 transition-colors">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <GraduationCap className="w-5 h-5 text-emerald-700" />
-                          <h5 className="font-black text-slate-900 text-sm">{cls.className}</h5>
-                          {cls.classCode && (
-                            <span className="text-[10px] font-mono bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-bold">
-                              كود: {cls.classCode}
-                            </span>
-                          )}
+                      {editingClassId === cls.id ? (
+                        <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-teal-200">
+                          <span className="text-[11px] font-bold text-teal-800 block">تعديل بيانات الصف:</span>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="text-[10px] text-slate-500 font-bold block mb-0.5">اسم الصف</label>
+                              <input
+                                type="text"
+                                value={editClassName}
+                                onChange={(e) => setEditClassName(e.target.value)}
+                                className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-bold text-slate-900 focus:outline-none focus:border-teal-600"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] text-slate-500 font-bold block mb-0.5">كود الصف الوزاري</label>
+                              <input
+                                type="text"
+                                value={editClassCode}
+                                onChange={(e) => setEditClassCode(e.target.value)}
+                                className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-bold font-mono text-slate-900 focus:outline-none focus:border-teal-600"
+                              />
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-end gap-1.5 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => setEditingClassId(null)}
+                              className="px-2.5 py-1 text-[11px] rounded-lg text-slate-600 hover:bg-slate-200 font-bold"
+                            >
+                              إلغاء
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSaveEditClass(cls.id)}
+                              className="px-3 py-1 text-[11px] rounded-lg bg-teal-700 hover:bg-teal-800 text-white font-bold flex items-center gap-1 shadow-sm"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                              <span>حفظ التعديل</span>
+                            </button>
+                          </div>
                         </div>
+                      ) : (
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <GraduationCap className="w-5 h-5 text-emerald-700" />
+                            <h5 className="font-black text-slate-900 text-sm">{cls.className}</h5>
+                            {cls.classCode && (
+                              <span className="text-[10px] font-mono bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-bold">
+                                كود: {cls.classCode}
+                              </span>
+                            )}
+                          </div>
 
-                        <button
-                          onClick={() => handleDeleteClass(cls.id)}
-                          className="text-rose-500 hover:text-rose-700 p-1.5 rounded-lg hover:bg-rose-50 transition-colors"
-                          title="حذف الصف"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => handleStartEditClass(cls)}
+                              className="text-teal-600 hover:text-teal-800 p-1.5 rounded-lg hover:bg-teal-50 transition-colors"
+                              title="تعديل اسم الصف والكود"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteClass(cls.id)}
+                              className="text-rose-500 hover:text-rose-700 p-1.5 rounded-lg hover:bg-rose-50 transition-colors"
+                              title="حذف الصف"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
 
                       {/* Sections List */}
                       <div>
@@ -493,10 +597,17 @@ export function ClassExcelManagerModal({
                               key={sec}
                               className="bg-emerald-50 border border-emerald-200 text-emerald-900 font-bold px-2.5 py-1 rounded-lg text-xs flex items-center gap-1.5"
                             >
-                              <span>فصل {sec}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleEditSectionName(cls.id, sec)}
+                                className="hover:underline text-emerald-900 cursor-pointer"
+                                title="انقر لتعديل اسم أو رقم الفصل"
+                              >
+                                فصل {sec}
+                              </button>
                               <button
                                 onClick={() => handleRemoveSectionFromClass(cls.id, sec)}
-                                className="text-emerald-700 hover:text-rose-600 transition-colors"
+                                className="text-emerald-700 hover:text-rose-600 transition-colors mr-0.5"
                                 title="إزالة الفصل"
                               >
                                 ×
