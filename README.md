@@ -1,11 +1,104 @@
-<div align="center">
+# 🏫 نظام حضورك الذكي (Smart School Attendance & Behavior Management System)
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+منظومة مدرسية متكاملة لإدارة الحضور والانصراف بالسياج الجغرافي الذكي (Geofencing)، وإدارة السلوك والمواظبة (100 درجة)، وتوليد تقارير نظام نور المعتمدة، وإدارة بيانات الطلاب والكادر التعليمي.
 
-  <h1>Built with AI Studio</h2>
+---
 
-  <p>The fastest path from prompt to production with Gemini.</p>
+## 🚀 التشغيل المباشر على سيرفرات Dell PowerEdge R720 وبيئات Linux / Ubuntu
 
-  <a href="https://aistudio.google.com/apps">Start building</a>
+تم تجهيز المشروع بحاويات **Docker** مخصصة وخفيفة تعمل عبر **Nginx High-Performance** لضمان أقصى سرعة واستجابة حتى مع آلاف الطلاب والمعلمين.
 
-</div>
+### 1️⃣ المتطلبات الأساسية
+- نظام تشغيل Linux (Ubuntu Server 20.04 / 22.04 LTS / Debian / CentOS / Proxmox).
+- تثبيت Docker و Docker Compose.
+
+---
+
+### 2️⃣ التشغيل بنقرة واحدة (Automated Deployment)
+
+انسخ المشروع إلى السيرفر ثم شغّل سكريبت الإطلاق التلقائي:
+
+```bash
+# 1. إعطاء تصريح التشغيل للسكريبت
+chmod +x deploy.sh update.sh
+
+# 2. تشغيل السكريبت لبناء الحاوية وإطلاقها
+./deploy.sh
+```
+
+---
+
+### 🔄 3️⃣ التحديث السريع بنقرة واحدة على السيرفر (One-Click Auto-Update)
+
+متى ما قمت بإجراء أي تعديل ورفعه على GitHub، ما عليك سوى تنفيذ أمر التحديث على سيرفرك:
+
+```bash
+./update.sh
+```
+يقوم هذا السكريبت بسحب التحديثات وإعادة تشغيل الحاوية بنسخة الإنتاج فوراً بدون أي انقطاع للخدمة.
+
+---
+
+### 4️⃣ أو التشغيل اليدوي عبر Docker Compose:
+
+```bash
+# بناء وتشغيل الحاوية في الخلفية
+docker compose up -d --build
+
+# إيقاف الحاوية
+docker compose down
+
+# مراقبة السجلات الحية (Logs)
+docker compose logs -f
+```
+
+---
+
+### 4️⃣ التشغيل في بيئة التطوير المحلية (Node.js)
+
+```bash
+# 1. تثبيت الحزم
+npm install
+
+# 2. تشغيل خادم التطوير
+npm run dev
+
+# 3. بناء نسخة الإنتاج
+npm run build
+```
+
+---
+
+## 🛠️ دليل الرفع على GitHub
+
+لرفع المشروع كاملاً على حسابك في GitHub، نفذ الأوامر التالية من المجلد الرئيسي للمشروع:
+
+```bash
+# 1. تهيئة مستودع Git
+git init
+
+# 2. إضافة كافة الملفات
+git add .
+
+# 3. عمل أول Commit معتمد
+git commit -m "feat: Initial production release of Smart Attendance & Behavior System"
+
+# 4. تغيير اسم الفرع للرئيسي
+git branch -M main
+
+# 5. ربط المستودع بمستودعك على GitHub (استبدل الرابط برابط حسابك)
+git remote add origin https://github.com/USERNAME/smart-attendance-system.git
+
+# 6. رفع الملفات
+git push -u origin main
+```
+
+---
+
+## 🌟 أبرز مميزات المنظومة:
+- 📍 **التحضير الذكي بالسياج الجغرافي (Geofencing)** بدقة GPS.
+- ⚖️ **نظام السلوك والمواظبة الشامل (100 درجة)** ورصد المخالفات والخصم الآلي للتأخر.
+- 🎓 **إدارة الطلاب والترحيل ونقل الفصول** واستيراد كشوفات الإكسل.
+- 📊 **تقارير نظام نور المعتمدة** (تقرير المدير اليومي + الأرشيف العام).
+- 🚨 **نظام الطوارئ والإخلاء والإنذار الحي**.
+- 👨‍👩‍👦 **بوابات مستقلة** (الإداري، المعلم، الطالب، ولي الأمر، والمشرف العام).
