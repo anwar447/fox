@@ -170,6 +170,18 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
   const [newStdSection, setNewStdSection] = useState('1');
   const [newStdParentMobile, setNewStdParentMobile] = useState('');
 
+  // Add Teacher modal state
+  const [isAddTeacherModalOpen, setIsAddTeacherModalOpen] = useState(false);
+  const [newTeacherName, setNewTeacherName] = useState('');
+  const [newTeacherNid, setNewTeacherNid] = useState('');
+  const [newTeacherMobile, setNewTeacherMobile] = useState('');
+  const [newTeacherSubject, setNewTeacherSubject] = useState('');
+  const [newTeacherPassword, setNewTeacherPassword] = useState('123456');
+
+  // Teacher Invite Modal State
+  const [isInviteTeacherModalOpen, setIsInviteTeacherModalOpen] = useState(false);
+  const [inviteCopiedToast, setInviteCopiedToast] = useState(false);
+
   // Add Assistant modal state
   const [isAddAssistantModalOpen, setIsAddAssistantModalOpen] = useState(false);
   const [newAsstName, setNewAsstName] = useState('');
@@ -442,6 +454,32 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
     setNewStdName('');
     setNewStdNid('');
     setNewStdParentMobile('');
+    if (onRefreshData) onRefreshData();
+  };
+
+  const handleCreateTeacherSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTeacherName.trim() || !newTeacherNid.trim()) return;
+
+    const newTeacher: User = {
+      id: `tch-${Date.now()}`,
+      nationalId: newTeacherNid.trim(),
+      password: newTeacherPassword.trim() || '123456',
+      name: newTeacherName.trim(),
+      mobile: newTeacherMobile.trim() || undefined,
+      role: 'teacher',
+      schoolCode: currentSchool.code,
+    };
+
+    onSaveUser(newTeacher);
+    setIsAddTeacherModalOpen(false);
+    setNewTeacherName('');
+    setNewTeacherNid('');
+    setNewTeacherMobile('');
+    setNewTeacherSubject('');
+    setNewTeacherPassword('123456');
+    setBehaviorToast(`تمت إضافة المعلم (${newTeacher.name}) بنجاح ✓`);
+    setTimeout(() => setBehaviorToast(''), 3000);
     if (onRefreshData) onRefreshData();
   };
 
@@ -1028,6 +1066,24 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
 
             <div className="flex flex-wrap items-center gap-2">
               <button
+                onClick={() => setIsInviteTeacherModalOpen(true)}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+                title="توليد رسالة ورابط دخول المعلمين لمشاركتها عبر الواتساب"
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                <span>دعوة المعلمين (واتساب)</span>
+              </button>
+
+              <button
+                onClick={() => setIsAddTeacherModalOpen(true)}
+                className="bg-teal-700 hover:bg-teal-800 text-white text-xs font-black px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+                title="إضافة معلم جديد للمدرسة وتعيين بيانات الدخول"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>إضافة معلم</span>
+              </button>
+
+              <button
                 onClick={() => setIsPromoteModalOpen(true)}
                 className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm"
                 title="ترحيل الطلاب للسنة الدراسية التالية (أولى متوسط إلى ثاني متوسط بنفس الشعبة، وهكذا)"
@@ -1038,7 +1094,7 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
 
               <button
                 onClick={() => setIsClassExcelModalOpen(true)}
-                className="bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+                className="bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-bold px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm"
               >
                 <Upload className="w-3.5 h-3.5" />
                 <span>استيراد إكسل</span>
@@ -3170,6 +3226,176 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
                 >
                   اعتماد القرار وحفظ
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 5: Add Teacher Modal (إضافة معلم جديد) */}
+      {isAddTeacherModalOpen && (
+        <div className="fixed inset-0 z-60 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-7 space-y-4 shadow-2xl animate-fadeIn">
+            <div className="flex items-center justify-between border-b pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-teal-50 text-teal-700 border border-teal-200">
+                  <Plus className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">إضافة معلم جديد للمدرسة</h3>
+                  <p className="text-xs text-slate-500">مدرسة: {currentSchool.name}</p>
+                </div>
+              </div>
+              <button onClick={() => setIsAddTeacherModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateTeacherSubmit} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">اسم المعلم الرباعي *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="مثال: أ. محمد أحمد الشهري"
+                  value={newTeacherName}
+                  onChange={(e) => setNewTeacherName(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-teal-600"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">رقم الهوية الوطنية / الإقامة (اسم المستخدم للدخول) *</label>
+                <input
+                  type="text"
+                  required
+                  maxLength={10}
+                  placeholder="10 أرقام"
+                  value={newTeacherNid}
+                  onChange={(e) => setNewTeacherNid(e.target.value.replace(/\D/g, ''))}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 font-mono font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-teal-600"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">رقم جوال المعلم</label>
+                  <input
+                    type="tel"
+                    placeholder="05xxxxxxxx"
+                    value={newTeacherMobile}
+                    onChange={(e) => setNewTeacherMobile(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 font-mono text-slate-900 focus:bg-white focus:outline-none focus:border-teal-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">كلمة المرور الافتراضية</label>
+                  <input
+                    type="text"
+                    value={newTeacherPassword}
+                    onChange={(e) => setNewTeacherPassword(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 font-mono font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-teal-600"
+                  />
+                </div>
+              </div>
+
+              <div className="p-3 bg-teal-50/80 rounded-xl border border-teal-200 text-teal-900 text-[11px] leading-relaxed">
+                💡 <strong>ملاحظة:</strong> سيتمكن المعلم فور حفظه من الدخول للبوابة برقم هويته وكلمة المرور هذه، ورصد الحصص والغياب والملاحظات السلوكية مباشرة من جواله.
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t">
+                <button
+                  type="button"
+                  onClick={() => setIsAddTeacherModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-slate-600 font-bold hover:bg-slate-100"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-bold shadow-sm"
+                >
+                  حفظ وتفعيل حساب المعلم
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 6: Invite Teachers via WhatsApp (رسالة دعوة ورابط المعلمين) */}
+      {isInviteTeacherModalOpen && (
+        <div className="fixed inset-0 z-60 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 space-y-4 shadow-2xl animate-fadeIn">
+            <div className="flex items-center justify-between border-b pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  <Share2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">رسالة دعوة ورابط دخول المعلمين</h3>
+                  <p className="text-xs text-slate-500">جاهزة للإرسال في جروب واتساب المعلمين</p>
+                </div>
+              </div>
+              <button onClick={() => setIsInviteTeacherModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div className="text-xs text-slate-600">
+                يمكنك نسخ هذه الرسالة وإرسالها فوراً لجميع المعلمين في المدرسة للبدء في استخدام المنظومة ورصد الحصص:
+              </div>
+
+              {/* Message Box */}
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 text-xs font-mono leading-relaxed text-slate-800 whitespace-pre-wrap select-all">
+{`السلام عليكم ورحمة الله وبركاته،
+الزملاء المعلمون الأفاضل في (${currentSchool.name}) 🌹
+
+تم تفعيل منظومة "حضورك" الذكية لرصد حضور وغياب الطلاب بالحصة والملاحظات السلوكية.
+
+🔗 رابط الدخول للنظام:
+${window.location.origin.includes('localhost') ? 'https://novo-school.duckdns.org:444' : window.location.origin}
+
+📌 طريقة الدخول:
+1. افتح الرابط واضغط على "تسجيل الدخول".
+2. اسم المستخدم: رقم هويتك الوطنية.
+3. كلمة المرور الافتراضية: 123456 (أو آخر 4 أرقام من هويتك).
+
+نتمنى لكم يوماً دراسياً موفقاً ومثمراً ✨`}
+              </div>
+
+              {inviteCopiedToast && (
+                <div className="bg-emerald-600 text-white p-2.5 rounded-xl text-center text-xs font-bold animate-fadeIn">
+                  ✓ تم نسخ رسالة الدعوة والرابط إلى الحافظة بنجاح!
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const text = `السلام عليكم ورحمة الله وبركاته،\nالزملاء المعلمون الأفاضل في (${currentSchool.name}) 🌹\n\nتم تفعيل منظومة "حضورك" الذكية لرصد حضور وغياب الطلاب بالحصة والملاحظات السلوكية.\n\n🔗 رابط الدخول للنظام:\n${window.location.origin.includes('localhost') ? 'https://novo-school.duckdns.org:444' : window.location.origin}\n\n📌 طريقة الدخول:\n1. افتح الرابط واضغط على "تسجيل الدخول".\n2. اسم المستخدم: رقم هويتك الوطنية.\n3. كلمة المرور الافتراضية: 123456 (أو آخر 4 أرقام من هويتك).\n\nنتمنى لكم يوماً دراسياً موفقاً ومثمراً ✨`;
+                    navigator.clipboard.writeText(text);
+                    setInviteCopiedToast(true);
+                    setTimeout(() => setInviteCopiedToast(false), 2500);
+                  }}
+                  className="py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <FileText className="w-4 h-4" />
+                  <span>نسخ نص الرسالة</span>
+                </button>
+
+                <a
+                  href={`https://api.whatsapp.com/send?text=${encodeURIComponent(`السلام عليكم ورحمة الله وبركاته،\nالزملاء المعلمون الأفاضل في (${currentSchool.name}) 🌹\n\nتم تفعيل منظومة "حضورك" الذكية لرصد حضور وغياب الطلاب بالحصة والملاحظات السلوكية.\n\n🔗 رابط الدخول للنظام:\n${window.location.origin.includes('localhost') ? 'https://novo-school.duckdns.org:444' : window.location.origin}\n\n📌 طريقة الدخول:\n1. افتح الرابط واضغط على "تسجيل الدخول".\n2. اسم المستخدم: رقم هويتك الوطنية.\n3. كلمة المرور الافتراضية: 123456 (أو آخر 4 أرقام من هويتك).\n\nنتمنى لكم يوماً دراسياً موفقاً ومثمراً ✨`)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors text-center"
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  <span>إرسال عبر واتساب</span>
+                </a>
               </div>
             </div>
           </div>
