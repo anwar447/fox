@@ -82,7 +82,15 @@ export type PermissionReason =
   | 'administration' 
   | 'library' 
   | 'prayer' 
+  | 'medical_appointment'
+  | 'family_emergency'
+  | 'parent_request'
+  | 'official_activity'
+  | 'early_dismissal'
   | 'other';
+
+export type PermissionType = 'classroom_pass' | 'school_exit';
+export type ExitGateStatus = 'pending_guard_approval' | 'confirmed_exited' | 'cancelled';
 
 export type BehaviorType = 'positive' | 'negative' | 'compensatory';
 
@@ -122,6 +130,14 @@ export interface StudentPermission {
   teacherId: string;
   teacherName: string;
   reason: PermissionReason;
+  permissionType?: PermissionType; // 'classroom_pass' | 'school_exit'
+  exitGateStatus?: ExitGateStatus; // 'pending_guard_approval' | 'confirmed_exited' | 'cancelled'
+  pickupPerson?: string; // e.g. ولي الأمر / السائق / بمفرده
+  pickupRelation?: string;
+  pickupPhone?: string;
+  approvedByRole?: string; // 'admin' | 'principal' | 'vice_principal' | 'student_advisor' | 'teacher'
+  guardConfirmedAt?: string;
+  guardName?: string;
   notes?: string;
   createdAt: string;
 }

@@ -15,13 +15,15 @@ import { BroadcastAlertBanner } from './BroadcastAlertBanner';
 import { EmergencyBroadcastModal } from './EmergencyBroadcastModal';
 import { StudentPromotionModal } from './StudentPromotionModal';
 import { DataBackupAndStorageModal } from './DataBackupAndStorageModal';
+import { AdminStudentExitModal } from './AdminStudentExitModal';
 import { 
   Building2, Users, FileText, ScanLine, 
   MapPin, Share2, Upload, Archive, AlertTriangle, 
   CheckCircle, XCircle, Clock, Check, X, Search, 
   Sparkles, ShieldCheck, UserPlus, FileSpreadsheet, Plus, GraduationCap,
   Activity, ShieldAlert, LogOut, Trash2, RefreshCw, User as UserIcon,
-  Crown, CreditCard, Megaphone, HardDrive, Database, ArrowLeftRight
+  Crown, CreditCard, Megaphone, HardDrive, Database, ArrowLeftRight,
+  FileCheck
 } from 'lucide-react';
 
 interface EmployeeDashboardProps {
@@ -73,6 +75,8 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
   const [isBroadcastOpen, setIsBroadcastOpen] = useState(false);
   const [isPromotionOpen, setIsPromotionOpen] = useState(false);
   const [isBackupOpen, setIsBackupOpen] = useState(false);
+  const [isExitModalOpen, setIsExitModalOpen] = useState(false);
+  const [exitModalStudent, setExitModalStudent] = useState<User | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
   const allSchoolUsers = getUsers().filter((u) => u.schoolCode === currentSchool.code);
@@ -332,6 +336,19 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
             >
               <GraduationCap className="w-4 h-4 text-indigo-600" />
               <span>ترحيل الطلاب للأعلى 🎓</span>
+            </button>
+
+            {/* Admin Student Exit Pass Modal Button */}
+            <button
+              onClick={() => {
+                setExitModalStudent(null);
+                setIsExitModalOpen(true);
+              }}
+              className="py-2.5 px-3.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-black text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+              title="منح إذن وتصريح خروج رسمي لطالب من المدرسة ليظهر عند الحارس"
+            >
+              <LogOut className="w-4 h-4 text-amber-600" />
+              <span>منح إذن خروج طالب 🚪</span>
             </button>
 
             {/* Backup and Data Storage Button */}
@@ -810,6 +827,18 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
                           )}
                           {studentUser && (
                             <button
+                              onClick={() => {
+                                setExitModalStudent(studentUser);
+                                setIsExitModalOpen(true);
+                              }}
+                              className="p-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 cursor-pointer"
+                              title="منح تصريح خروج إداري رسمي"
+                            >
+                              <LogOut className="w-3.5 h-3.5 text-amber-700" />
+                            </button>
+                          )}
+                          {studentUser && (
+                            <button
                               onClick={() => setActionModalStudent(studentUser)}
                               className="p-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 cursor-pointer"
                               title="إجراء إداري"
@@ -870,6 +899,22 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
         onClose={() => setIsBackupOpen(false)}
         school={currentSchool}
         currentUser={currentUser}
+      />
+
+      {/* Admin Student Exit Permission Modal */}
+      <AdminStudentExitModal
+        isOpen={isExitModalOpen}
+        onClose={() => {
+          setIsExitModalOpen(false);
+          setExitModalStudent(null);
+        }}
+        school={currentSchool}
+        currentUser={currentUser}
+        initialStudent={exitModalStudent || undefined}
+        onIssued={() => {
+          setRefreshKey((k) => k + 1);
+          setAttendances(getAttendances().filter((a) => a.schoolCode === currentSchool.code && a.date === today));
+        }}
       />
 
       {/* Clean Production Reset Confirmation Modal */}

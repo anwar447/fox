@@ -46,6 +46,11 @@ export const StudentPermissionModal: React.FC<StudentPermissionModalProps> = ({
     administration: { title: 'مراجعة الإدارة / الوكيل', icon: '🏢' },
     library: { title: 'المكتبة / مصادر التعلم', icon: '📚' },
     prayer: { title: 'المصلى / الوضوء', icon: '🕌' },
+    medical_appointment: { title: 'موعد طبي / مستشفى', icon: '🏥' },
+    family_emergency: { title: 'ظرف عائلي طارئ', icon: '👨‍👩‍👧' },
+    parent_request: { title: 'استدعاء ولي الأمر', icon: '📞' },
+    official_activity: { title: 'نشاط أو تمثيل رسمي', icon: '🏆' },
+    early_dismissal: { title: 'انصراف مبكر معتمد', icon: '🚪' },
     other: { title: 'استئذان آخر', icon: '📝' },
   };
 

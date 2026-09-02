@@ -207,6 +207,76 @@ export function getStudentPermissionsToday(studentId: string, date?: string): St
   return getPermissions().filter((p) => p.studentId === studentId && p.date === targetDate);
 }
 
+export function getPendingExitPermissionsForSchool(schoolCode: string, date?: string): StudentPermission[] {
+  const targetDate = date || getTodayDateString();
+  return getPermissions().filter(
+    (p) =>
+      p.schoolCode === schoolCode &&
+      p.date === targetDate &&
+      p.permissionType === 'school_exit' &&
+      (!p.exitGateStatus || p.exitGateStatus === 'pending_guard_approval')
+  );
+}
+
+export function getExitPermissionsTodayForSchool(schoolCode: string, date?: string): StudentPermission[] {
+  const targetDate = date || getTodayDateString();
+  return getPermissions().filter(
+    (p) => p.schoolCode === schoolCode && p.date === targetDate && p.permissionType === 'school_exit'
+  );
+}
+
+export function confirmGuardExitPermission(
+  permissionId: string,
+  guardName: string = 'حارس البوابة'
+): { success: boolean; permission?: StudentPermission } {
+  const list = getPermissions();
+  const idx = list.findIndex((p) => p.id === permissionId);
+  if (idx < 0) return { success: false };
+
+  const now = new Date();
+  const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  
+  const perm = list[idx];
+  perm.exitGateStatus = 'confirmed_exited';
+  perm.guardConfirmedAt = timeStr;
+  perm.guardName = guardName;
+  savePermissions(list);
+
+  // Synchronize with Attendance records
+  const attendances = getAttendances();
+  const attIdx = attendances.findIndex((a) => a.studentId === perm.studentId && a.date === perm.date);
+  if (attIdx >= 0) {
+    attendances[attIdx].exitTime = timeStr;
+    attendances[attIdx].exitReason = 'early_permission';
+    attendances[attIdx].exitConfirmedBy = `${guardName} (بتصريح إداري معتمد)`;
+    if (perm.pickupPerson) {
+      attendances[attIdx].pickupPersonName = perm.pickupPerson;
+    }
+  } else {
+    attendances.push({
+      id: `att-${perm.studentId}-${perm.date}`,
+      studentId: perm.studentId,
+      studentName: perm.studentName,
+      nationalId: perm.nationalId,
+      schoolCode: perm.schoolCode,
+      className: perm.className,
+      sectionName: perm.sectionName,
+      date: perm.date,
+      selfCheckTime: null,
+      teacherMark: null,
+      finalStatus: 'present',
+      isTruant: false,
+      exitTime: timeStr,
+      exitReason: 'early_permission',
+      exitConfirmedBy: `${guardName} (بتصريح إداري معتمد)`,
+      pickupPersonName: perm.pickupPerson,
+    });
+  }
+  saveAttendances(attendances);
+
+  return { success: true, permission: perm };
+}
+
 // 3.8 Student Behavior Logs (سجل السلوك والمواظبة والدرجات التعويضية)
 export function getBehaviorLogs(): StudentBehaviorLog[] {
   try {

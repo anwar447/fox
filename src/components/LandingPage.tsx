@@ -16,7 +16,6 @@ interface LandingPageProps {
   onOpenStaffRegistration?: () => void;
   onOpenPaymentModal: (plan: 'semester' | 'yearly' | 'free_forever') => void;
   onOpenDonationModal?: () => void;
-  onOpenDemoSwitcher?: () => void;
 }
 
 export const LandingPage: React.FC<LandingPageProps> = ({
@@ -27,7 +26,6 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   onOpenStaffRegistration,
   onOpenPaymentModal,
   onOpenDonationModal,
-  onOpenDemoSwitcher,
 }) => {
   return (
     <div className="space-y-12 py-8 px-4 max-w-6xl mx-auto text-slate-800" dir="rtl">
@@ -227,15 +225,6 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             >
               <Heart className="w-4 h-4 fill-white" />
               <span>دعم التطبيق (كوب قهوة / داعم ذهبي) ☕✨</span>
-            </button>
-          )}
-
-          {onOpenDemoSwitcher && (
-            <button
-              onClick={onOpenDemoSwitcher}
-              className="px-6 py-3 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs sm:text-sm flex items-center gap-2 cursor-pointer shadow-xs transition-all"
-            >
-              <span>تجربة أدوار المنظومة (Demo Switcher) 🎭</span>
             </button>
           )}
         </div>

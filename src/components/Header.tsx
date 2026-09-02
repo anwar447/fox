@@ -2,7 +2,7 @@ import React from 'react';
 import { User, School } from '../types';
 import { 
   Building2, LogOut, UserCircle, Shield, 
-  Sparkles, Heart, Bell, Smartphone, QrCode, ArrowLeftRight, ChevronDown
+  Sparkles, Heart, Bell, Smartphone, QrCode, ChevronDown
 } from 'lucide-react';
 import { LiveClockHeader } from './LiveClockHeader';
 
@@ -14,7 +14,6 @@ interface HeaderProps {
   onLogout: () => void;
   onOpenLogin: () => void;
   onOpenDonationModal: () => void;
-  onOpenDemoSwitcher?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -25,7 +24,6 @@ export const Header: React.FC<HeaderProps> = ({
   onLogout,
   onOpenLogin,
   onOpenDonationModal,
-  onOpenDemoSwitcher,
 }) => {
   const getRoleBadge = (role: string) => {
     switch (role) {
@@ -108,17 +106,6 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Right side controls */}
         <div className="flex items-center gap-2.5">
-          {onOpenDemoSwitcher && (
-            <button
-              onClick={onOpenDemoSwitcher}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-colors cursor-pointer shadow-xs"
-              title="التبديل بين الأدوار والمدارس"
-            >
-              <ArrowLeftRight className="w-3.5 h-3.5 text-emerald-600" />
-              <span>تجربة الأدوار 🎭</span>
-            </button>
-          )}
-
           <button
             onClick={onOpenDonationModal}
             className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold transition-colors cursor-pointer"

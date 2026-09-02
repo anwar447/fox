@@ -1,11 +1,15 @@
 import React, { useState } from 'react';
-import { School, User, Attendance } from '../types';
-import { getAttendances, saveAttendances, getUsers } from '../utils/storage';
+import { School, User, Attendance, StudentPermission } from '../types';
+import { 
+  getAttendances, saveAttendances, getUsers, 
+  getPendingExitPermissionsForSchool, confirmGuardExitPermission 
+} from '../utils/storage';
 import { soundManager } from '../utils/audio';
 import { getTodayDateString } from '../utils/academic';
 import { 
   ScanLine, UserCheck, X, Check, LogOut, 
-  LogIn, ShieldCheck, AlertCircle, Clock, User as UserIcon 
+  LogIn, ShieldCheck, AlertCircle, Clock, User as UserIcon,
+  CheckCircle, FileCheck, Sparkles, Phone
 } from 'lucide-react';
 
 interface GatekeeperScannerModalProps {
@@ -14,7 +18,7 @@ interface GatekeeperScannerModalProps {
   school: School;
 }
 
-type ScanMode = 'entry' | 'exit';
+type ScanMode = 'exit' | 'entry';
 
 export const GatekeeperScannerModal: React.FC<GatekeeperScannerModalProps> = ({
   isOpen,
@@ -37,12 +41,39 @@ export const GatekeeperScannerModal: React.FC<GatekeeperScannerModalProps> = ({
     time: string;
     reason: string;
     pickupPerson?: string;
+    approvedBy?: string;
   } | null>(null);
 
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [refreshKey, setRefreshKey] = useState(0);
 
   if (!isOpen) return null;
+
+  const today = getTodayDateString();
+  const pendingExitPasses = getPendingExitPermissionsForSchool(school.code, today);
+
+  const handleConfirmAdminPassDirectly = (pass: StudentPermission) => {
+    const res = confirmGuardExitPermission(pass.id, 'حارس البوابة');
+    if (res.success) {
+      soundManager.playSuccess();
+      const allUsers = getUsers();
+      const student = allUsers.find((u) => u.id === pass.studentId);
+      
+      if (student) {
+        setLastScannedExit({
+          student,
+          time: pass.guardConfirmedAt || new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit', hour12: false }),
+          reason: `تصريح خروج إداري معتمد (${pass.reason})`,
+          pickupPerson: pass.pickupPerson,
+          approvedBy: pass.teacherName,
+        });
+      }
+      setLastScannedEntry(null);
+      setSuccessMsg(`🚪✅ تم تأكيد خروج الطالب (${pass.studentName}) بموجب تصريح الإدارة المعتمد.`);
+      setRefreshKey((prev) => prev + 1);
+    }
+  };
 
   const handleProcessScan = (nid: string) => {
     setErrorMsg('');
@@ -61,11 +92,13 @@ export const GatekeeperScannerModal: React.FC<GatekeeperScannerModalProps> = ({
       return;
     }
 
-    const today = getTodayDateString();
     const now = new Date();
     const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     const attendances = getAttendances();
     const existingIdx = attendances.findIndex((a) => a.studentId === student.id && a.date === today);
+
+    // Check if this student has a pending administrative exit pass!
+    const matchingPendingPass = pendingExitPasses.find((p) => p.studentId === student.id);
 
     if (mode === 'entry') {
       // 1. ENTRY (دخول صباحي)
@@ -103,53 +136,69 @@ export const GatekeeperScannerModal: React.FC<GatekeeperScannerModalProps> = ({
       setSuccessMsg(`✅ تم تسجيل حضور الطالب: ${student.name}`);
     } else {
       // 2. EXIT (تأكيد خروج وانصراف من المدرسة)
-      const reasonLabel = 
-        exitReason === 'dismissal' ? 'انصراف نهاية الدوام' :
-        exitReason === 'early_permission' ? 'خروج مبكر بإذن ولي الأمر' :
-        exitReason === 'medical_emergency' ? 'خروج للعيادة / طارئ صحي' : 'استئذان رسمي';
-
-      if (existingIdx >= 0) {
-        attendances[existingIdx].exitTime = currentTimeStr;
-        attendances[existingIdx].exitReason = exitReason;
-        attendances[existingIdx].exitConfirmedBy = 'مراقب البوابة / الحارس';
-        if (pickupPersonName.trim()) {
-          attendances[existingIdx].pickupPersonName = pickupPersonName.trim();
-        }
-      } else {
-        attendances.push({
-          id: `att-${student.id}-${today}`,
-          studentId: student.id,
-          studentName: student.name,
-          nationalId: student.nationalId,
-          schoolCode: school.code,
-          className: student.className || 'عام',
-          sectionName: student.sectionName || '1',
-          date: today,
-          selfCheckTime: null,
-          teacherMark: null,
-          finalStatus: 'present',
-          isTruant: false,
-          parentMobile: student.parentMobile,
-          exitTime: currentTimeStr,
-          exitReason: exitReason,
-          exitConfirmedBy: 'مراقب البوابة / الحارس',
-          pickupPersonName: pickupPersonName.trim() || undefined,
+      if (matchingPendingPass) {
+        // Auto confirm the administrative pass
+        confirmGuardExitPermission(matchingPendingPass.id, 'حارس البوابة');
+        soundManager.playSuccess();
+        setLastScannedExit({
+          student,
+          time: currentTimeStr,
+          reason: `تصريح خروج إداري معتمد (${matchingPendingPass.reason})`,
+          pickupPerson: matchingPendingPass.pickupPerson,
+          approvedBy: matchingPendingPass.teacherName,
         });
-      }
+        setLastScannedEntry(null);
+        setSuccessMsg(`🚪✨ تم تأكيد خروج الطالب (${student.name}) بموجب تصريح الإدارة المعتمد من: ${matchingPendingPass.teacherName}`);
+      } else {
+        const reasonLabel = 
+          exitReason === 'dismissal' ? 'انصراف نهاية الدوام' :
+          exitReason === 'early_permission' ? 'خروج مبكر بإذن ولي الأمر' :
+          exitReason === 'medical_emergency' ? 'خروج للعيادة / طارئ صحي' : 'استئذان رسمي';
 
-      saveAttendances(attendances);
-      soundManager.playSuccess();
-      setLastScannedExit({
-        student,
-        time: currentTimeStr,
-        reason: reasonLabel,
-        pickupPerson: pickupPersonName.trim() || undefined,
-      });
-      setLastScannedEntry(null);
-      setSuccessMsg(`🚪 تم تأكيد خروج وانصراف الطالب: ${student.name} في تمام الساعة ${currentTimeStr}`);
+        if (existingIdx >= 0) {
+          attendances[existingIdx].exitTime = currentTimeStr;
+          attendances[existingIdx].exitReason = exitReason;
+          attendances[existingIdx].exitConfirmedBy = 'مراقب البوابة / الحارس';
+          if (pickupPersonName.trim()) {
+            attendances[existingIdx].pickupPersonName = pickupPersonName.trim();
+          }
+        } else {
+          attendances.push({
+            id: `att-${student.id}-${today}`,
+            studentId: student.id,
+            studentName: student.name,
+            nationalId: student.nationalId,
+            schoolCode: school.code,
+            className: student.className || 'عام',
+            sectionName: student.sectionName || '1',
+            date: today,
+            selfCheckTime: null,
+            teacherMark: null,
+            finalStatus: 'present',
+            isTruant: false,
+            parentMobile: student.parentMobile,
+            exitTime: currentTimeStr,
+            exitReason: exitReason,
+            exitConfirmedBy: 'مراقب البوابة / الحارس',
+            pickupPersonName: pickupPersonName.trim() || undefined,
+          });
+        }
+
+        saveAttendances(attendances);
+        soundManager.playSuccess();
+        setLastScannedExit({
+          student,
+          time: currentTimeStr,
+          reason: reasonLabel,
+          pickupPerson: pickupPersonName.trim() || undefined,
+        });
+        setLastScannedEntry(null);
+        setSuccessMsg(`🚪 تم تأكيد خروج وانصراف الطالب: ${student.name} في تمام الساعة ${currentTimeStr}`);
+      }
     }
 
     setNationalIdInput('');
+    setRefreshKey((prev) => prev + 1);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -158,7 +207,7 @@ export const GatekeeperScannerModal: React.FC<GatekeeperScannerModalProps> = ({
   };
 
   // List of students checked out today
-  const todayAttendances = getAttendances().filter((a) => a.schoolCode === school.code && a.date === getTodayDateString());
+  const todayAttendances = getAttendances().filter((a) => a.schoolCode === school.code && a.date === today);
   const checkedOutList = todayAttendances.filter((a) => !!a.exitTime);
 
   return (
@@ -167,7 +216,7 @@ export const GatekeeperScannerModal: React.FC<GatekeeperScannerModalProps> = ({
       className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-fadeIn" 
       dir="rtl"
     >
-      <div className="bg-white border border-slate-200 rounded-3xl max-w-lg w-full p-6 text-right space-y-5 shadow-2xl text-slate-800 my-auto">
+      <div className="bg-white border border-slate-200 rounded-3xl max-w-2xl w-full p-6 text-right space-y-5 shadow-2xl text-slate-800 my-auto">
         
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-200 pb-3.5">
@@ -180,14 +229,75 @@ export const GatekeeperScannerModal: React.FC<GatekeeperScannerModalProps> = ({
               {mode === 'exit' ? <LogOut className="w-5 h-5" /> : <LogIn className="w-5 h-5" />}
             </div>
             <div>
-              <h3 className="text-base font-black text-slate-900">ماسح البوابة الإلكتروني ومراقبة الانصراف</h3>
-              <p className="text-xs text-slate-500 font-medium">مسح الباركود أو إدخال الهوية لتسجيل الدخول أو تأكيد الخروج</p>
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-black text-slate-900">ماسح البوابة الإلكتروني ومراقبة الانصراف</h3>
+                {pendingExitPasses.length > 0 && (
+                  <span className="px-2.5 py-0.5 rounded-full bg-rose-500 text-white text-[11px] font-bold animate-pulse">
+                    {pendingExitPasses.length} إذن خروج ينتظر التأكيد 🔔
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 font-medium">مسح الباركود، التحقق من أذونات الإدارة، وتأكيد خروج الطلاب</p>
             </div>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer">
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {/* Pending Administrative Exit Permissions Alert Section */}
+        {pendingExitPasses.length > 0 && (
+          <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 rounded-2xl p-4 space-y-3 animate-fadeIn">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FileCheck className="w-5 h-5 text-amber-700" />
+                <strong className="text-sm font-black text-amber-950">
+                  تصاريح خروج معتمدة من الإدارة بانتظار تأكيد الحارس ({pendingExitPasses.length}):
+                </strong>
+              </div>
+              <span className="text-[11px] text-amber-800 font-bold bg-amber-200/80 px-2 py-0.5 rounded-md">
+                فوري من الإدارة ⚡
+              </span>
+            </div>
+
+            <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+              {pendingExitPasses.map((pass) => (
+                <div 
+                  key={pass.id}
+                  className="bg-white border border-amber-200 rounded-xl p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs"
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <strong className="text-sm font-black text-slate-900">{pass.studentName}</strong>
+                      <span className="text-xs text-slate-500 font-medium">({pass.className} - فصل {pass.sectionName})</span>
+                    </div>
+                    <div className="text-[11px] text-slate-600 flex flex-wrap gap-x-3 gap-y-0.5">
+                      <span><strong>السبب:</strong> {pass.reason}</span>
+                      {pass.pickupPerson && <span><strong>المستلم:</strong> {pass.pickupPerson}</span>}
+                      {pass.pickupPhone && <span><strong>الهاتف:</strong> {pass.pickupPhone}</span>}
+                      <span><strong>المعتمد:</strong> {pass.teacherName}</span>
+                      <span><strong>الوقت:</strong> {pass.timeOut}</span>
+                    </div>
+                    {pass.notes && (
+                      <p className="text-[10px] text-amber-900 bg-amber-50 px-2 py-0.5 rounded font-medium">
+                        ملاحظة: {pass.notes}
+                      </p>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleConfirmAdminPassDirectly(pass)}
+                    className="w-full sm:w-auto px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center justify-center gap-1.5 shrink-0 shadow-md shadow-emerald-600/20 cursor-pointer transition-all"
+                  >
+                    <CheckCircle className="w-4 h-4" />
+                    <span>تأكيد خروج وتسليم الطالب ✓</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Mode Selector Tabs (دخول vs خروج) */}
         <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1.5 rounded-2xl">
@@ -230,7 +340,7 @@ export const GatekeeperScannerModal: React.FC<GatekeeperScannerModalProps> = ({
         {mode === 'exit' && (
           <div className="bg-amber-50/70 border border-amber-200/80 rounded-2xl p-3.5 space-y-2.5 text-xs">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="font-bold text-amber-950">سبب الخروج من المدرسة:</span>
+              <span className="font-bold text-amber-950">نوع الانصراف الاعتيادي:</span>
               <div className="flex flex-wrap gap-1.5">
                 <button
                   type="button"
@@ -348,8 +458,14 @@ export const GatekeeperScannerModal: React.FC<GatekeeperScannerModalProps> = ({
                 <span className="text-slate-400">السبب: </span>
                 <strong className="text-slate-800 font-bold">{lastScannedExit.reason}</strong>
               </div>
+              {lastScannedExit.approvedBy && (
+                <div>
+                  <span className="text-slate-400">المعتمد من الإدارة: </span>
+                  <strong className="text-slate-900 font-bold">{lastScannedExit.approvedBy}</strong>
+                </div>
+              )}
               {lastScannedExit.pickupPerson && (
-                <div className="col-span-2 text-slate-700">
+                <div className={lastScannedExit.approvedBy ? '' : 'col-span-2'}>
                   <span className="text-slate-400">المستلم: </span>
                   <strong className="text-slate-900 font-bold">{lastScannedExit.pickupPerson}</strong>
                 </div>
@@ -393,7 +509,7 @@ export const GatekeeperScannerModal: React.FC<GatekeeperScannerModalProps> = ({
           <div className="flex items-center justify-between text-xs font-bold text-slate-700">
             <span className="flex items-center gap-1.5">
               <Clock className="w-3.5 h-3.5 text-amber-600" />
-              <span>الطلاب الذين تم تأكيد خروجهم اليوم ({checkedOutList.length}):</span>
+              <span>سجل الطلاب الذين غادروا المدرسة اليوم ({checkedOutList.length}):</span>
             </span>
           </div>
 
@@ -440,3 +556,4 @@ export const GatekeeperScannerModal: React.FC<GatekeeperScannerModalProps> = ({
     </div>
   );
 };
+

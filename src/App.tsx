@@ -21,7 +21,6 @@ import { StudentPortal } from './components/StudentPortal';
 
 // Modals
 import { LoginModal } from './components/LoginModal';
-import { DemoSwitcher } from './components/DemoSwitcher';
 import { DonationModal } from './components/DonationModal';
 import { SubscriptionExpiredModal } from './components/SubscriptionExpiredModal';
 import { PaymentInfoModal } from './components/PaymentInfoModal';
@@ -52,7 +51,6 @@ export function App() {
 
   // Modals state
   const [isLoginOpen, setIsLoginOpen] = useState(false);
-  const [isDemoSwitcherOpen, setIsDemoSwitcherOpen] = useState(false);
   const [isDonationOpen, setIsDonationOpen] = useState(false);
   const [isSubscriptionExpiredOpen, setIsSubscriptionExpiredOpen] = useState(false);
   
@@ -191,7 +189,6 @@ export function App() {
         onLogout={handleLogout}
         onOpenLogin={() => setIsLoginOpen(true)}
         onOpenDonationModal={() => setIsDonationOpen(true)}
-        onOpenDemoSwitcher={() => setIsDemoSwitcherOpen(true)}
       />
 
       {/* Official Academic Calendar Banner */}
@@ -214,7 +211,6 @@ export function App() {
             }}
             onOpenPaymentModal={openPaymentWithPlan}
             onOpenDonationModal={() => setIsDonationOpen(true)}
-            onOpenDemoSwitcher={() => setIsDemoSwitcherOpen(true)}
           />
         ) : currentUser.role === 'superadmin' ? (
           <SuperAdminPortal
@@ -306,10 +302,6 @@ export function App() {
             <button onClick={() => setIsDonationOpen(true)} className="hover:text-rose-600 font-semibold cursor-pointer">
               دعم المنصة ❤️
             </button>
-            <span>•</span>
-            <button onClick={() => setIsDemoSwitcherOpen(true)} className="hover:text-emerald-700 font-semibold cursor-pointer">
-              تجربة الأدوار 🎭
-            </button>
           </div>
         </div>
       </footer>
@@ -332,24 +324,9 @@ export function App() {
           setSelfRegSchoolCode(currentSchool?.code || schools[0]?.code || '');
           setIsSelfRegOpen(true);
         }}
-        onOpenDemoSwitcher={() => {
-          setIsLoginOpen(false);
-          setIsDemoSwitcherOpen(true);
-        }}
       />
 
-      {/* 2. Demo Switcher Modal */}
-      <DemoSwitcher
-        isOpen={isDemoSwitcherOpen}
-        onClose={() => setIsDemoSwitcherOpen(false)}
-        users={users}
-        schools={schools}
-        currentUser={currentUser}
-        onSelectUser={handleSwitchUser}
-        onSelectSchool={handleSwitchSchool}
-      />
-
-      {/* 3. Donation Modal */}
+      {/* 2. Donation Modal */}
       <DonationModal
         isOpen={isDonationOpen}
         onClose={() => setIsDonationOpen(false)}

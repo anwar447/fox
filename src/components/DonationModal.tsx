@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   Heart, Copy, Check, X, Coffee, Sparkles, 
-  Award, Crown, ShieldCheck, Gift, Star 
+  Award, Crown, ShieldCheck, Gift, Star, QrCode, Share2
 } from 'lucide-react';
 
 interface DonationModalProps {
@@ -15,12 +15,17 @@ type SupportTier = 'coffee' | 'silver' | 'gold' | 'diamond' | 'custom';
 export const DonationModal: React.FC<DonationModalProps> = ({ isOpen, onClose }) => {
   const [selectedTier, setSelectedTier] = useState<SupportTier>('coffee');
   const [copiedIban, setCopiedIban] = useState(false);
+  const [copiedAcc, setCopiedAcc] = useState(false);
+  const [copiedAll, setCopiedAll] = useState(false);
+  const [showQrCode, setShowQrCode] = useState(false);
   const [donorName, setDonorName] = useState('');
   const [isThanked, setIsThanked] = useState(false);
 
-  const iban = 'SA0380000000608010167519';
+  const beneficiary = 'انور علي محمد الالمعي';
   const bankName = 'مصرف الراجحي (Al Rajhi Bank)';
-  const beneficiary = 'فريق تطوير وبرمجة منظومة حضورك الذكية';
+  const accountNumber = '282000010006080477155';
+  const iban = 'SA9280000282608010477155';
+  const formattedIban = 'SA92 8000 0282 6080 1047 7155';
 
   if (!isOpen) return null;
 
@@ -67,6 +72,19 @@ export const DonationModal: React.FC<DonationModalProps> = ({ isOpen, onClose })
     navigator.clipboard.writeText(iban);
     setCopiedIban(true);
     setTimeout(() => setCopiedIban(false), 2500);
+  };
+
+  const handleCopyAccount = () => {
+    navigator.clipboard.writeText(accountNumber);
+    setCopiedAcc(true);
+    setTimeout(() => setCopiedAcc(false), 2500);
+  };
+
+  const handleCopyAll = () => {
+    const fullText = `المستفيد: ${beneficiary}\nالبنك: ${bankName}\nرقم الحساب: ${accountNumber}\nالآيبان: ${formattedIban}`;
+    navigator.clipboard.writeText(fullText);
+    setCopiedAll(true);
+    setTimeout(() => setCopiedAll(false), 2500);
   };
 
   const handleSendThanks = (e: React.FormEvent) => {
@@ -147,36 +165,115 @@ export const DonationModal: React.FC<DonationModalProps> = ({ isOpen, onClose })
         </div>
 
         {/* Bank Card Info */}
-        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-2.5 text-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-slate-500 font-medium">البنك:</span>
-            <strong className="text-slate-900 font-bold">{bankName}</strong>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-slate-500 font-medium">المستفيد:</span>
-            <strong className="text-slate-900 font-bold">{beneficiary}</strong>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-slate-500 font-medium">قيمة الدعم المختار ({activeTierObj.title}):</span>
-            <strong className="text-emerald-700 font-black text-sm">{activeTierObj.price}</strong>
+        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3 text-xs">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-200/80">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
+                🏦
+              </div>
+              <div>
+                <strong className="text-slate-900 font-bold block text-sm">{bankName}</strong>
+                <span className="text-[11px] text-slate-500">حساب جاري مخصص للمنظومة</span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowQrCode(!showQrCode)}
+              className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                showQrCode 
+                  ? 'bg-blue-600 text-white border-blue-600 shadow-sm' 
+                  : 'bg-white text-blue-700 border-blue-200 hover:bg-blue-50'
+              }`}
+            >
+              <QrCode className="w-3.5 h-3.5" />
+              <span>{showQrCode ? 'إخفاء الرمز' : 'عرض QR الدفع'}</span>
+            </button>
           </div>
 
-          <div className="pt-2 border-t border-slate-200 space-y-1">
-            <span className="text-slate-600 font-medium block">رقم الآيبان البنكي (IBAN):</span>
-            <div className="flex items-center gap-2">
-              <input 
-                type="text" 
-                readOnly 
-                value={iban} 
-                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 font-mono text-xs text-emerald-800 font-bold text-left select-all" 
-              />
+          {/* QR Code preview block */}
+          {showQrCode && (
+            <div className="bg-white border-2 border-blue-100 rounded-2xl p-4 text-center space-y-2 animate-fadeIn">
+              <span className="text-xs font-bold text-slate-700 block">رمز الاستجابة السريع (مصرف الراجحي):</span>
+              <div className="w-44 h-44 mx-auto bg-white p-2 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-center">
+                <img 
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(`iban=${iban}&name=${encodeURIComponent(beneficiary)}&acc=${accountNumber}`)}`}
+                  alt="Al Rajhi QR Code"
+                  className="w-full h-full object-contain rounded-xl"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+              <p className="text-[11px] text-slate-500 font-medium">امسح الرمز من تطبيق الراجحي للتحويل المباشر السريع</p>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between py-1">
+              <span className="text-slate-500 font-medium">المستفيد:</span>
+              <strong className="text-slate-900 font-black text-sm">{beneficiary}</strong>
+            </div>
+            <div className="flex items-center justify-between py-1 border-t border-slate-200/80">
+              <span className="text-slate-500 font-medium">مبلغ الدعم المقترح ({activeTierObj.title}):</span>
+              <strong className="text-emerald-700 font-black text-sm">{activeTierObj.price}</strong>
+            </div>
+
+            {/* Account Number */}
+            <div className="pt-2 border-t border-slate-200/80 space-y-1">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-600 font-medium">رقم الحساب:</span>
+                <span className="text-[10px] text-slate-400 font-mono">حساب الراجحي</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <input 
+                  type="text" 
+                  readOnly 
+                  value={accountNumber} 
+                  className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 font-mono text-xs text-slate-900 font-bold select-all" 
+                />
+                <button
+                  type="button"
+                  onClick={handleCopyAccount}
+                  className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs shrink-0 flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                >
+                  {copiedAcc ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedAcc ? 'تم النسخ' : 'نسخ الحساب'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* IBAN */}
+            <div className="pt-2 border-t border-slate-200/80 space-y-1">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-600 font-medium">رقم الآيبان البنكي (IBAN):</span>
+                <span className="text-[10px] text-emerald-700 font-bold">لجميع البنوك</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <input 
+                  type="text" 
+                  readOnly 
+                  value={formattedIban} 
+                  className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 font-mono text-xs text-emerald-800 font-bold select-all" 
+                />
+                <button
+                  type="button"
+                  onClick={handleCopyIban}
+                  className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shrink-0 flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                >
+                  {copiedIban ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedIban ? 'تم النسخ' : 'نسخ الآيبان'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Share all details button */}
+            <div className="pt-2">
               <button
                 type="button"
-                onClick={handleCopyIban}
-                className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shrink-0 flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                onClick={handleCopyAll}
+                className="w-full py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer border border-slate-200"
               >
-                {copiedIban ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copiedIban ? 'تم النسخ' : 'نسخ الآيبان'}</span>
+                {copiedAll ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Share2 className="w-3.5 h-3.5 text-slate-500" />}
+                <span>{copiedAll ? '✓ تم نسخ جميع بيانات الحساب كاملة' : 'نسخ معلومات الحساب كاملة 📋'}</span>
               </button>
             </div>
           </div>
