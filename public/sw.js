@@ -1,18 +1,12 @@
-const CACHE_NAME = 'hodork-app-v1';
-
+// Simple service worker for PWA caching
 self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(clients.claim());
 });
 
 self.addEventListener('fetch', (event) => {
-  // Let network requests pass through normally
-  event.respondWith(
-    fetch(event.request).catch(() => {
-      return caches.match(event.request);
-    })
-  );
+  // Let browser handle normal fetching
 });

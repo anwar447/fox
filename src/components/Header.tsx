@@ -1,175 +1,159 @@
 import React from 'react';
 import { User, School } from '../types';
 import { 
-  Building2, 
-  UserCircle2, 
-  LogOut, 
-  Sparkles, 
-  Bell, 
-  ShieldCheck, 
-  Layers, 
-  GraduationCap, 
-  BookOpen, 
-  Users, 
-  UserCheck
+  Building2, LogOut, UserCircle, Shield, 
+  Sparkles, Heart, Bell, Smartphone, QrCode, ArrowLeftRight, ChevronDown
 } from 'lucide-react';
+import { LiveClockHeader } from './LiveClockHeader';
 
 interface HeaderProps {
   currentUser: User | null;
-  schools: School[];
-  selectedSchoolCode: string;
-  onSelectSchool: (code: string) => void;
-  onOpenLogin: () => void;
+  currentSchool: School | null;
+  schools?: School[];
+  onSwitchSchool?: (school: School) => void;
   onLogout: () => void;
-  onOpenDemoSwitcher: () => void;
-  activeEmergencyCount: number;
-  onOpenEmergencyModal: () => void;
+  onOpenLogin: () => void;
+  onOpenDonationModal: () => void;
+  onOpenDemoSwitcher?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   currentUser,
-  schools,
-  selectedSchoolCode,
-  onSelectSchool,
-  onOpenLogin,
+  currentSchool,
+  schools = [],
+  onSwitchSchool,
   onLogout,
+  onOpenLogin,
+  onOpenDonationModal,
   onOpenDemoSwitcher,
-  activeEmergencyCount,
-  onOpenEmergencyModal,
 }) => {
-  const currentSchool = schools.find((s) => s.code === selectedSchoolCode) || schools[0];
-
   const getRoleBadge = (role: string) => {
     switch (role) {
       case 'superadmin':
-        return { label: 'سوبر أدمن (إشراف عام)', color: 'bg-purple-100 text-purple-800 border-purple-300', icon: ShieldCheck };
+        return { label: 'سوبر ادمن 👑', color: 'bg-amber-50 text-amber-800 border-amber-200' };
       case 'employee':
-        return { label: currentUser?.isAssistant ? 'مساعد إداري' : 'موظف مؤسس (مدير نظام)', color: 'bg-emerald-100 text-emerald-800 border-emerald-300', icon: Building2 };
+        return { label: 'مدير المدرسة / وكيل', color: 'bg-emerald-50 text-emerald-800 border-emerald-200' };
       case 'teacher':
-        return { label: 'معلم مادة / فصل', color: 'bg-blue-100 text-blue-800 border-blue-300', icon: BookOpen };
-      case 'student':
-        return { label: 'طالب', color: 'bg-amber-100 text-amber-800 border-amber-300', icon: GraduationCap };
+        return { label: 'معلم مادة / رائد فصل', color: 'bg-indigo-50 text-indigo-800 border-indigo-200' };
       case 'parent':
-        return { label: 'ولي أمر', color: 'bg-teal-100 text-teal-800 border-teal-300', icon: Users };
+        return { label: 'ولي أمر طالب', color: 'bg-teal-50 text-teal-800 border-teal-200' };
+      case 'student':
+        return { label: 'طالب', color: 'bg-blue-50 text-blue-800 border-blue-200' };
       default:
-        return { label: 'زائر', color: 'bg-slate-100 text-slate-800 border-slate-300', icon: UserCircle2 };
+        return { label: 'زائر', color: 'bg-slate-100 text-slate-700 border-slate-200' };
     }
   };
 
   const badge = currentUser ? getRoleBadge(currentUser.role) : null;
-  const RoleIcon = badge ? badge.icon : UserCircle2;
+
+  // Managed schools for employee
+  const adminManagedSchools = currentUser?.role === 'employee' && schools.length > 0
+    ? schools.filter((s) => 
+        currentUser.managedSchoolCodes?.includes(s.code) || 
+        s.code === currentUser.schoolCode
+      )
+    : [];
 
   return (
-    <header className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-slate-200 shadow-xs">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16 sm:h-20">
-          
-          {/* Logo & School Info */}
-          <div className="flex items-center gap-3 sm:gap-4">
-            <div className="relative flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white font-black text-lg sm:text-xl shadow-sm ring-2 ring-emerald-500/20">
-              <span>حـ</span>
-              <span className="absolute -bottom-1 -right-1 flex h-3 w-3">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
-              </span>
-            </div>
-
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-lg sm:text-xl font-bold tracking-tight text-slate-900 flex items-center gap-1.5">
-                  <span>نظام حضورك</span>
-                  <span className="hidden md:inline-block text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                    الذكي
-                  </span>
-                </h1>
-              </div>
-              <p className="text-xs text-slate-500 hidden sm:block">
-                منظومة الحضور والانصراف المدرسية بالسياج الجغرافي وتقارير نور
-              </p>
-            </div>
+    <header className="bg-white/95 backdrop-blur-md border-b border-slate-200/80 sticky top-0 z-30 px-4 py-2.5 shadow-xs" dir="rtl">
+      <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
+        {/* Logo & School info */}
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-md shadow-emerald-600/20 shrink-0">
+            <Sparkles className="w-5 h-5" />
           </div>
-
-          {/* School Selector (for multi-school view) */}
-          {schools.length > 1 && (currentUser?.role === 'employee' || currentUser?.role === 'superadmin' || currentUser?.role === 'teacher') && (
-            <div className="hidden lg:flex items-center gap-2 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
-              <span className="text-xs font-medium text-slate-500 px-2 flex items-center gap-1">
-                <Layers className="w-3.5 h-3.5 text-slate-400" />
-                المدرسة:
-              </span>
-              <select
-                id="header-school-select"
-                value={selectedSchoolCode}
-                onChange={(e) => onSelectSchool(e.target.value)}
-                className="bg-white text-xs font-semibold text-slate-800 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
-              >
-                {schools.map((sch) => (
-                  <option key={sch.id} value={sch.code}>
-                    {sch.name} ({sch.code})
-                  </option>
-                ))}
-              </select>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-base font-black text-slate-900 tracking-wide">
+                حُضُورَكْ <span className="text-emerald-600 text-xs font-semibold">| النظام المدرسي الذكي</span>
+              </h1>
+              {currentSchool && (
+                <span className="hidden sm:inline-block px-2 py-0.5 rounded-full bg-slate-100 text-[11px] font-mono text-slate-700 border border-slate-200 font-bold">
+                  كود: {currentSchool.code}
+                </span>
+              )}
             </div>
-          )}
 
-          {/* Right Actions & User Profile */}
-          <div className="flex items-center gap-2 sm:gap-3">
-            {/* Emergency Indicator */}
-            {activeEmergencyCount > 0 && (
-              <button
-                id="header-emergency-btn"
-                onClick={onOpenEmergencyModal}
-                className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-50 text-red-700 border border-red-200 text-xs font-bold hover:bg-red-100 transition-colors animate-pulse cursor-pointer"
-                title="يوجد تنبيه طوارئ نشط"
-              >
-                <Bell className="w-4 h-4 text-red-600" />
-                <span className="hidden sm:inline">حالة طوارئ نشطة</span>
-                <span className="w-2 h-2 rounded-full bg-red-600"></span>
-              </button>
-            )}
-
-            {/* User Profile / Login */}
-            {currentUser ? (
-              <div className="flex items-center gap-2">
-                <div className="hidden sm:flex flex-col items-end">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-bold text-slate-800 max-w-[160px] truncate">
-                      {currentUser.name}
-                    </span>
-                  </div>
-                  {badge && (
-                    <span className={`text-[10px] font-semibold px-2 py-0.2 rounded-full border ${badge.color}`}>
-                      {badge.label}
-                    </span>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
-                  <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold text-xs">
-                    <RoleIcon className="w-4 h-4" />
-                  </div>
-                  <button
-                    id="header-logout-btn"
-                    onClick={onLogout}
-                    title="تسجيل الخروج"
-                    className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-white rounded-lg transition-colors cursor-pointer"
-                  >
-                    <LogOut className="w-4 h-4" />
-                  </button>
-                </div>
+            {/* If admin manages multiple schools, show quick switcher */}
+            {adminManagedSchools.length > 1 && onSwitchSchool ? (
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className="text-[10px] text-slate-500 font-bold">المدرسة الحالية:</span>
+                <select
+                  value={currentSchool?.code || ''}
+                  onChange={(e) => {
+                    const target = schools.find((s) => s.code === e.target.value);
+                    if (target) onSwitchSchool(target);
+                  }}
+                  className="bg-emerald-50 border border-emerald-300 text-emerald-950 font-bold text-xs rounded-lg px-2 py-0.5 focus:outline-emerald-500 cursor-pointer"
+                >
+                  {adminManagedSchools.map((sch) => (
+                    <option key={sch.id} value={sch.code}>
+                      🏢 {sch.name} ({sch.code})
+                    </option>
+                  ))}
+                </select>
               </div>
             ) : (
-              <button
-                id="header-login-btn"
-                onClick={onOpenLogin}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors shadow-xs cursor-pointer"
-              >
-                <UserCheck className="w-4 h-4" />
-                <span>دخول النظام</span>
-              </button>
+              <p className="text-[11px] text-slate-500 font-medium">
+                {currentSchool ? currentSchool.name : 'المنظومة التعليمية الرقمية'}
+              </p>
             )}
-
           </div>
+        </div>
 
+        {/* Live Clock Header Compact in Middle */}
+        <div className="hidden md:block">
+          <LiveClockHeader variant="compact" />
+        </div>
+
+        {/* Right side controls */}
+        <div className="flex items-center gap-2.5">
+          {onOpenDemoSwitcher && (
+            <button
+              onClick={onOpenDemoSwitcher}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-colors cursor-pointer shadow-xs"
+              title="التبديل بين الأدوار والمدارس"
+            >
+              <ArrowLeftRight className="w-3.5 h-3.5 text-emerald-600" />
+              <span>تجربة الأدوار 🎭</span>
+            </button>
+          )}
+
+          <button
+            onClick={onOpenDonationModal}
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold transition-colors cursor-pointer"
+          >
+            <Heart className="w-3.5 h-3.5 fill-rose-500 text-rose-500" />
+            <span>دعم المنصة</span>
+          </button>
+
+          {currentUser && currentUser.role !== 'guest' ? (
+            <div className="flex items-center gap-2">
+              {badge && (
+                <span className={`px-2.5 py-1 rounded-xl text-xs font-bold border hidden lg:inline-block ${badge.color}`}>
+                  {badge.label}
+                </span>
+              )}
+              <div className="text-right hidden sm:block">
+                <span className="text-xs font-bold text-slate-900 block leading-tight">{currentUser.name}</span>
+                <span className="text-[10px] font-mono text-slate-500">{currentUser.nationalId}</span>
+              </div>
+              <button
+                onClick={onLogout}
+                title="تسجيل الخروج"
+                className="p-2 rounded-xl bg-slate-100 hover:bg-rose-50 hover:text-rose-600 text-slate-500 transition-colors cursor-pointer border border-slate-200"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={onOpenLogin}
+              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-md shadow-emerald-600/20 cursor-pointer"
+            >
+              تسجيل الدخول ↵
+            </button>
+          )}
         </div>
       </div>
     </header>

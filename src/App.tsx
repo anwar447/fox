@@ -1,493 +1,556 @@
 import React, { useState, useEffect } from 'react';
-import { User, School, Attendance, Excuse, Emergency, AttendanceStatus, NoorComparison } from './types';
+import { User, School, Attendance } from './types';
 import { 
-  initializeStorageIfEmpty,
-  resetToDefaultSeed,
-  getSchools,
-  saveSchools,
-  saveSchool,
-  getUsers,
-  saveUsers,
-  saveUser,
-  updateUserPassword,
-  getCurrentUser,
-  setCurrentUser,
-  getSelectedSchoolCode,
-  setSelectedSchoolCode,
-  getAttendances,
-  saveAttendances,
-  recordStudentSelfCheckIn,
-  updateTeacherAttendance,
-  bulkUpdateTeacherAttendance,
-  getExcuses,
-  addExcuse,
-  updateExcuseStatus,
-  getEmergencies,
-  broadcastEmergency,
-  respondToEmergency,
-  saveNoorLog,
-  updateUserProfilePhoto,
-  importStudentsBatch,
+  getCurrentUser, setCurrentUser, getSchools, 
+  getUsers, getAttendances 
 } from './utils/storage';
+import { parseParentRegistrationToken, parseMagicToken } from './utils/magicLink';
+import { getTodayDateString } from './utils/academic';
+import { getAcademicDayStatus } from './utils/academicCalendar';
 
+// Components
 import { Header } from './components/Header';
-import { DemoSwitcher } from './components/DemoSwitcher';
-import { LoginModal } from './components/LoginModal';
-import { StudentPortal } from './components/StudentPortal';
-import { TeacherPortal } from './components/TeacherPortal';
-import { ParentPortal } from './components/ParentPortal';
-import { EmployeeDashboard } from './components/EmployeeDashboard';
-import { SuperAdminPortal } from './components/SuperAdminPortal';
-import { LandingPage } from './components/LandingPage';
-import { SchoolCreationWizard } from './components/SchoolCreationWizard';
-import { PaymentInfoModal } from './components/PaymentInfoModal';
-import { SubscriptionExpiredModal } from './components/SubscriptionExpiredModal';
 import { InstallAppBanner } from './components/InstallAppBanner';
 import { AcademicHolidayBanner } from './components/AcademicHolidayBanner';
-import { requestWebNotificationPermission, triggerNotification } from './utils/notifications';
-import { getAcademicDayStatus, THEME_CONFIGS } from './utils/academicCalendar';
+import { LandingPage } from './components/LandingPage';
+import { SuperAdminPortal } from './components/SuperAdminPortal';
+import { EmployeeDashboard } from './components/EmployeeDashboard';
+import { TeacherPortal } from './components/TeacherPortal';
+import { ParentPortal } from './components/ParentPortal';
+import { StudentPortal } from './components/StudentPortal';
 
-import { Sparkles, Building2, BookOpen, GraduationCap, Users, ShieldCheck, Bell } from 'lucide-react';
+// Modals
+import { LoginModal } from './components/LoginModal';
+import { DemoSwitcher } from './components/DemoSwitcher';
+import { DonationModal } from './components/DonationModal';
+import { SubscriptionExpiredModal } from './components/SubscriptionExpiredModal';
+import { PaymentInfoModal } from './components/PaymentInfoModal';
+import { ParentRegistrationLinkModal } from './components/ParentRegistrationLinkModal';
+import { ParentStudentSelfRegistrationModal } from './components/ParentStudentSelfRegistrationModal';
+import { StaffRegistrationLinkModal } from './components/StaffRegistrationLinkModal';
+import { StaffSelfRegistrationModal } from './components/StaffSelfRegistrationModal';
+import { StudentQrCardModal } from './components/StudentQrCardModal';
+import { GatekeeperScannerModal } from './components/GatekeeperScannerModal';
+import { AttendanceCorrectionModal } from './components/AttendanceCorrectionModal';
+import { StudentDossierModal } from './components/StudentDossierModal';
+import { DailyPrincipalReportModal } from './components/DailyPrincipalReportModal';
+import { ClassExcelManagerModal } from './components/ClassExcelManagerModal';
+import { StaffManagementModal } from './components/StaffManagementModal';
+import { AdminArchiveReportModal } from './components/AdminArchiveReportModal';
+import { InteractiveMapPicker } from './components/InteractiveMapPicker';
+import { SchoolCreationWizard } from './components/SchoolCreationWizard';
 
-export default function App() {
-  const [schools, setSchools] = useState<School[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
-  const [attendances, setAttendances] = useState<Attendance[]>([]);
-  const [excuses, setExcuses] = useState<Excuse[]>([]);
-  const [emergencies, setEmergencies] = useState<Emergency[]>([]);
-  const [currentUser, setCurrentUserState] = useState<User | null>(null);
-  const [selectedSchoolCode, setSelectedSchoolCodeState] = useState<string>('RAYA-1448');
-  const [themeOverride, setThemeOverride] = useState<string>('auto');
+export function App() {
+  const [currentUser, setUserState] = useState<User | null>(() => getCurrentUser());
+  const [schools, setSchools] = useState<School[]>(() => getSchools());
+  const [users, setUsers] = useState<User[]>(() => getUsers());
+  const [attendances, setAttendances] = useState<Attendance[]>(() => getAttendances());
 
-  // UI Modals
-  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  // Current active school
+  const currentSchool: School | null = 
+    schools.find((s) => s.code === currentUser?.schoolCode) || schools[0] || null;
+
+  // Modals state
+  const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [isDemoSwitcherOpen, setIsDemoSwitcherOpen] = useState(false);
+  const [isDonationOpen, setIsDonationOpen] = useState(false);
+  const [isSubscriptionExpiredOpen, setIsSubscriptionExpiredOpen] = useState(false);
+  
+  // Payment Modal
+  const [isPaymentOpen, setIsPaymentOpen] = useState(false);
+  const [selectedPlanForPayment, setSelectedPlanForPayment] = useState<'semester' | 'yearly'>('yearly');
+
+  // Parent self registration & invitation
+  const [isParentRegLinkOpen, setIsParentRegLinkOpen] = useState(false);
+  const [isSelfRegOpen, setIsSelfRegOpen] = useState(false);
+  const [selfRegSchoolCode, setSelfRegSchoolCode] = useState<string>('');
+
+  // Staff self registration & invitation
+  const [isStaffRegLinkOpen, setIsStaffRegLinkOpen] = useState(false);
+  const [isStaffSelfRegOpen, setIsStaffSelfRegOpen] = useState(false);
+  const [staffRegSchoolCode, setStaffRegSchoolCode] = useState<string>('');
+
+  // Gatekeeper & Attendance Modals
+  const [isGatekeeperScannerOpen, setIsGatekeeperScannerOpen] = useState(false);
+  const [isDailyReportOpen, setIsDailyReportOpen] = useState(false);
+  const [isClassExcelManagerOpen, setIsClassExcelManagerOpen] = useState(false);
+  const [isStaffManagementOpen, setIsStaffManagementOpen] = useState(false);
+  const [isArchiveReportOpen, setIsArchiveReportOpen] = useState(false);
+  const [isMapPickerOpen, setIsMapPickerOpen] = useState(false);
   const [isSchoolWizardOpen, setIsSchoolWizardOpen] = useState(false);
-  const [paymentModalState, setPaymentModalState] = useState<{
-    isOpen: boolean;
-    plan: 'semester' | 'yearly';
-    schoolName?: string;
-  }>({
-    isOpen: false,
-    plan: 'semester',
-  });
 
-  // Initialize storage on load
+  // Student Dossier & QR Card & Correction
+  const [selectedStudentForDossier, setSelectedStudentForDossier] = useState<User | null>(null);
+  const [selectedStudentForQr, setSelectedStudentForQr] = useState<User | null>(null);
+  const [selectedAttendanceForCorrection, setSelectedAttendanceForCorrection] = useState<Attendance | null>(null);
+
+  // Parse Magic Link / Registration Token on page load
   useEffect(() => {
-    initializeStorageIfEmpty();
-    refreshAllData();
-
-    // Check if ?superadmin in URL
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.has('superadmin')) {
-      const allUsers = getUsers();
-      const superUser = allUsers.find((u) => u.role === 'superadmin');
-      if (superUser) {
-        handleSelectUser(superUser);
+    const params = new URLSearchParams(window.location.search);
+    
+    // Direct Magic Token auto-login
+    const magicToken = params.get('token');
+    if (magicToken) {
+      const parsedPayload = parseMagicToken(magicToken);
+      if (parsedPayload) {
+        const allU = getUsers();
+        const existing = allU.find((u) => u.id === parsedPayload.userId);
+        if (existing) {
+          handleLoginSuccess(existing);
+          return;
+        }
       }
     }
-  }, []);
 
-  const refreshAllData = () => {
-    const s = getSchools();
-    const u = getUsers();
-    const a = getAttendances();
-    const e = getExcuses();
-    const emg = getEmergencies();
-    const curr = getCurrentUser();
-    const sc = getSelectedSchoolCode();
-
-    setSchools(s);
-    setUsers(u);
-    setAttendances(a);
-    setExcuses(e);
-    setEmergencies(emg);
-    setCurrentUserState(curr);
-    setSelectedSchoolCodeState(sc);
-  };
-
-  const handleSelectSchool = (code: string) => {
-    setSelectedSchoolCodeState(code);
-    setSelectedSchoolCode(code);
-  };
-
-  const handleSelectUser = (user: User) => {
-    setCurrentUserState(user);
-    setCurrentUser(user);
-    if (user.schoolCode && user.schoolCode !== 'GLOBAL') {
-      handleSelectSchool(user.schoolCode);
+    // Staff Self-Registration Token
+    const staffToken = params.get('joinStaff') || params.get('joinTeacher') || params.get('staffToken');
+    if (staffToken) {
+      const parsed = parseParentRegistrationToken(staffToken);
+      if (parsed?.schoolCode) {
+        setStaffRegSchoolCode(parsed.schoolCode);
+        setIsStaffSelfRegOpen(true);
+        return;
+      } else if (schools.some((s) => s.code.toLowerCase() === staffToken.toLowerCase())) {
+        const found = schools.find((s) => s.code.toLowerCase() === staffToken.toLowerCase());
+        setStaffRegSchoolCode(found?.code || staffToken.toUpperCase());
+        setIsStaffSelfRegOpen(true);
+        return;
+      }
     }
+
+    // Parent / Student Self-Registration Token
+    const token = params.get('regToken') || params.get('join') || params.get('joinSchool') || params.get('school');
+    if (token) {
+      const parsed = parseParentRegistrationToken(token);
+      if (parsed?.schoolCode) {
+        setSelfRegSchoolCode(parsed.schoolCode);
+        setIsSelfRegOpen(true);
+      } else if (schools.some((s) => s.code.toLowerCase() === token.toLowerCase())) {
+        const found = schools.find((s) => s.code.toLowerCase() === token.toLowerCase());
+        setSelfRegSchoolCode(found?.code || token.toUpperCase());
+        setIsSelfRegOpen(true);
+      }
+    }
+  }, [schools]);
+
+  // Sync state helpers
+  const refreshAll = () => {
+    setSchools(getSchools());
+    setUsers(getUsers());
+    setAttendances(getAttendances());
+    setUserState(getCurrentUser());
+  };
+
+  const handleLoginSuccess = (user: User) => {
+    setCurrentUser(user);
+    setUserState(user);
+    refreshAll();
   };
 
   const handleLogout = () => {
-    setCurrentUserState(null);
     setCurrentUser(null);
+    setUserState(null);
   };
 
-  const handleResetData = () => {
-    resetToDefaultSeed();
-    refreshAllData();
+  const handleSwitchUser = (user: User) => {
+    setCurrentUser(user);
+    setUserState(user);
+    refreshAll();
   };
 
-  // Student Actions
-  const handleStudentCheckIn = (timeHHMMSS: string) => {
-    if (!currentUser) return;
-    recordStudentSelfCheckIn(currentUser.id, selectedSchoolCode, timeHHMMSS);
-    setAttendances(getAttendances());
-  };
-
-  const handleSubmitExcuse = (excuseData: Omit<Excuse, 'id' | 'submittedAt'>) => {
-    addExcuse(excuseData);
-    setExcuses(getExcuses());
-  };
-
-  const handleUpdateStudentPhoto = (photoUrl: string) => {
-    if (!currentUser) return;
-    updateUserProfilePhoto(currentUser.id, photoUrl);
-    refreshAllData();
-  };
-
-  // Teacher Actions
-  const handleTeacherUpdateAttendance = (
-    studentId: string,
-    teacherMark: AttendanceStatus,
-    schoolCode: string,
-    className: string,
-    sectionName: string,
-    dateStr?: string
-  ) => {
-    updateTeacherAttendance(studentId, teacherMark, schoolCode, className, sectionName, dateStr);
-    setAttendances(getAttendances());
-  };
-
-  const handleTeacherBulkUpdateAttendance = (
-    students: { id: string; className: string; sectionName: string }[],
-    teacherMark: 'present' | 'absent',
-    schoolCode: string
-  ) => {
-    bulkUpdateTeacherAttendance(students, teacherMark, schoolCode);
-    setAttendances(getAttendances());
-  };
-
-  // Employee & Management Actions
-  const handleSaveSchool = (school: School) => {
-    saveSchool(school);
-    refreshAllData();
-  };
-
-  const handleDeleteSchool = (schoolId: string) => {
-    const list = schools.filter((s) => s.id !== schoolId);
-    saveSchools(list);
-    refreshAllData();
-  };
-
-  const handleToggleSuspendSchool = (schoolId: string) => {
-    const school = schools.find((s) => s.id === schoolId);
-    if (school) {
-      const updated = { ...school, isSuspended: !school.isSuspended };
-      saveSchool(updated);
-      refreshAllData();
-    }
-  };
-
-  const handleSaveUser = (user: User) => {
-    saveUser(user);
-    refreshAllData();
-  };
-
-  const handleDeleteUser = (userId: string) => {
-    const list = users.filter((u) => u.id !== userId);
-    saveUsers(list);
-    refreshAllData();
-  };
-
-  const handleResetPassword = (nationalId: string, newPass: string) => {
-    updateUserPassword(nationalId, newPass);
-    refreshAllData();
-  };
-
-  const handleBroadcastEmergency = (emergencyData: Omit<Emergency, 'id' | 'createdAt' | 'responses'>) => {
-    broadcastEmergency(emergencyData);
-    setEmergencies(getEmergencies());
-  };
-
-  const handleRespondEmergency = (
-    emergencyId: string,
-    status: 'safe' | 'needs_help' | 'acknowledged',
-    note?: string
-  ) => {
-    if (!currentUser) return;
-    respondToEmergency(emergencyId, currentUser.id, currentUser.name, currentUser.role, status, note);
-    setEmergencies(getEmergencies());
-  };
-
-  const handleUpdateExcuseStatus = (id: string, status: 'approved' | 'rejected', reason?: string) => {
-    updateExcuseStatus(id, status, reason);
-    setExcuses(getExcuses());
-    setAttendances(getAttendances());
-  };
-
-  const handleImportStudentsBatch = (
-    students: Array<{
-      nationalId: string;
-      name: string;
-      className: string;
-      sectionName: string;
-      parentMobile?: string;
-    }>
-  ) => {
-    importStudentsBatch(selectedSchoolCode, students);
-    refreshAllData();
-  };
-
-  const handleSaveNoorComparison = (log: NoorComparison) => {
-    saveNoorLog(log);
-  };
-
-  // Parent Actions
-  const handleLinkChild = (nationalId: string): boolean => {
-    if (!currentUser) return false;
-    const currentChildren = currentUser.childrenNationalIds || [];
-    if (!currentChildren.includes(nationalId)) {
-      const updatedUser: User = {
-        ...currentUser,
-        childrenNationalIds: [...currentChildren, nationalId],
-      };
-      saveUser(updatedUser);
-      setCurrentUserState(updatedUser);
+  const handleSwitchSchool = (school: School) => {
+    if (currentUser) {
+      const updatedUser = { ...currentUser, schoolCode: school.code };
       setCurrentUser(updatedUser);
-      refreshAllData();
-      return true;
+      setUserState(updatedUser);
     }
-    return true;
+    refreshAll();
   };
 
-  const handleSendParentNote = (
-    studentId: string,
-    studentName: string,
-    nationalId: string,
-    schoolCode: string,
-    noteText: string
-  ) => {
-    if (!currentUser) return;
-    triggerNotification(
-      'ملاحظة واردة من ولي الأمر',
-      `أرسل ولي أمر الطالب ${studentName} (${nationalId}) ملاحظة: "${noteText}"`,
-      'general',
-      schoolCode,
-      'employee'
-    );
+  const openPaymentWithPlan = (plan: 'semester' | 'yearly' | 'free_forever') => {
+    if (plan === 'free_forever') {
+      setIsSchoolWizardOpen(true);
+    } else {
+      setSelectedPlanForPayment(plan);
+      setIsPaymentOpen(true);
+    }
   };
-
-  // School Wizard Created
-  const handleSchoolCreated = (newSchool: School, founderUser: User, assistantUsers: User[]) => {
-    saveSchool(newSchool);
-    saveUser(founderUser);
-    assistantUsers.forEach((asst) => saveUser(asst));
-    
-    // Automatically select school and log in as founder
-    handleSelectSchool(newSchool.code);
-    handleSelectUser(founderUser);
-    refreshAllData();
-  };
-
-  const currentSchool = schools.find((s) => s.code === selectedSchoolCode) || schools[0] || {
-    id: 'default',
-    name: 'مدرسة ثانوية صقر قريش',
-    code: 'RAYA-1448',
-    logo: 'https://images.unsplash.com/photo-1580582932707-520aed937b7b?w=150&auto=format&fit=crop&q=80',
-    city: 'الرياض',
-    type: 'secondary' as const,
-    contact: '0114567890',
-    managerName: 'أ. فهد بن عبدالعزيز المنصور',
-    timings: {
-      tabour: '06:45',
-      firstPeriod: '07:00',
-      lateAfter: '07:15',
-      absentAfter: '07:45',
-      breakTime: '09:30',
-      dismissal: '13:00',
-    },
-    geofence: {
-      lat: 24.7136,
-      lng: 46.6753,
-      radius: 300,
-      addressName: 'طريق الملك فهد، الرياض',
-    },
-    createdBy: '1000472181',
-    createdAt: '2026-08-01',
-    subscriptionPlan: 'silver' as const,
-    subscriptionExpiryDate: '2027-06-30',
-    isSuspended: false,
-  };
-
-  const activeEmergencyCount = emergencies.filter(
-    (e) => e.schoolCode === selectedSchoolCode && e.active
-  ).length;
 
   return (
-    <div className="min-h-screen bg-slate-100/70 text-slate-900 flex flex-col font-sans selection:bg-emerald-500 selection:text-white" dir="rtl">
+    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans antialiased selection:bg-emerald-500 selection:text-white flex flex-col" dir="rtl">
       
-      {/* Global Application Header */}
-      <Header
-        currentUser={currentUser}
-        schools={schools}
-        selectedSchoolCode={selectedSchoolCode}
-        onSelectSchool={handleSelectSchool}
-        onOpenLogin={() => setIsLoginModalOpen(true)}
-        onLogout={handleLogout}
-        onOpenDemoSwitcher={() => setIsDemoSwitcherOpen(true)}
-        activeEmergencyCount={activeEmergencyCount}
-        onOpenEmergencyModal={() => setIsDemoSwitcherOpen(true)}
-      />
-
-      {/* Main App Content View based on logged-in role */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-12">
-        
-        {currentUser && (
-          <AcademicHolidayBanner
-            currentThemeKey={themeOverride === 'auto' ? undefined : themeOverride}
-            onSelectThemeOverride={setThemeOverride}
-          />
-        )}
-        
-        {/* Subscription Expired / Suspended Guard */}
-        {currentUser && currentUser.role !== 'superadmin' && currentSchool && (currentSchool.isSuspended || (currentSchool.subscriptionExpiryDate && new Date(currentSchool.subscriptionExpiryDate).getTime() < new Date().setHours(0,0,0,0))) ? (
-          <SubscriptionExpiredModal
-            isOpen={true}
-            school={currentSchool}
-            onOpenPaymentModal={(plan) => {
-              setPaymentModalState({
-                isOpen: true,
-                plan: plan,
-                schoolName: currentSchool.name,
-              });
-            }}
-            onLogout={handleLogout}
-          />
-        ) : !currentUser ? (
-          // Rich Interactive Landing Page
-          <LandingPage
-            schools={schools}
-            users={users}
-            onSelectUser={handleSelectUser}
-            onOpenLogin={() => setIsLoginModalOpen(true)}
-            onOpenDemoSwitcher={() => setIsDemoSwitcherOpen(true)}
-            onOpenRegisterSchool={() => setIsSchoolWizardOpen(true)}
-            onOpenPaymentModal={(plan) => {
-              if (plan === 'free_forever') {
-                setIsSchoolWizardOpen(true);
-              } else {
-                setPaymentModalState({
-                  isOpen: true,
-                  plan: plan,
-                  schoolName: undefined,
-                });
-              }
-            }}
-          />
-        ) : currentUser.role === 'superadmin' ? (
-          // Super Admin (Owner Subscription & License Portal)
-          <SuperAdminPortal
-            schools={schools}
-            users={users}
-            onSaveSchool={handleSaveSchool}
-            onDeleteSchool={handleDeleteSchool}
-            onToggleSuspendSchool={handleToggleSuspendSchool}
-          />
-        ) : currentUser.role === 'employee' ? (
-          // Founder Employee & Assistants View
-          <EmployeeDashboard
-            currentUser={currentUser}
-            schools={schools}
-            selectedSchoolCode={selectedSchoolCode}
-            onSelectSchool={handleSelectSchool}
-            users={users}
-            attendances={attendances}
-            excuses={excuses}
-            emergencies={emergencies}
-            onSaveSchool={handleSaveSchool}
-            onDeleteSchool={handleDeleteSchool}
-            onSaveUser={handleSaveUser}
-            onDeleteUser={handleDeleteUser}
-            onResetPassword={handleResetPassword}
-            onBroadcastEmergency={handleBroadcastEmergency}
-            onUpdateExcuseStatus={handleUpdateExcuseStatus}
-            onSaveNoorComparison={handleSaveNoorComparison}
-            onImportStudentsBatch={handleImportStudentsBatch}
-            onRefreshData={refreshAllData}
-          />
-        ) : currentUser.role === 'teacher' ? (
-          // Teacher View
-          <TeacherPortal
-            currentUser={currentUser}
-            schools={schools}
-            selectedSchoolCode={selectedSchoolCode}
-            onSelectSchool={handleSelectSchool}
-            users={users}
-            attendances={attendances}
-            onUpdateAttendance={handleTeacherUpdateAttendance}
-            onBulkUpdateAttendance={handleTeacherBulkUpdateAttendance}
-          />
-        ) : currentUser.role === 'student' ? (
-          // Student View with Photo Upload & Digital ID Card
-          <StudentPortal
-            currentUser={currentUser}
-            school={currentSchool}
-            attendances={attendances}
-            excuses={excuses}
-            emergencies={emergencies}
-            onCheckIn={handleStudentCheckIn}
-            onSubmitExcuse={handleSubmitExcuse}
-            onRespondEmergency={handleRespondEmergency}
-            onUpdatePhoto={handleUpdateStudentPhoto}
-          />
-        ) : (
-          // Parent View
-          <ParentPortal
-            currentUser={currentUser}
-            schools={schools}
-            users={users}
-            attendances={attendances}
-            excuses={excuses}
-            onLinkChild={handleLinkChild}
-            onSendParentNote={handleSendParentNote}
-          />
-        )}
-
-      </main>
-
-      {/* PWA App Install Suggestion Banner */}
+      {/* PWA Install App Banner */}
       <InstallAppBanner />
 
-      {/* Modals & Wizards */}
+      {/* Top Header */}
+      <Header
+        currentUser={currentUser}
+        currentSchool={currentSchool}
+        schools={schools}
+        onSwitchSchool={handleSwitchSchool}
+        onLogout={handleLogout}
+        onOpenLogin={() => setIsLoginOpen(true)}
+        onOpenDonationModal={() => setIsDonationOpen(true)}
+        onOpenDemoSwitcher={() => setIsDemoSwitcherOpen(true)}
+      />
+
+      {/* Official Academic Calendar Banner */}
+      <AcademicHolidayBanner status={getAcademicDayStatus()} />
+
+      {/* Main Content View by Role */}
+      <main className="flex-1">
+        {!currentUser || currentUser.role === 'guest' ? (
+          <LandingPage
+            schools={schools}
+            onOpenLogin={() => setIsLoginOpen(true)}
+            onOpenRegisterSchool={() => setIsSchoolWizardOpen(true)}
+            onOpenParentRegistration={() => {
+              setSelfRegSchoolCode(currentSchool?.code || schools[0]?.code || '');
+              setIsSelfRegOpen(true);
+            }}
+            onOpenStaffRegistration={() => {
+              setStaffRegSchoolCode(currentSchool?.code || schools[0]?.code || '');
+              setIsStaffSelfRegOpen(true);
+            }}
+            onOpenPaymentModal={openPaymentWithPlan}
+            onOpenDonationModal={() => setIsDonationOpen(true)}
+            onOpenDemoSwitcher={() => setIsDemoSwitcherOpen(true)}
+          />
+        ) : currentUser.role === 'superadmin' ? (
+          <SuperAdminPortal
+            currentUser={currentUser}
+            onOpenCreateSchool={() => setIsSchoolWizardOpen(true)}
+          />
+        ) : currentUser.role === 'employee' && currentSchool ? (
+          <EmployeeDashboard
+            currentUser={currentUser}
+            currentSchool={currentSchool}
+            schools={schools}
+            onSwitchSchool={handleSwitchSchool}
+            onOpenCreateSchool={() => setIsSchoolWizardOpen(true)}
+            onOpenDailyReport={() => setIsDailyReportOpen(true)}
+            onOpenGatekeeperScanner={() => setIsGatekeeperScannerOpen(true)}
+            onOpenMapPicker={() => setIsMapPickerOpen(true)}
+            onOpenClassExcelManager={() => setIsClassExcelManagerOpen(true)}
+            onOpenStaffManagement={() => setIsStaffManagementOpen(true)}
+            onOpenStaffRegistrationLink={() => setIsStaffRegLinkOpen(true)}
+            onOpenArchiveReport={() => setIsArchiveReportOpen(true)}
+            onOpenParentRegistrationLink={() => setIsParentRegLinkOpen(true)}
+            onOpenDirectStudentRegistration={() => {
+              setSelfRegSchoolCode(currentSchool.code);
+              setIsSelfRegOpen(true);
+            }}
+            onOpenStudentDossier={(student) => setSelectedStudentForDossier(student)}
+          />
+        ) : currentUser.role === 'teacher' && currentSchool ? (
+          <TeacherPortal
+            currentUser={currentUser}
+            currentSchool={currentSchool}
+            onOpenDossier={(student) => setSelectedStudentForDossier(student)}
+          />
+        ) : currentUser.role === 'parent' && currentSchool ? (
+          <ParentPortal
+            currentUser={currentUser}
+            currentSchool={currentSchool}
+            onOpenCorrection={(att) => setSelectedAttendanceForCorrection(att)}
+          />
+        ) : currentUser.role === 'student' && currentSchool ? (
+          <StudentPortal
+            currentUser={currentUser}
+            currentSchool={currentSchool}
+            onOpenQrCard={() => setSelectedStudentForQr(currentUser)}
+            onOpenCorrection={(att) => setSelectedAttendanceForCorrection(att)}
+          />
+        ) : (
+          <LandingPage
+            schools={schools}
+            onOpenLogin={() => setIsLoginOpen(true)}
+            onOpenRegisterSchool={() => setIsSchoolWizardOpen(true)}
+            onOpenParentRegistration={() => setIsSelfRegOpen(true)}
+            onOpenStaffRegistration={() => setIsStaffSelfRegOpen(true)}
+            onOpenPaymentModal={openPaymentWithPlan}
+          />
+        )}
+      </main>
+
+      {/* Footer with Developer Credits & Technical Support */}
+      <footer className="border-t border-slate-200 bg-white py-6 text-center text-xs text-slate-500 mt-auto" dir="rtl">
+        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="space-y-1 text-right sm:text-right">
+            <p className="font-bold text-slate-800">
+              © 1448هـ - 2026م منظومة حُضُورَكْ الذكية لضبط الانضباط والحضور المدرسي.
+            </p>
+            <p className="text-emerald-800 font-black text-xs flex items-center gap-1.5">
+              <span>💻 التطبيق من برمجة</span>
+              <span className="underline decoration-emerald-500 decoration-2">د. أنور الألمعي</span>
+              <span>| للتواصل والدعم الفني:</span>
+              <a 
+                href="https://wa.me/966548171965" 
+                target="_blank" 
+                rel="noreferrer" 
+                className="font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md hover:bg-emerald-100 transition-colors inline-block"
+              >
+                0548171965
+              </a>
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <a
+              href="https://wa.me/966548171965"
+              target="_blank"
+              rel="noreferrer"
+              className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1 shadow-xs transition-colors"
+            >
+              <span>واتساب الدعم الفني 💬</span>
+            </a>
+            <button onClick={() => setIsDonationOpen(true)} className="hover:text-rose-600 font-semibold cursor-pointer">
+              دعم المنصة ❤️
+            </button>
+            <span>•</span>
+            <button onClick={() => setIsDemoSwitcherOpen(true)} className="hover:text-emerald-700 font-semibold cursor-pointer">
+              تجربة الأدوار 🎭
+            </button>
+          </div>
+        </div>
+      </footer>
+
+      {/* MODALS */}
+
+      {/* 1. Login Modal */}
       <LoginModal
-        isOpen={isLoginModalOpen}
-        onClose={() => setIsLoginModalOpen(false)}
+        isOpen={isLoginOpen}
+        onClose={() => setIsLoginOpen(false)}
         schools={schools}
         users={users}
-        onLoginSuccess={handleSelectUser}
-        onOpenDemoSwitcher={() => {}}
-      />
-
-      <SchoolCreationWizard
-        isOpen={isSchoolWizardOpen}
-        onClose={() => setIsSchoolWizardOpen(false)}
-        currentUser={currentUser}
-        onSchoolCreated={handleSchoolCreated}
-      />
-
-      <PaymentInfoModal
-        isOpen={paymentModalState.isOpen}
-        onClose={() => setPaymentModalState(prev => ({ ...prev, isOpen: false }))}
-        selectedPlan={paymentModalState.plan}
-        schoolName={paymentModalState.schoolName}
-        onConfirmPayment={(transferRef, senderName) => {
-          setPaymentModalState(prev => ({ ...prev, isOpen: false }));
+        onLoginSuccess={handleLoginSuccess}
+        onOpenRegisterSchool={() => {
+          setIsLoginOpen(false);
           setIsSchoolWizardOpen(true);
+        }}
+        onOpenParentRegistration={() => {
+          setIsLoginOpen(false);
+          setSelfRegSchoolCode(currentSchool?.code || schools[0]?.code || '');
+          setIsSelfRegOpen(true);
+        }}
+        onOpenDemoSwitcher={() => {
+          setIsLoginOpen(false);
+          setIsDemoSwitcherOpen(true);
         }}
       />
 
+      {/* 2. Demo Switcher Modal */}
+      <DemoSwitcher
+        isOpen={isDemoSwitcherOpen}
+        onClose={() => setIsDemoSwitcherOpen(false)}
+        users={users}
+        schools={schools}
+        currentUser={currentUser}
+        onSelectUser={handleSwitchUser}
+        onSelectSchool={handleSwitchSchool}
+      />
+
+      {/* 3. Donation Modal */}
+      <DonationModal
+        isOpen={isDonationOpen}
+        onClose={() => setIsDonationOpen(false)}
+      />
+
+      {/* 4. Subscription Expired Modal */}
+      {currentSchool && (
+        <SubscriptionExpiredModal
+          isOpen={isSubscriptionExpiredOpen}
+          school={currentSchool}
+          onClose={() => setIsSubscriptionExpiredOpen(false)}
+          onOpenPaymentModal={(plan) => {
+            setIsSubscriptionExpiredOpen(false);
+            openPaymentWithPlan(plan);
+          }}
+        />
+      )}
+
+      {/* 5. Payment Info Modal */}
+      {currentSchool && (
+        <PaymentInfoModal
+          isOpen={isPaymentOpen}
+          onClose={() => setIsPaymentOpen(false)}
+          school={currentSchool}
+          plan={selectedPlanForPayment}
+          onSuccess={() => {
+            refreshAll();
+          }}
+        />
+      )}
+
+      {/* 6. Parent Registration Link Modal */}
+      {currentSchool && (
+        <ParentRegistrationLinkModal
+          isOpen={isParentRegLinkOpen}
+          onClose={() => setIsParentRegLinkOpen(false)}
+          school={currentSchool}
+          onOpenDirectRegistration={() => {
+            setIsParentRegLinkOpen(false);
+            setSelfRegSchoolCode(currentSchool.code);
+            setIsSelfRegOpen(true);
+          }}
+        />
+      )}
+
+      {/* 7. Parent & Student Self Registration Modal */}
+      <ParentStudentSelfRegistrationModal
+        isOpen={isSelfRegOpen}
+        onClose={() => setIsSelfRegOpen(false)}
+        schools={schools}
+        initialSchoolCode={selfRegSchoolCode}
+        onRegistrationSuccess={(parentUser) => {
+          refreshAll();
+          handleLoginSuccess(parentUser);
+        }}
+      />
+
+      {/* 8. Staff Management Modal (Teachers & Staff) */}
+      {currentSchool && (
+        <StaffManagementModal
+          isOpen={isStaffManagementOpen}
+          onClose={() => setIsStaffManagementOpen(false)}
+          school={currentSchool}
+          onUpdated={() => refreshAll()}
+          onOpenStaffInvitationLink={() => setIsStaffRegLinkOpen(true)}
+        />
+      )}
+
+      {/* 8.1 Staff Registration Link Modal (WhatsApp / QR) */}
+      {currentSchool && (
+        <StaffRegistrationLinkModal
+          isOpen={isStaffRegLinkOpen}
+          onClose={() => setIsStaffRegLinkOpen(false)}
+          school={currentSchool}
+          onOpenDirectStaffRegistration={() => {
+            setIsStaffRegLinkOpen(false);
+            setStaffRegSchoolCode(currentSchool.code);
+            setIsStaffSelfRegOpen(true);
+          }}
+        />
+      )}
+
+      {/* 8.2 Staff Self Registration Modal (Teachers / Assistants / Staff) */}
+      <StaffSelfRegistrationModal
+        isOpen={isStaffSelfRegOpen}
+        onClose={() => setIsStaffSelfRegOpen(false)}
+        schools={schools}
+        initialSchoolCode={staffRegSchoolCode}
+        onRegistrationSuccess={(staffUser) => {
+          refreshAll();
+          handleLoginSuccess(staffUser);
+        }}
+      />
+
+      {/* 9. Student QR Card Modal */}
+      {selectedStudentForQr && currentSchool && (
+        <StudentQrCardModal
+          isOpen={!!selectedStudentForQr}
+          onClose={() => setSelectedStudentForQr(null)}
+          student={selectedStudentForQr}
+          school={currentSchool}
+        />
+      )}
+
+      {/* 10. Gatekeeper Scanner Modal */}
+      {currentSchool && (
+        <GatekeeperScannerModal
+          isOpen={isGatekeeperScannerOpen}
+          onClose={() => {
+            setIsGatekeeperScannerOpen(false);
+            refreshAll();
+          }}
+          school={currentSchool}
+        />
+      )}
+
+      {/* 11. Attendance Correction Request Modal */}
+      {selectedAttendanceForCorrection && currentUser && (
+        <AttendanceCorrectionModal
+          isOpen={!!selectedAttendanceForCorrection}
+          onClose={() => setSelectedAttendanceForCorrection(null)}
+          attendance={selectedAttendanceForCorrection}
+          currentUser={currentUser}
+          onSuccess={() => {
+            refreshAll();
+          }}
+        />
+      )}
+
+      {/* 12. Student Dossier Modal */}
+      {selectedStudentForDossier && currentSchool && (
+        <StudentDossierModal
+          isOpen={!!selectedStudentForDossier}
+          onClose={() => setSelectedStudentForDossier(null)}
+          student={selectedStudentForDossier}
+          school={currentSchool}
+          onOpenQrCard={() => {
+            setSelectedStudentForQr(selectedStudentForDossier);
+          }}
+        />
+      )}
+
+      {/* 13. Daily Principal Report Modal */}
+      {currentSchool && (
+        <DailyPrincipalReportModal
+          isOpen={isDailyReportOpen}
+          onClose={() => setIsDailyReportOpen(false)}
+          school={currentSchool}
+          attendances={attendances.filter((a) => a.schoolCode === currentSchool.code && a.date === getTodayDateString())}
+          date={getTodayDateString()}
+        />
+      )}
+
+      {/* 14. Class & Excel Manager Modal */}
+      {currentSchool && (
+        <ClassExcelManagerModal
+          isOpen={isClassExcelManagerOpen}
+          onClose={() => setIsClassExcelManagerOpen(false)}
+          school={currentSchool}
+          onUpdated={() => refreshAll()}
+        />
+      )}
+
+      {/* 15. Admin Archive Report Modal */}
+      {currentSchool && (
+        <AdminArchiveReportModal
+          isOpen={isArchiveReportOpen}
+          onClose={() => setIsArchiveReportOpen(false)}
+          school={currentSchool}
+        />
+      )}
+
+      {/* 16. Interactive Map Geofence Picker Modal */}
+      {isMapPickerOpen && currentSchool && (
+        <InteractiveMapPicker
+          initialLat={currentSchool.lat}
+          initialLng={currentSchool.lng}
+          initialRadius={currentSchool.radiusMeters}
+          onClose={() => setIsMapPickerOpen(false)}
+          onSave={(lat, lng, radius) => {
+            const updated = { ...currentSchool, lat, lng, radiusMeters: radius };
+            const allSchools = getSchools().map((s) => (s.code === currentSchool.code ? updated : s));
+            localStorage.setItem('hodoorak_schools_prod_v1', JSON.stringify(allSchools));
+            setIsMapPickerOpen(false);
+            refreshAll();
+          }}
+        />
+      )}
+
+      {/* 17. School Creation Wizard Modal */}
+      <SchoolCreationWizard
+        isOpen={isSchoolWizardOpen}
+        onClose={() => setIsSchoolWizardOpen(false)}
+        onSchoolCreated={(newSchool, adminUser) => {
+          refreshAll();
+          handleLoginSuccess(adminUser);
+        }}
+        initialPlan="yearly"
+      />
     </div>
   );
 }
+
+export default App;

@@ -1,658 +1,533 @@
-import React, { useState, useMemo } from 'react';
-import { User, School, Attendance, AttendanceStatus, BehaviorNote } from '../types';
+import React, { useState, useEffect } from 'react';
+import { User, School, Attendance, AttendanceStatus, StudentPermission } from '../types';
+import { getAttendances, saveAttendances, getUsers, getPermissions, getBehaviorLogs, getSystemNotifications } from '../utils/storage';
+import { calculateStudentBehaviorScore } from '../utils/behavior';
+import { soundManager } from '../utils/audio';
+import { getTodayDateString } from '../utils/academic';
 import { 
-  ALL_GRADES_INTERMEDIATE, 
-  ALL_GRADES_SECONDARY, 
-  ALL_SECTIONS, 
-  formatReadableClass,
-  getArabicFormattedDate, 
-  getTodayDateString 
-} from '../utils/academic';
-import { getAcademicDayStatus } from '../utils/academicCalendar';
-import { addBehaviorNote } from '../utils/storage';
-import { triggerNotification } from '../utils/notifications';
-import { 
-  CheckCheck, 
-  XCircle, 
-  Clock, 
-  UserCheck, 
-  Check, 
-  X, 
-  Building2, 
-  Calendar, 
-  Search, 
-  Filter, 
-  Sparkles, 
-  Save, 
-  AlertCircle,
-  MapPinOff,
-  Users,
-  ShieldAlert,
-  MessageSquareWarning,
-  Send,
-  Moon,
-  Info
+  Shield, CheckCircle, XCircle, Clock, 
+  AlertTriangle, Save, Users, Sparkles, Filter, 
+  Activity, ArrowUpRight, ShieldAlert, LogOut, Check, Star, ThumbsUp, ThumbsDown,
+  UserCheck, UserX, CheckCheck, RefreshCw
 } from 'lucide-react';
+import confetti from 'canvas-confetti';
+import { StudentPermissionModal } from './StudentPermissionModal';
+import { BehaviorRecordModal } from './BehaviorRecordModal';
+import { LiveClockHeader } from './LiveClockHeader';
+import { BroadcastAlertBanner } from './BroadcastAlertBanner';
 
 interface TeacherPortalProps {
   currentUser: User;
-  schools: School[];
-  selectedSchoolCode: string;
-  onSelectSchool: (code: string) => void;
-  users: User[];
-  attendances: Attendance[];
-  onUpdateAttendance: (
-    studentId: string,
-    teacherMark: AttendanceStatus,
-    schoolCode: string,
-    className: string,
-    sectionName: string,
-    dateStr?: string
-  ) => void;
-  onBulkUpdateAttendance: (
-    students: { id: string; className: string; sectionName: string }[],
-    teacherMark: 'present' | 'absent',
-    schoolCode: string,
-    dateStr?: string
-  ) => void;
+  currentSchool: School;
+  onOpenDossier: (student: User) => void;
 }
 
 export const TeacherPortal: React.FC<TeacherPortalProps> = ({
   currentUser,
-  schools,
-  selectedSchoolCode,
-  onSelectSchool,
-  users,
-  attendances,
-  onUpdateAttendance,
-  onBulkUpdateAttendance,
+  currentSchool,
+  onOpenDossier,
 }) => {
-  const currentSchool = schools.find((s) => s.code === selectedSchoolCode) || schools[0];
-  
-  // Available Grades depending on school type
-  const availableGrades = currentSchool?.type === 'intermediate'
-    ? ALL_GRADES_INTERMEDIATE
-    : ALL_GRADES_SECONDARY;
+  const today = getTodayDateString();
+  const allUsers = getUsers();
+  const allAttendances = getAttendances();
+  const [permissionsVersion, setPermissionsVersion] = useState(0);
+  const [behaviorVersion, setBehaviorVersion] = useState(0);
 
-  const [selectedGrade, setSelectedGrade] = useState<string>(
-    currentUser.assignedGrades?.[0] || availableGrades[0]
+  // Student Behavior Modal State
+  const [selectedStudentForBehavior, setSelectedStudentForBehavior] = useState<User | null>(null);
+  const [isBehaviorModalOpen, setIsBehaviorModalOpen] = useState(false);
+
+  // Find classes assigned to teacher or all students in school
+  const schoolStudents = allUsers.filter(
+    (u) => u.role === 'student' && u.schoolCode === currentSchool.code
   );
-  const [selectedSection, setSelectedSection] = useState<string>(
-    currentUser.assignedSections?.[0] || 'أ'
+
+  // Group classes
+  const classes = Array.from(new Set(schoolStudents.map((s) => s.className || 'الأول المتوسط')));
+  const [selectedClass, setSelectedClass] = useState<string>(classes[0] || 'الأول المتوسط');
+
+  const sections = Array.from(
+    new Set(
+      schoolStudents
+        .filter((s) => s.className === selectedClass)
+        .map((s) => s.sectionName || '1')
+    )
   );
-  const [selectedDate, setSelectedDate] = useState<string>(getTodayDateString());
-  const [searchQuery, setSearchQuery] = useState('');
-  const [overrideLocation, setOverrideLocation] = useState(false);
-  const [saveToast, setSaveToast] = useState(false);
-  const [behaviorNoteStudent, setBehaviorNoteStudent] = useState<User | null>(null);
-  const [noteCategory, setNoteCategory] = useState<BehaviorNote['category']>('classroom_disruption');
-  const [noteDescription, setNoteDescription] = useState('');
-  const [isSubmittingNote, setIsSubmittingNote] = useState(false);
-  const [noteToast, setNoteToast] = useState(false);
+  const [selectedSection, setSelectedSection] = useState<string>(sections[0] || '1');
 
-  const BEHAVIOR_CATEGORIES: { id: BehaviorNote['category']; label: string }[] = [
-    { id: 'classroom_disruption', label: 'إثارة الفوضى والحديث الجانبي أثناء الحصة' },
-    { id: 'homework_neglect', label: 'إهمال الواجبات والتكاليف المدرسية المتكرر' },
-    { id: 'unauthorized_device', label: 'استخدام أجهزة أو هاتف جوال بدون إذن' },
-    { id: 'disrespect', label: 'عدم احترام المعلم أو الزملاء بالقول أو الفعل' },
-    { id: 'uniform_violation', label: 'مخالفة الزي المدرسي أو المظهر اللائق' },
-    { id: 'fighting', label: 'شجار أو سلوك عدواني داخل الفصل أو الممرات' },
-    { id: 'late_to_class', label: 'التأخر المتكرر عن دخول الحصة الدراسية' },
-    { id: 'other', label: 'سلوك أو مخالفة أخرى' },
-  ];
+  // Filter students for chosen class & section
+  const currentStudents = schoolStudents.filter(
+    (s) => s.className === selectedClass && (s.sectionName || '1') === selectedSection
+  );
 
-  const handleOpenBehaviorNoteModal = (student: User) => {
-    setBehaviorNoteStudent(student);
-    setNoteCategory('classroom_disruption');
-    setNoteDescription('');
-  };
-
-  const handleSubmitBehaviorNote = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!behaviorNoteStudent || !noteDescription.trim()) return;
-
-    setIsSubmittingNote(true);
-    const catObj = BEHAVIOR_CATEGORIES.find((c) => c.id === noteCategory);
-    
-    addBehaviorNote({
-      studentId: behaviorNoteStudent.id,
-      studentNationalId: behaviorNoteStudent.nationalId,
-      studentName: behaviorNoteStudent.name,
-      schoolCode: currentSchool.code,
-      className: behaviorNoteStudent.className || selectedGrade,
-      sectionName: behaviorNoteStudent.sectionName || selectedSection,
-      teacherId: currentUser.id,
-      teacherName: currentUser.name,
-      category: noteCategory,
-      categoryLabel: catObj?.label || 'ملاحظة سلوكية',
-      description: noteDescription.trim(),
-      date: selectedDate,
+  // Local state for teacher marking
+  const [marks, setMarks] = useState<Record<string, AttendanceStatus>>(() => {
+    const initial: Record<string, AttendanceStatus> = {};
+    currentStudents.forEach((st) => {
+      const rec = allAttendances.find((a) => a.studentId === st.id && a.date === today);
+      initial[st.id] = rec?.teacherMark || (rec?.selfCheckTime ? 'present' : 'absent');
     });
-
-    triggerNotification(
-      'ملاحظة سلوكية جديدة واردة',
-      `سجل المعلم ${currentUser.name} ملاحظة سلوكية على الطالب ${behaviorNoteStudent.name} (${catObj?.label})`,
-      'behavior',
-      currentSchool.code,
-      'employee'
-    );
-
-    setIsSubmittingNote(false);
-    setBehaviorNoteStudent(null);
-    setNoteDescription('');
-    setNoteToast(true);
-    setTimeout(() => setNoteToast(false), 3000);
-  };
-
-  const dateInfo = getArabicFormattedDate(selectedDate);
-  const academicDayStatus = getAcademicDayStatus(selectedDate);
-
-  // Filter students for selected school, grade, and section
-  const classStudents = useMemo(() => {
-    return users.filter(
-      (u) =>
-        u.role === 'student' &&
-        u.schoolCode === currentSchool.code &&
-        u.className === selectedGrade &&
-        u.sectionName === selectedSection
-    );
-  }, [users, currentSchool.code, selectedGrade, selectedSection]);
-
-  // Apply search query filter
-  const filteredStudents = useMemo(() => {
-    if (!searchQuery.trim()) return classStudents;
-    const q = searchQuery.trim().toLowerCase();
-    return classStudents.filter(
-      (std) =>
-        std.name.toLowerCase().includes(q) ||
-        std.nationalId.includes(q)
-    );
-  }, [classStudents, searchQuery]);
-
-  // Get current attendance status for a student on selected date
-  const getStudentAttendance = (studentId: string, nationalId: string) => {
-    return attendances.find(
-      (a) =>
-        (a.studentId === studentId || a.nationalId === nationalId) &&
-        a.date === selectedDate
-    );
-  };
-
-  // Bulk Actions
-  const handleBulkMark = (status: 'present' | 'absent') => {
-    const listToUpdate = classStudents.map((s) => ({
-      id: s.id,
-      className: selectedGrade,
-      sectionName: selectedSection,
-    }));
-    onBulkUpdateAttendance(listToUpdate, status, currentSchool.code, selectedDate);
-    triggerSaveToast();
-  };
-
-  const handleSingleMark = (student: User, mark: AttendanceStatus) => {
-    onUpdateAttendance(
-      student.id,
-      mark,
-      currentSchool.code,
-      selectedGrade,
-      selectedSection,
-      selectedDate
-    );
-    triggerSaveToast();
-  };
-
-  const triggerSaveToast = () => {
-    setSaveToast(true);
-    setTimeout(() => setSaveToast(false), 2000);
-  };
-
-  // Compute live statistics for this class
-  const totalClassCount = classStudents.length;
-  let presentCount = 0;
-  let absentCount = 0;
-  let lateCount = 0;
-  let excusedCount = 0;
-
-  classStudents.forEach((std) => {
-    const att = getStudentAttendance(std.id, std.nationalId);
-    const status = att?.teacherMark || 'present'; // default present if untouched
-    if (status === 'present') presentCount++;
-    else if (status === 'absent') absentCount++;
-    else if (status === 'late') lateCount++;
-    else if (status === 'excused') excusedCount++;
+    return initial;
   });
 
-  const attendancePercent = totalClassCount > 0
-    ? Math.round((presentCount / totalClassCount) * 100)
-    : 100;
+  // Sync marks when changing class or section
+  useEffect(() => {
+    setMarks((prev) => {
+      const updated = { ...prev };
+      currentStudents.forEach((st) => {
+        if (!updated[st.id]) {
+          const rec = allAttendances.find((a) => a.studentId === st.id && a.date === today);
+          updated[st.id] = rec?.teacherMark || (rec?.selfCheckTime ? 'present' : 'absent');
+        }
+      });
+      return updated;
+    });
+  }, [selectedClass, selectedSection, currentStudents.length]);
+
+  const [savedMsg, setSavedMsg] = useState('');
+  
+  // Student Permission Modal State
+  const [selectedStudentForPerm, setSelectedStudentForPerm] = useState<User | null>(null);
+  const [isPermModalOpen, setIsPermModalOpen] = useState(false);
+
+  const handleMarkChange = (studentId: string, status: AttendanceStatus) => {
+    soundManager.playBeep();
+    setMarks((prev) => ({ ...prev, [studentId]: status }));
+  };
+
+  // Option 1: Mark all students as PRESENT (Teacher can then just pick the absent ones)
+  const handleMarkAllPresent = () => {
+    soundManager.playSuccess();
+    const newMarks: Record<string, AttendanceStatus> = { ...marks };
+    currentStudents.forEach((st) => {
+      newMarks[st.id] = 'present';
+    });
+    setMarks(newMarks);
+    setSavedMsg('🟢 تم تحديد جميع طلاب الفصل كـ "حاضر". يمكنك الآن النقر على "غائب" للطلاب المتغيبين فقط.');
+    setTimeout(() => setSavedMsg(''), 4000);
+  };
+
+  // Option 2: Mark all students as ABSENT (Teacher can then just pick the present ones)
+  const handleMarkAllAbsent = () => {
+    soundManager.playBeep();
+    const newMarks: Record<string, AttendanceStatus> = { ...marks };
+    currentStudents.forEach((st) => {
+      newMarks[st.id] = 'absent';
+    });
+    setMarks(newMarks);
+    setSavedMsg('🔴 تم تحديد جميع طلاب الفصل كـ "غائب". يمكنك الآن النقر على "حاضر" للطلاب الحاضرين فقط.');
+    setTimeout(() => setSavedMsg(''), 4000);
+  };
+
+  // Option 3: Reset to Gatekeeper records
+  const handleResetToGateRecords = () => {
+    soundManager.playBeep();
+    const newMarks: Record<string, AttendanceStatus> = { ...marks };
+    currentStudents.forEach((st) => {
+      const rec = allAttendances.find((a) => a.studentId === st.id && a.date === today);
+      newMarks[st.id] = rec?.selfCheckTime ? 'present' : 'absent';
+    });
+    setMarks(newMarks);
+    setSavedMsg('🔄 تم استعادة حالة الحضور بناءً على تسجيل الطلاب عند البوابة الصباحية.');
+    setTimeout(() => setSavedMsg(''), 3500);
+  };
+
+  // Real-time counts for current class
+  const presentCount = currentStudents.filter((st) => (marks[st.id] || 'absent') === 'present').length;
+  const absentCount = currentStudents.filter((st) => (marks[st.id] || 'absent') === 'absent').length;
+  const lateCount = currentStudents.filter((st) => (marks[st.id] || 'absent') === 'late').length;
+
+  const handleSaveAllMarks = () => {
+    const updatedAttendances = [...getAttendances()];
+
+    currentStudents.forEach((st) => {
+      const mark = marks[st.id] || 'absent';
+      const existingIdx = updatedAttendances.findIndex(
+        (a) => a.studentId === st.id && a.date === today
+      );
+
+      // Truancy detection rule: self checked present at gate, but teacher marked absent in classroom!
+      const selfPresent = existingIdx >= 0 && !!updatedAttendances[existingIdx].selfCheckTime;
+      const isTruant = selfPresent && mark === 'absent';
+
+      if (existingIdx >= 0) {
+        updatedAttendances[existingIdx].teacherMark = mark;
+        updatedAttendances[existingIdx].finalStatus = mark;
+        updatedAttendances[existingIdx].isTruant = isTruant;
+      } else {
+        updatedAttendances.push({
+          id: `att-${st.id}-${today}`,
+          studentId: st.id,
+          studentName: st.name,
+          nationalId: st.nationalId,
+          schoolCode: currentSchool.code,
+          className: st.className || selectedClass,
+          sectionName: st.sectionName || selectedSection,
+          date: today,
+          selfCheckTime: null,
+          teacherMark: mark,
+          finalStatus: mark,
+          isTruant: false,
+          parentMobile: st.parentMobile,
+        });
+      }
+    });
+
+    saveAttendances(updatedAttendances);
+    soundManager.playSuccess();
+    confetti({ particleCount: 50, spread: 50 });
+    setSavedMsg('✅ تم حفظ ورصد حضور الحصة بنجاح.');
+    setTimeout(() => setSavedMsg(''), 3500);
+  };
+
+  const allPermissions = getPermissions();
+  const todayPermissions = allPermissions.filter((p) => p.schoolCode === currentSchool.code && p.date === today);
+
+  const openPermissionModal = (student: User) => {
+    setSelectedStudentForPerm(student);
+    setIsPermModalOpen(true);
+  };
 
   return (
-    <div className="space-y-6 animate-fadeIn pb-12">
+    <div className="space-y-6 max-w-5xl mx-auto py-6 px-4 text-slate-800" dir="rtl">
       
-      {/* Top Banner */}
-      <div className="bg-gradient-to-br from-blue-900 via-indigo-900 to-slate-900 rounded-3xl p-6 sm:p-8 text-white shadow-lg space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="space-y-1.5">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/20 border border-blue-400/30 text-blue-200 text-xs font-bold">
-              <Building2 className="w-3.5 h-3.5" />
-              <span>{currentSchool.name}</span>
-              <span className="opacity-60">•</span>
-              <span className="font-mono">{currentSchool.code}</span>
+      {/* Live Day, Date & Live Clock Header Bar */}
+      <LiveClockHeader />
+
+      {/* Urgent Broadcast Banner */}
+      <BroadcastAlertBanner
+        notifications={getSystemNotifications().filter(
+          (n) => n.schoolCode === currentSchool.code || !n.schoolCode
+        )}
+      />
+
+      {/* Teacher Header */}
+      <div className="bg-white border border-slate-200/90 rounded-3xl p-6 flex flex-wrap items-center justify-between gap-4 shadow-xs">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-700 border border-indigo-200 flex items-center justify-center">
+            <Shield className="w-6 h-6" />
+          </div>
+          <div>
+            <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-800 text-[10px] font-bold border border-indigo-200">
+              بوابة المعلم ورصد الحصص والاستئذان
+            </span>
+            <h2 className="text-lg font-black text-slate-900 mt-1">أهلاً بك، {currentUser.name}</h2>
+            <p className="text-xs text-slate-500 font-medium">رصد الحضور ومتابعة تكرار استئذان الطلاب بين الحصص</p>
+          </div>
+        </div>
+
+        {/* Class & Section pickers */}
+        <div className="flex items-center gap-2 text-xs">
+          <select
+            value={selectedClass}
+            onChange={(e) => setSelectedClass(e.target.value)}
+            className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 font-bold focus:outline-emerald-500"
+          >
+            {classes.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={selectedSection}
+            onChange={(e) => setSelectedSection(e.target.value)}
+            className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 font-bold focus:outline-emerald-500"
+          >
+            {sections.map((s) => (
+              <option key={s} value={s}>
+                فصل {s}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {savedMsg && (
+        <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold shadow-xs">
+          {savedMsg}
+        </div>
+      )}
+
+      {/* Student List for Roster */}
+      <div className="bg-white border border-slate-200/90 rounded-3xl p-6 space-y-5 shadow-xs">
+        <div className="flex flex-wrap justify-between items-center gap-3 border-b border-slate-200 pb-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <Users className="w-5 h-5 text-indigo-600" />
+              <h3 className="text-base font-black text-slate-900">
+                كشف طلاب ({selectedClass} - فصل {selectedSection})
+              </h3>
             </div>
-            <h1 className="text-xl sm:text-2xl font-black">
-              لوحة رصد الحضور للمعلم: {currentUser.name}
-            </h1>
-            <p className="text-xs text-blue-200">
-              تحضير سريع للفصول والطلاب بالاسم المقروء وزري الرصد الجماعي الفوري
+            <p className="text-xs text-slate-500 font-medium mt-0.5">
+              رصد الحضور الفعلي للحصة وربطه ببوابة المدرسة الصباحية
             </p>
           </div>
 
-          {/* Quick Date Picker */}
-          <div className="flex items-center gap-2 bg-white/10 p-2 rounded-2xl border border-white/15">
-            <Calendar className="w-4 h-4 text-blue-300" />
-            <input
-              id="teacher-date-picker"
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="bg-transparent text-white text-xs font-bold focus:outline-hidden cursor-pointer"
-            />
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={handleSaveAllMarks}
+              className="py-2.5 px-5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-2 shadow-md shadow-emerald-600/20 cursor-pointer transition-all hover:scale-[1.02]"
+            >
+              <Save className="w-4 h-4" />
+              <span>حفظ واعتماد الرصد ↵</span>
+            </button>
           </div>
         </div>
 
-        {/* School / Grade / Section Selector Filter Bar */}
-        <div className="pt-3 border-t border-white/15 grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
-          
-          {/* School Selector (if multi-school) */}
-          {schools.length > 1 && (
-            <div>
-              <label className="block text-[11px] font-semibold text-blue-200 mb-1">المدرسة</label>
-              <select
-                id="teacher-school-select"
-                value={selectedSchoolCode}
-                onChange={(e) => onSelectSchool(e.target.value)}
-                className="w-full bg-blue-950/80 text-white border border-blue-400/30 rounded-xl px-3 py-2 font-bold focus:ring-2 focus:ring-blue-400 focus:outline-hidden"
-              >
-                {schools.map((sch) => (
-                  <option key={sch.id} value={sch.code} className="bg-slate-900 text-white">
-                    {sch.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
+        {/* Quick Bulk Action Buttons & Real-Time Statistics */}
+        <div className="bg-slate-50/90 border border-slate-200 rounded-2xl p-4 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs font-black text-slate-700 flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4 text-amber-500" />
+              <span>التحضير السريع (حرية الاختيار للمعلم):</span>
+            </span>
 
-          {/* Grade Selector (Readable names only!) */}
-          <div>
-            <label className="block text-[11px] font-semibold text-blue-200 mb-1">الصف الدراسي (مقروء)</label>
-            <select
-              id="teacher-grade-select"
-              value={selectedGrade}
-              onChange={(e) => setSelectedGrade(e.target.value)}
-              className="w-full bg-blue-950/80 text-white border border-blue-400/30 rounded-xl px-3 py-2 font-bold focus:ring-2 focus:ring-blue-400 focus:outline-hidden"
-            >
-              {availableGrades.map((gr) => (
-                <option key={gr} value={gr} className="bg-slate-900 text-white">
-                  {gr}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Section Selector */}
-          <div>
-            <label className="block text-[11px] font-semibold text-blue-200 mb-1">الشعبة / الفصل</label>
-            <div className="flex items-center gap-1">
-              {ALL_SECTIONS.map((sec) => (
-                <button
-                  key={sec}
-                  id={`teacher-sec-btn-${sec}`}
-                  type="button"
-                  onClick={() => setSelectedSection(sec)}
-                  className={`flex-1 py-2 rounded-xl font-bold transition-all cursor-pointer ${
-                    selectedSection === sec
-                      ? 'bg-blue-500 text-white shadow-md'
-                      : 'bg-white/10 text-blue-200 hover:bg-white/20'
-                  }`}
-                >
-                  {sec}
-                </button>
-              ))}
+            {/* Real-time counts summary chips */}
+            <div className="flex flex-wrap items-center gap-1.5 text-xs font-bold">
+              <span className="px-2.5 py-1 rounded-xl bg-emerald-100/80 text-emerald-900 border border-emerald-300">
+                🟢 حاضر: {presentCount}
+              </span>
+              <span className="px-2.5 py-1 rounded-xl bg-rose-100/80 text-rose-900 border border-rose-300">
+                🔴 غائب: {absentCount}
+              </span>
+              {lateCount > 0 && (
+                <span className="px-2.5 py-1 rounded-xl bg-amber-100/80 text-amber-900 border border-amber-300">
+                  🟡 متأخر: {lateCount}
+                </span>
+              )}
+              <span className="px-2.5 py-1 rounded-xl bg-slate-200 text-slate-700 font-medium">
+                الإجمالي: {currentStudents.length}
+              </span>
             </div>
           </div>
 
-          {/* Override Location condition toggle */}
-          <div>
-            <label className="block text-[11px] font-semibold text-blue-200 mb-1">صلاحية تجاوز الموقع</label>
+          {/* Big Action Buttons */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+            {/* 1. All Present Button */}
             <button
               type="button"
-              onClick={() => setOverrideLocation(!overrideLocation)}
-              className={`w-full py-2 px-3 rounded-xl border font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                overrideLocation
-                  ? 'bg-amber-500 text-slate-900 border-amber-400 shadow-xs'
-                  : 'bg-white/10 text-blue-200 border-blue-400/20'
-              }`}
+              onClick={handleMarkAllPresent}
+              className="p-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex flex-col sm:flex-row items-center justify-center gap-2 shadow-sm transition-all cursor-pointer hover:shadow-md"
             >
-              <MapPinOff className="w-3.5 h-3.5" />
-              <span>{overrideLocation ? 'تجاوز الموقع مفعّل' : 'حسب السياج الجغرافي'}</span>
+              <UserCheck className="w-5 h-5 text-emerald-100 shrink-0" />
+              <div className="text-center sm:text-right">
+                <span className="block font-black text-[13px]">الكل حاضر (تحضير الجميع) ✅</span>
+                <span className="block text-[10px] text-emerald-100 font-normal">تحديد الجميع حاضرين ثم اختيار الغائبين فقط</span>
+              </div>
             </button>
-          </div>
 
-        </div>
-      </div>
-
-      {/* Official Holiday / Weekend Notice */}
-      {!academicDayStatus.canTakeAttendance && (
-        <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 flex items-center justify-between gap-3 text-xs shadow-xs">
-          <div className="flex items-center gap-2.5">
-            <Moon className="w-5 h-5 text-amber-600 shrink-0" />
-            <div>
-              <span className="font-black text-amber-950 block">{academicDayStatus.blockReason || 'عطلة رسمية'}</span>
-              <span className="text-amber-800 text-[11px]">لا يُسجل أي غياب أو خصم في أيام الإجازات الرسمية وفق التقويم الدراسي لوزارة التعليم.</span>
-            </div>
-          </div>
-          <span className="px-3 py-1 rounded-xl bg-amber-200 text-amber-900 font-black text-[11px] shrink-0">
-            إجازة معتمدة
-          </span>
-        </div>
-      )}
-
-      {/* Class Statistics & Fast Bulk Action Bar */}
-      <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-xs space-y-6">
-        
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-black px-2.5 py-1 rounded-full bg-blue-100 text-blue-800">
-                {formatReadableClass(selectedGrade, selectedSection)}
-              </span>
-              <span className="text-xs text-slate-500">
-                إجمالي الطلاب في هذا الفصل: <strong>{totalClassCount}</strong> طالب
-              </span>
-            </div>
-            <h2 className="text-lg font-black text-slate-900 mt-1">
-              التحضير السريع للفصل
-            </h2>
-          </div>
-
-          {/* TWO MAIN FAST BULK ACTION BUTTONS (As specified in document) */}
-          <div className="flex items-center gap-3">
+            {/* 2. All Absent Button */}
             <button
-              id="bulk-all-present-btn"
-              onClick={() => handleBulkMark('present')}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black transition-all shadow-sm active:scale-95 cursor-pointer"
+              type="button"
+              onClick={handleMarkAllAbsent}
+              className="p-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex flex-col sm:flex-row items-center justify-center gap-2 shadow-sm transition-all cursor-pointer hover:shadow-md"
             >
-              <CheckCheck className="w-4 h-4" />
-              <span>الكل حاضر ✓</span>
+              <UserX className="w-5 h-5 text-rose-100 shrink-0" />
+              <div className="text-center sm:text-right">
+                <span className="block font-black text-[13px]">الكل غائب (تصفير الكشف) ⛔</span>
+                <span className="block text-[10px] text-rose-100 font-normal">تحديد الجميع غائبين ثم اختيار الحاضرين فقط</span>
+              </div>
             </button>
 
+            {/* 3. Reset to Gate Records */}
             <button
-              id="bulk-all-absent-btn"
-              onClick={() => handleBulkMark('absent')}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black transition-all shadow-sm active:scale-95 cursor-pointer"
+              type="button"
+              onClick={handleResetToGateRecords}
+              className="p-3 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold text-xs flex flex-col sm:flex-row items-center justify-center gap-2 shadow-xs transition-all cursor-pointer"
             >
-              <XCircle className="w-4 h-4" />
-              <span>الكل غائب ✗</span>
+              <RefreshCw className="w-4 h-4 text-indigo-600 shrink-0" />
+              <div className="text-center sm:text-right">
+                <span className="block font-black text-[12px] text-slate-900">مطابقة مسح البوابة 🔄</span>
+                <span className="block text-[10px] text-slate-500 font-normal">استرجاع الحضور المسجل عند بوابة الصباح</span>
+              </div>
             </button>
           </div>
         </div>
 
-        {/* Live Class Stats Pills */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
-            <span className="text-[11px] text-slate-500 font-semibold block">نسبة الحضور</span>
-            <strong className="text-xl font-black text-blue-600">{attendancePercent}%</strong>
-          </div>
-          <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200">
-            <span className="text-[11px] text-emerald-700 font-semibold block">الحاضرون</span>
-            <strong className="text-xl font-black text-emerald-800">{presentCount}</strong>
-          </div>
-          <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200">
-            <span className="text-[11px] text-rose-700 font-semibold block">الغائبون</span>
-            <strong className="text-xl font-black text-rose-800">{absentCount}</strong>
-          </div>
-          <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200">
-            <span className="text-[11px] text-amber-700 font-semibold block">المتأخرون / المستأذنون</span>
-            <strong className="text-xl font-black text-amber-800">{lateCount + excusedCount}</strong>
-          </div>
-        </div>
+        <div className="space-y-2.5">
+          {currentStudents.map((st, idx) => {
+            const att = allAttendances.find((a) => a.studentId === st.id && a.date === today);
+            const currentMark = marks[st.id] || (att?.selfCheckTime ? 'present' : 'absent');
+            const hasGateCheck = !!att?.selfCheckTime;
 
-        {/* Search within class */}
-        <div className="relative">
-          <Search className="w-4 h-4 absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            placeholder="بحث عن طالب بالاسم أو رقم الهوية..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-slate-50 border border-slate-300 rounded-xl pr-10 pl-4 py-2.5 text-xs text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-hidden font-semibold"
-          />
-        </div>
+            // Student today permissions
+            const studentTodayPerms = todayPermissions.filter((p) => p.studentId === st.id);
+            const permCount = studentTodayPerms.length;
+            const isCurrentlyOut = studentTodayPerms.some((p) => !p.timeIn);
 
-        {/* Students List with Rapid Single-Tap Controls */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between text-xs font-bold text-slate-500 px-2">
-            <span>قائمة طلاب الفصل ({filteredStudents.length})</span>
-            <span>حالة الرصد</span>
-          </div>
+            return (
+              <div
+                key={st.id}
+                className={`border rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 text-xs transition-colors ${
+                  isCurrentlyOut 
+                    ? 'bg-amber-50/70 border-amber-300' 
+                    : 'bg-slate-50 border-slate-200'
+                }`}
+              >
+                {/* Student Info & Permission Badges */}
+                <div className="flex items-center gap-3">
+                  <span className="w-6 h-6 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-[11px]">
+                    {idx + 1}
+                  </span>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => onOpenDossier(st)}
+                        className="text-slate-900 font-bold hover:text-indigo-600 text-right block cursor-pointer"
+                      >
+                        {st.name}
+                      </button>
 
-          {filteredStudents.length === 0 ? (
-            <div className="p-8 text-center bg-slate-50 rounded-2xl text-slate-400 text-xs font-semibold">
-              لا يوجد طلاب مسجلين في هذا الفصل حالياً
-            </div>
-          ) : (
-            <div className="divide-y divide-slate-100 border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-2xs">
-              {filteredStudents.map((student, idx) => {
-                const att = getStudentAttendance(student.id, student.nationalId);
-                const currentMark: AttendanceStatus = att?.teacherMark || 'present';
+                      {/* ADHD & Frequent Permission Badges for the Next Teacher */}
+                      {permCount >= 3 ? (
+                        <span className="px-2 py-0.5 rounded-md bg-rose-100 text-rose-900 border border-rose-200 text-[10px] font-black flex items-center gap-1 animate-pulse">
+                          <ShieldAlert className="w-3 h-3 text-rose-600" />
+                          <span>⚠️ استأذن {permCount} مرات اليوم (فرط حركة/تشتت)</span>
+                        </span>
+                      ) : permCount === 2 ? (
+                        <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 border border-amber-200 text-[10px] font-bold flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3 text-amber-600" />
+                          <span>استأذن مرتين اليوم</span>
+                        </span>
+                      ) : permCount === 1 ? (
+                        <span className="px-2 py-0.5 rounded-md bg-slate-200/80 text-slate-700 text-[10px] font-medium">
+                          استأذن مرة واحدة
+                        </span>
+                      ) : null}
 
-                return (
-                  <div
-                    key={student.id}
-                    id={`teacher-student-row-${student.nationalId}`}
-                    className="p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/80 transition-colors"
-                  >
-                    {/* Student Info */}
-                    <div className="flex items-center gap-3">
-                      <span className="w-6 text-center text-xs font-mono text-slate-400 font-bold">
-                        {idx + 1}
-                      </span>
-                      <div>
-                        <h4 className="text-xs sm:text-sm font-bold text-slate-900">
-                          {student.name}
-                        </h4>
-                        <div className="flex items-center gap-2 text-[11px] text-slate-500 font-mono">
-                          <span>الهوية: {student.nationalId}</span>
-                        </div>
-                      </div>
+                      {isCurrentlyOut && (
+                        <span className="px-2 py-0.5 rounded-full bg-amber-200 text-amber-950 font-black text-[10px] border border-amber-300">
+                          خارج الصف الآن ⏳
+                        </span>
+                      )}
                     </div>
 
-                    {/* Fast Attendance 4-State Buttons */}
-                    <div className="flex items-center gap-1.5 self-end sm:self-auto">
+                    <div className="flex flex-wrap items-center gap-2 mt-1">
+                      <span className="text-[10px] text-slate-500 font-mono">هوية: {st.nationalId}</span>
                       
-                      {/* Present Button */}
+                      {hasGateCheck ? (
+                        <span className="text-[10px] text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-md font-bold">
+                          ✓ حضر عند البوابة ({att?.selfCheckTime})
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-slate-500 bg-slate-200/70 px-2 py-0.5 rounded-md">
+                          لم يسجل عند البوابة
+                        </span>
+                      )}
+
+                      {/* Teacher quick pass button */}
                       <button
                         type="button"
-                        id={`mark-present-${student.nationalId}`}
-                        onClick={() => handleSingleMark(student, 'present')}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
-                          currentMark === 'present'
-                            ? 'bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-400/30'
-                            : 'bg-slate-100 text-slate-600 hover:bg-emerald-50 hover:text-emerald-700'
+                        onClick={() => openPermissionModal(st)}
+                        className={`text-[11px] font-bold px-2.5 py-0.5 rounded-lg border transition-colors flex items-center gap-1 cursor-pointer ${
+                          permCount > 0 
+                            ? 'bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border-indigo-200' 
+                            : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
                         }`}
                       >
-                        <Check className="w-3.5 h-3.5" />
-                        <span>حاضر</span>
+                        <Activity className="w-3 h-3 text-indigo-600" />
+                        <span>{permCount > 0 ? `سجل الاستئذان (${permCount}) 🚶‍♂️` : 'تسجيل استئذان 🚶‍♂️'}</span>
                       </button>
 
-                      {/* Absent Button */}
-                      <button
-                        type="button"
-                        id={`mark-absent-${student.nationalId}`}
-                        onClick={() => handleSingleMark(student, 'absent')}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
-                          currentMark === 'absent'
-                            ? 'bg-rose-600 text-white shadow-xs ring-2 ring-rose-400/30'
-                            : 'bg-slate-100 text-slate-600 hover:bg-rose-50 hover:text-rose-700'
-                        }`}
-                      >
-                        <X className="w-3.5 h-3.5" />
-                        <span>غائب</span>
-                      </button>
-
-                      {/* Late Button */}
-                      <button
-                        type="button"
-                        id={`mark-late-${student.nationalId}`}
-                        onClick={() => handleSingleMark(student, 'late')}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
-                          currentMark === 'late'
-                            ? 'bg-amber-600 text-white shadow-xs ring-2 ring-amber-400/30'
-                            : 'bg-slate-100 text-slate-600 hover:bg-amber-50 hover:text-amber-700'
-                        }`}
-                      >
-                        <Clock className="w-3.5 h-3.5" />
-                        <span>متأخر</span>
-                      </button>
-
-                      {/* Excused Button */}
-                      <button
-                        type="button"
-                        id={`mark-excused-${student.nationalId}`}
-                        onClick={() => handleSingleMark(student, 'excused')}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
-                          currentMark === 'excused'
-                            ? 'bg-teal-600 text-white shadow-xs ring-2 ring-teal-400/30'
-                            : 'bg-slate-100 text-slate-600 hover:bg-teal-50 hover:text-teal-700'
-                        }`}
-                      >
-                        <span>مستأذن</span>
-                      </button>
-
-                      {/* Behavior Note Trigger */}
-                      <button
-                        type="button"
-                        id={`teacher-note-btn-${student.nationalId}`}
-                        onClick={() => handleOpenBehaviorNoteModal(student)}
-                        className="p-2 rounded-xl text-amber-600 bg-amber-50 hover:bg-amber-100 hover:text-amber-800 transition-colors border border-amber-200 cursor-pointer"
-                        title="تسجيل ملاحظة أو مخالفة سلوكية على الطالب للإدارة"
-                      >
-                        <MessageSquareWarning className="w-3.5 h-3.5" />
-                      </button>
-
+                      {/* Teacher Behavior Record button */}
+                      {(() => {
+                        const behScore = calculateStudentBehaviorScore(st.id);
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedStudentForBehavior(st);
+                              setIsBehaviorModalOpen(true);
+                            }}
+                            className="text-[11px] font-black px-2.5 py-0.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 transition-colors flex items-center gap-1 cursor-pointer"
+                          >
+                            <Star className="w-3 h-3 text-amber-500 fill-amber-500" />
+                            <span>رصد سلوك ({behScore.currentScore}/100) ⭐</span>
+                          </button>
+                        );
+                      })()}
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
+                </div>
 
+                {/* Mark Toggle Buttons */}
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleMarkChange(st.id, 'present')}
+                    className={`px-3.5 py-1.5 rounded-xl font-bold transition-colors cursor-pointer text-xs ${
+                      currentMark === 'present'
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200'
+                    }`}
+                  >
+                    حاضر
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleMarkChange(st.id, 'absent')}
+                    className={`px-3.5 py-1.5 rounded-xl font-bold transition-colors cursor-pointer text-xs ${
+                      currentMark === 'absent'
+                        ? 'bg-rose-600 text-white shadow-xs'
+                        : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200'
+                    }`}
+                  >
+                    غائب
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleMarkChange(st.id, 'late')}
+                    className={`px-3.5 py-1.5 rounded-xl font-bold transition-colors cursor-pointer text-xs ${
+                      currentMark === 'late'
+                        ? 'bg-amber-600 text-white shadow-xs'
+                        : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200'
+                    }`}
+                  >
+                    متأخر
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
-
       </div>
 
-      {/* Teacher Behavior Note Modal */}
-      {behaviorNoteStudent && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 border border-slate-100">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2 text-amber-700">
-                <div className="p-2 rounded-xl bg-amber-50 border border-amber-200">
-                  <MessageSquareWarning className="w-5 h-5 text-amber-600" />
-                </div>
-                <div>
-                  <h3 className="text-base font-black text-slate-900">تسجيل ملاحظة / مخالفة سلوكية</h3>
-                  <p className="text-xs text-slate-500">تُرفع مباشرة إلى وكيل شؤون الطلاب والإدارة المدرسية</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setBehaviorNoteStudent(null)}
-                className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-3 bg-amber-50/70 border border-amber-200/60 rounded-2xl flex items-center justify-between text-xs">
-              <div>
-                <span className="text-slate-500 block text-[11px]">الطالب المستهدف:</span>
-                <strong className="text-slate-900 font-bold">{behaviorNoteStudent.name}</strong>
-              </div>
-              <div className="text-left font-mono">
-                <span className="text-slate-500 block text-[11px]">الصف والشعبة:</span>
-                <span className="font-bold text-amber-900">{behaviorNoteStudent.className} / {behaviorNoteStudent.sectionName}</span>
-              </div>
-            </div>
-
-            <form onSubmit={handleSubmitBehaviorNote} className="space-y-3.5">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  تصنيف المخالفة / الملاحظة:
-                </label>
-                <select
-                  value={noteCategory}
-                  onChange={(e) => setNoteCategory(e.target.value as any)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 font-bold focus:bg-white focus:ring-2 focus:ring-amber-500 focus:outline-hidden"
-                >
-                  {BEHAVIOR_CATEGORIES.map((cat) => (
-                    <option key={cat.id} value={cat.id}>
-                      {cat.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  تفاصيل الملاحظة وموقف الطالب داخل الحصة:
-                </label>
-                <textarea
-                  rows={3}
-                  required
-                  value={noteDescription}
-                  onChange={(e) => setNoteDescription(e.target.value)}
-                  placeholder="اكتب وصفاً موجزاً للملاحظة وتوقيتها والإجراء المتخذ مبدئياً من قِبل المعلم..."
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800 focus:bg-white focus:ring-2 focus:ring-amber-500 focus:outline-hidden font-normal"
-                />
-              </div>
-
-              <div className="pt-2 flex items-center gap-2">
-                <button
-                  type="submit"
-                  disabled={isSubmittingNote}
-                  className="flex-1 bg-amber-600 hover:bg-amber-700 active:scale-98 text-white text-xs font-black py-3 rounded-2xl flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer"
-                >
-                  <Send className="w-4 h-4" />
-                  <span>إرسال للإدارة المدرسية ↵</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setBehaviorNoteStudent(null)}
-                  className="px-4 py-3 rounded-2xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
-                >
-                  إلغاء
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {/* Permission Modal */}
+      {selectedStudentForPerm && (
+        <StudentPermissionModal
+          isOpen={isPermModalOpen}
+          onClose={() => {
+            setIsPermModalOpen(false);
+            setSelectedStudentForPerm(null);
+          }}
+          student={selectedStudentForPerm}
+          teacher={currentUser}
+          school={currentSchool}
+          onPermissionAdded={() => {
+            setPermissionsVersion((v) => v + 1);
+          }}
+        />
       )}
 
-      {/* Save feedback indicator */}
-      {saveToast && (
-        <div className="fixed bottom-6 left-6 z-50 bg-slate-900 text-white px-4 py-2.5 rounded-2xl shadow-xl flex items-center gap-2 text-xs font-bold animate-fadeIn">
-          <Check className="w-4 h-4 text-emerald-400" />
-          <span>تم حفظ الرصد تلقائياً</span>
-        </div>
-      )}
-
-      {/* Behavior Note Sent Toast */}
-      {noteToast && (
-        <div className="fixed bottom-6 left-6 z-50 bg-amber-800 text-white px-4 py-3 rounded-2xl shadow-xl flex items-center gap-2.5 text-xs font-bold animate-in fade-in slide-in-from-bottom-4">
-          <Check className="w-4 h-4 text-amber-300" />
-          <span>تم إرسال الملاحظة السلوكية للإدارة المدرسية بنجاح ✓</span>
-        </div>
+      {/* Behavior Record Modal */}
+      {selectedStudentForBehavior && isBehaviorModalOpen && (
+        <BehaviorRecordModal
+          isOpen={isBehaviorModalOpen}
+          onClose={() => {
+            setIsBehaviorModalOpen(false);
+            setSelectedStudentForBehavior(null);
+          }}
+          student={selectedStudentForBehavior}
+          currentUser={currentUser}
+          currentSchool={currentSchool}
+          onSaved={() => {
+            setIsBehaviorModalOpen(false);
+            setSelectedStudentForBehavior(null);
+            setBehaviorVersion((v) => v + 1);
+          }}
+        />
       )}
 
     </div>

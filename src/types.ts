@@ -1,86 +1,130 @@
-export type UserRole = 'employee' | 'teacher' | 'student' | 'parent' | 'superadmin';
+export type UserRole = 'student' | 'teacher' | 'employee' | 'parent' | 'superadmin' | 'guest';
 
-export interface SchoolTimings {
-  tabour: string; // e.g. "06:45"
-  firstPeriod: string; // e.g. "07:00"
-  lateAfter: string; // e.g. "07:15"
-  absentAfter: string; // e.g. "07:45"
-  breakTime: string; // e.g. "09:30"
-  dismissal: string; // e.g. "12:45"
-}
-
-export interface Geofence {
-  lat: number;
-  lng: number;
-  radius: number; // in meters (100 - 1000m)
-  addressName?: string;
-}
-
-export type SubscriptionPlan = 'free_forever' | 'free_trial' | 'semester' | 'yearly' | 'bronze' | 'silver' | 'gold';
-export type SubscriptionStatus = 'active' | 'expiring_soon' | 'expired' | 'suspended';
+export type StaffTitle = 
+  | 'principal' 
+  | 'vice_principal' 
+  | 'teacher' 
+  | 'admin_assistant' 
+  | 'student_advisor' 
+  | 'gatekeeper' 
+  | 'lab_technician' 
+  | 'other';
 
 export interface SchoolClassSection {
   id: string;
-  className: string; // e.g. "الأول الثانوي" or "1314"
-  classCode?: string; // e.g. "1314"
-  sections: string[]; // e.g. ["1", "2", "3"] or ["أ", "ب", "ج"]
+  className: string;
+  sections: string[];
 }
 
 export interface School {
   id: string;
+  code: string;
   name: string;
-  code: string; // e.g. "RAYA-1448" or "SAQR-1448"
-  logo?: string;
   city: string;
-  educationOffice?: string;
-  type: 'elementary' | 'intermediate' | 'secondary' | 'combined';
-  contact: string;
-  managerName: string;
-  timings: SchoolTimings;
-  geofence: Geofence;
-  createdBy: string;
-  isSuspended?: boolean;
-  
-  // Custom Classes & Sections configured by the school employee
+  type: 'elementary' | 'middle' | 'secondary' | 'quran';
+  lat: number;
+  lng: number;
+  radiusMeters: number;
+  subscriptionPlan: 'trial' | 'semester' | 'yearly' | 'free_forever';
+  subscriptionStatus: 'active' | 'expired' | 'pending_payment';
+  subscriptionStartDate: string;
+  subscriptionEndDate: string;
+  contactMobile: string;
+  isQuranSchool?: boolean;
   customClasses?: SchoolClassSection[];
-
-  // Super Admin / Owner License & Subscription properties
-  subscriptionPlan: SubscriptionPlan;
-  subscriptionStartDate: string; // YYYY-MM-DD
-  subscriptionExpiryDate: string; // YYYY-MM-DD
-  maxStudents: number;
-  notes?: string;
-  
-  createdAt: string;
 }
 
 export interface User {
   id: string;
-  nationalId: string; // هوية / رقم الطالب
+  nationalId: string;
   name: string;
-  mobile?: string; // جوال الطالب أو المستخدم
-  parentMobile?: string; // رقم جوال ولي الأمر من الكشوفات
-  email?: string;
-  password: string; // last 4 digits of ID default
+  mobile?: string;
+  parentMobile?: string;
+  password?: string;
   role: UserRole;
+  staffTitle?: StaffTitle;
   schoolCode: string;
-  photoUrl?: string; // Student & Staff Profile Photo
-  className?: string; // e.g. "الأول المتوسط", "الأول الثانوي", "1314"
-  classCode?: string; // e.g. "1314"
-  sectionName?: string; // e.g. "1", "2", "أ", "ب", "ج", "د", "هـ"
-  isAssistant?: boolean;
-  assistantPermissions?: {
-    canManageAttendance: boolean;
-    canApproveExcuses: boolean;
-    canBroadcastEmergency: boolean;
-    canManageStudents: boolean;
-  };
-  assignedGrades?: string[]; // for teachers
-  assignedSections?: string[]; // for teachers
-  childrenNationalIds?: string[]; // for parents
+  className?: string;
+  sectionName?: string;
+  avatar?: string; // صورة الطالب / العضو الشخصية
+  lastAbsenceResetDate?: string; // تاريخ آخر إجراء وإعادة ضبط عداد الغياب
+  childrenNationalIds?: string[];
+  assignedClasses?: { className: string; sectionName: string }[];
+  managedSchoolCodes?: string[]; // المدارس التابعة للمدير (بحد أقصى مدرستين)
+}
+
+export interface AdministrativeAbsenceAction {
+  id: string;
+  studentId: string;
+  studentName: string;
+  nationalId: string;
+  schoolCode: string;
+  className: string;
+  sectionName: string;
+  absenceCount: number;
+  actionType: 'first_warning' | 'parent_pledge' | 'counselor_referral' | 'disciplinary_committee' | 'custom';
+  actionTitle: string;
+  notes: string;
+  recordedById: string;
+  recordedByName: string;
+  recordedByRole: string;
+  resetCycle: boolean;
+  date: string;
+  createdAt: string;
 }
 
 export type AttendanceStatus = 'present' | 'absent' | 'late' | 'excused';
+
+export type PermissionReason = 
+  | 'restroom' 
+  | 'nurse' 
+  | 'water' 
+  | 'administration' 
+  | 'library' 
+  | 'prayer' 
+  | 'other';
+
+export type BehaviorType = 'positive' | 'negative' | 'compensatory';
+
+export interface StudentBehaviorLog {
+  id: string;
+  studentId: string;
+  studentName: string;
+  nationalId: string;
+  schoolCode: string;
+  className: string;
+  sectionName: string;
+  date: string; // YYYY-MM-DD
+  time?: string;
+  type: BehaviorType;
+  points: number; // e.g. 1, 2, 3, 5
+  title: string;
+  category: string;
+  notes?: string;
+  recordedById: string;
+  recordedByName: string;
+  recordedByRole: 'teacher' | 'employee' | 'student_advisor' | 'admin';
+  createdAt: string;
+}
+
+export interface StudentPermission {
+  id: string;
+  studentId: string;
+  studentName: string;
+  nationalId: string;
+  schoolCode: string;
+  className: string;
+  sectionName: string;
+  date: string; // YYYY-MM-DD
+  timeOut: string; // HH:mm
+  timeIn?: string | null; // HH:mm if returned
+  durationMinutes?: number;
+  teacherId: string;
+  teacherName: string;
+  reason: PermissionReason;
+  notes?: string;
+  createdAt: string;
+}
 
 export interface Attendance {
   id: string;
@@ -88,127 +132,74 @@ export interface Attendance {
   studentName: string;
   nationalId: string;
   schoolCode: string;
-  className: string; // مقروء
-  sectionName: string; // أ، ب، ج أو 1، 2
-  date: string; // YYYY-MM-DD
-  selfCheckTime: string | null; // HH:mm:ss when student registered via mobile inside fence
-  teacherMark: AttendanceStatus | null; // marked by teacher
+  className: string;
+  sectionName: string;
+  date: string;
+  selfCheckTime?: string | null;
+  teacherMark?: AttendanceStatus | null;
   finalStatus: AttendanceStatus;
-  isTruant: boolean; // true if selfCheckTime != null && teacherMark === 'absent' (كشف الهارب)
-  overrideLocation?: boolean;
-  photoUrl?: string;
+  isTruant?: boolean; // Detected as truant (self present but teacher absent)
   parentMobile?: string;
   excuseReason?: string;
-  teacherId?: string; // ID or national ID of the teacher who recorded the absence
-  teacherName?: string; // Name of the teacher who recorded the absence
-  updatedAt?: string;
+  excuseType?: 'medical' | 'official' | 'emergency' | 'other';
+  excuseStatus?: 'pending' | 'accepted' | 'rejected';
+  excuseAttachment?: string;
+  excuseSubmittedBy?: 'student' | 'parent';
+  excuseSubmittedAt?: string;
+  adminDecisionNotes?: string;
+  // Gate Checkout & Exit fields
+  exitTime?: string | null; // وقت انصراف / خروج الطالب من البوابة
+  exitReason?: 'dismissal' | 'early_permission' | 'medical_emergency' | 'other';
+  exitConfirmedBy?: string; // اسم أو دور مسجل الخروج
+  pickupPersonName?: string; // اسم المستلم أو ولي الأمر عند الخروج المبكر
 }
 
-export interface Excuse {
+export interface CorrectionRequest {
   id: string;
+  attendanceId: string;
   studentId: string;
   studentName: string;
-  nationalId: string;
+  nationalId?: string;
   schoolCode: string;
   className: string;
   sectionName: string;
-  date: string; // the date of absence
-  type: 'medical' | 'family' | 'other';
-  description: string;
-  file?: string; // base64 / dataUrl (compressed image or pdf)
-  fileName?: string;
-  fileType?: 'image' | 'pdf';
-  parentNote?: string;
+  date: string;
+  requestedByRole: 'parent' | 'student' | 'teacher';
+  requesterName: string;
+  previousStatus: AttendanceStatus;
+  requestedStatus: AttendanceStatus;
+  reason: string;
+  excuseType?: 'medical' | 'official' | 'emergency' | 'other';
+  attachmentUrl?: string;
   status: 'pending' | 'approved' | 'rejected';
-  rejectionReason?: string;
-  reviewedBy?: string;
-  reviewedAt?: string;
-  submittedAt: string;
+  adminDecisionNotes?: string;
+  createdAt: string;
 }
 
-export interface EmergencyResponse {
-  userId: string;
-  userName: string;
-  role: UserRole;
-  status: 'safe' | 'needs_help' | 'acknowledged';
-  respondedAt: string;
-  note?: string;
-}
-
-export interface Emergency {
+export interface SubscriptionPaymentRequest {
   id: string;
   schoolCode: string;
-  message: string;
-  type: 'rain' | 'maintenance' | 'early_dismissal' | 'security' | 'other';
-  date: string;
+  schoolName: string;
+  plan: 'semester' | 'yearly' | 'free_forever';
+  amount: number;
+  senderName: string;
+  senderBank: string;
+  referenceNumber: string;
+  proofImageUrl?: string;
+  status: 'pending' | 'approved' | 'rejected';
   createdAt: string;
-  active: boolean;
-  responses: EmergencyResponse[];
 }
 
-export interface NoorComparison {
-  date: string;
-  schoolCode: string;
-  className: string;
-  sectionName: string;
-  noorCount: number;
-  actualCount: number;
-  diff: number;
-  lastUpdated: string;
-}
-
-export interface InAppNotification {
+export interface SystemNotification {
   id: string;
   title: string;
-  body: string;
-  type: 'emergency' | 'attendance' | 'truant' | 'subscription' | 'excuse' | 'behavior' | 'general';
-  timestamp: string;
-  read: boolean;
-  schoolCode?: string;
+  message: string;
+  type: 'info' | 'warning' | 'alert' | 'success';
   targetRole?: UserRole | 'all';
-  targetUserId?: string;
-  linkAction?: string;
-}
-
-export interface BehaviorDeduction {
-  id: string;
-  studentId: string;
-  studentNationalId: string;
-  studentName: string;
-  schoolCode: string;
-  className?: string;
-  sectionName?: string;
-  type: 'tardiness' | 'manual_deduction' | 'teacher_note_approved';
-  points: number; // e.g. 1 for morning tardiness, 2 to 15 for administrative infractions
-  reason: string;
-  notes?: string;
-  date: string; // YYYY-MM-DD
-  recordedBy: string; // 'نظام الانضباط الآلي' or Admin name
-  recordedByName?: string;
-  teacherNoteId?: string;
-  notifiedParent?: boolean;
+  schoolCode?: string;
+  priority?: 'normal' | 'urgent' | 'emergency';
+  broadcastType?: 'early_dismissal' | 'school_suspended' | 'general_announcement';
+  senderName?: string;
   createdAt: string;
+  read?: boolean;
 }
-
-export interface BehaviorNote {
-  id: string;
-  studentId: string;
-  studentNationalId: string;
-  studentName: string;
-  schoolCode: string;
-  className: string;
-  sectionName: string;
-  teacherId: string;
-  teacherName: string;
-  category: 'classroom_disruption' | 'homework_neglect' | 'unauthorized_device' | 'disrespect' | 'uniform_violation' | 'fighting' | 'late_to_class' | 'other';
-  categoryLabel: string;
-  description: string;
-  date: string;
-  createdAt: string;
-  status: 'pending' | 'resolved_with_deduction' | 'resolved_warning_only' | 'dismissed';
-  adminDecisionNote?: string;
-  deductedPoints?: number;
-  resolvedBy?: string;
-  resolvedAt?: string;
-}
-

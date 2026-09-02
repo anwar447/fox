@@ -1,37 +1,390 @@
-import { School, User, Attendance, Excuse, Emergency } from '../types';
+import { School, User, Attendance, StudentPermission, StudentBehaviorLog } from '../types';
+import { getTodayDateString } from '../utils/academic';
 
-/**
- * Clean production initialization data.
- * Zero demo students, zero fake attendances, zero fake excuses.
- * Provides only the Super Admin account so the platform is 100% clean and ready for real school registration.
- */
-export function generateInitialData(): {
-  schools: School[];
-  users: User[];
-  attendances: Attendance[];
-  excuses: Excuse[];
-  emergencies: Emergency[];
-} {
-  const schools: School[] = [];
+export const INITIAL_SCHOOLS: School[] = [
+  {
+    id: 'sch-raya-1',
+    code: 'RAYA-1448',
+    name: 'مدرسة الراية الأهلية المتوسطة',
+    city: 'الرياض',
+    type: 'middle',
+    lat: 24.7136,
+    lng: 46.6753,
+    radiusMeters: 300,
+    subscriptionPlan: 'yearly',
+    subscriptionStatus: 'active',
+    subscriptionStartDate: '2026-01-01',
+    subscriptionEndDate: '2027-01-01',
+    contactMobile: '0501234567',
+    customClasses: [
+      { id: 'c-1', className: 'الأول المتوسط', sections: ['1', '2', '3'] },
+      { id: 'c-2', className: 'الثاني المتوسط', sections: ['1', '2'] },
+      { id: 'c-3', className: 'الثالث المتوسط', sections: ['1', '2'] },
+    ],
+  },
+  {
+    id: 'sch-quran-1',
+    code: 'QURAN-100',
+    name: 'مدرسة الإمام عاصم لتحفيظ القرآن الكريم',
+    city: 'مكة المكرمة',
+    type: 'quran',
+    lat: 21.4225,
+    lng: 39.8262,
+    radiusMeters: 400,
+    subscriptionPlan: 'free_forever',
+    subscriptionStatus: 'active',
+    subscriptionStartDate: '2026-01-01',
+    subscriptionEndDate: '2099-12-31',
+    contactMobile: '0555555555',
+    isQuranSchool: true,
+    customClasses: [
+      { id: 'c-q1', className: 'حلقة الإتقان', sections: ['1', '2'] },
+      { id: 'c-q2', className: 'حلقة النور', sections: ['1'] },
+    ],
+  },
+];
 
-  const users: User[] = [
-    // Super Admin / System Owner (المالك والمشرف العام على المنظومة)
-    {
-      id: 'usr-superadmin',
-      nationalId: '9999999999',
-      name: 'المشرف العام - إدارة المنظومة',
-      mobile: '0548171965',
-      email: 'admin@hodork.sa',
-      password: 'admin',
-      role: 'superadmin',
-      schoolCode: 'GLOBAL',
-      photoUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+export const INITIAL_USERS: User[] = [
+  // 1. Super Admin (سوبر ادمن)
+  {
+    id: 'usr-admin-1',
+    nationalId: '1000000000',
+    name: 'سوبر ادمن (المشرف العام)',
+    mobile: '0500000000',
+    password: 'admin',
+    role: 'superadmin',
+    schoolCode: 'SUPERADMIN',
+  },
+  // 2. School Principal / School Admin (مدير المدرسة)
+  {
+    id: 'usr-emp-1',
+    nationalId: '1010101010',
+    name: 'أ. عبدالله ناصر القحطاني (مدير المدرسة)',
+    mobile: '0551122334',
+    password: '123',
+    role: 'employee',
+    staffTitle: 'principal',
+    schoolCode: 'RAYA-1448',
+  },
+  // 3. School Vice Principal / Assistant (وكيل المدرسة)
+  {
+    id: 'usr-emp-2',
+    nationalId: '1015151515',
+    name: 'أ. مساعد سعد الشهري (وكيل شؤون الطلاب)',
+    mobile: '0559988776',
+    password: '123',
+    role: 'employee',
+    staffTitle: 'vice_principal',
+    schoolCode: 'RAYA-1448',
+  },
+  // 4. Teacher 1 (معلم الرياضيات ورائد الصف الأول)
+  {
+    id: 'usr-tch-1',
+    nationalId: '1020202020',
+    name: 'أ. فيصل خالد العتيبي (معلم)',
+    mobile: '0544332211',
+    password: '123',
+    role: 'teacher',
+    staffTitle: 'teacher',
+    schoolCode: 'RAYA-1448',
+    assignedClasses: [
+      { className: 'الأول المتوسط', sectionName: '1' },
+      { className: 'الأول المتوسط', sectionName: '2' },
+    ],
+  },
+  // 5. Teacher 2 (معلم العلوم واللغة العربية)
+  {
+    id: 'usr-tch-2',
+    nationalId: '1025252525',
+    name: 'أ. تركي محمد الحربي (معلم لغتي والعلوم)',
+    mobile: '0547788990',
+    password: '123',
+    role: 'teacher',
+    staffTitle: 'teacher',
+    schoolCode: 'RAYA-1448',
+    assignedClasses: [
+      { className: 'الثاني المتوسط', sectionName: '1' },
+      { className: 'الثالث المتوسط', sectionName: '1' },
+    ],
+  },
+  // 6. Parent (ولي أمر طالبين)
+  {
+    id: 'usr-prn-1',
+    nationalId: '1030303030',
+    name: 'محمد إبراهيم الزهراني (ولي أمر)',
+    mobile: '0566778899',
+    password: '123',
+    role: 'parent',
+    schoolCode: 'RAYA-1448',
+    childrenNationalIds: ['1100110011', '1100220022'],
+  },
+  // 7. Student 1 (حاضر صباحاً وبالحصة - منضبط)
+  {
+    id: 'usr-std-1',
+    nationalId: '1100110011',
+    name: 'عبدالرحمن محمد إبراهيم الزهراني',
+    mobile: '0599112233',
+    parentMobile: '0566778899',
+    password: '123',
+    role: 'student',
+    schoolCode: 'RAYA-1448',
+    className: 'الأول المتوسط',
+    sectionName: '1',
+  },
+  // 8. Student 2 (غائب - أرسل ولي أمره عذراً طبياً)
+  {
+    id: 'usr-std-2',
+    nationalId: '1100220022',
+    name: 'عمر محمد إبراهيم الزهراني',
+    mobile: '0599445566',
+    parentMobile: '0566778899',
+    password: '123',
+    role: 'student',
+    schoolCode: 'RAYA-1448',
+    className: 'الأول المتوسط',
+    sectionName: '2',
+  },
+  // 9. Student 3 (حالة هروب وتباين: حضر عند البوابة وغاب عن الحصة)
+  {
+    id: 'usr-std-3',
+    nationalId: '1100330033',
+    name: 'سلطان فهد الدوسري (تجربة كشف الهروب)',
+    mobile: '0588223344',
+    parentMobile: '0555443322',
+    password: '123',
+    role: 'student',
+    schoolCode: 'RAYA-1448',
+    className: 'الأول المتوسط',
+    sectionName: '1',
+  },
+  // 10. Student 4 (طالب في مدرسة تحفيظ القرآن الكريم)
+  {
+    id: 'usr-std-q1',
+    nationalId: '1100440044',
+    name: 'عبدالله صالح الغامدي (طالب تحفيظ)',
+    mobile: '0577112233',
+    parentMobile: '0555555555',
+    password: '123',
+    role: 'student',
+    schoolCode: 'QURAN-100',
+    className: 'حلقة الإتقان',
+    sectionName: '1',
+  },
+];
+
+export function generateInitialAttendances(users: User[], schoolCode: string): Attendance[] {
+  const today = getTodayDateString();
+  const students = users.filter((u) => u.role === 'student' && u.schoolCode === schoolCode);
+
+  return students.map((st, index) => {
+    // Student 1: Present (self + teacher)
+    if (index === 0) {
+      return {
+        id: `att-${st.id}-${today}`,
+        studentId: st.id,
+        studentName: st.name,
+        nationalId: st.nationalId,
+        schoolCode: st.schoolCode,
+        className: st.className || 'الأول المتوسط',
+        sectionName: st.sectionName || '1',
+        date: today,
+        selfCheckTime: '06:45',
+        teacherMark: 'present',
+        finalStatus: 'present',
+        isTruant: false,
+        parentMobile: st.parentMobile,
+      };
     }
-  ];
-
-  const attendances: Attendance[] = [];
-  const excuses: Excuse[] = [];
-  const emergencies: Emergency[] = [];
-
-  return { schools, users, attendances, excuses, emergencies };
+    // Student 2: Absent
+    if (index === 1) {
+      return {
+        id: `att-${st.id}-${today}`,
+        studentId: st.id,
+        studentName: st.name,
+        nationalId: st.nationalId,
+        schoolCode: st.schoolCode,
+        className: st.className || 'الأول المتوسط',
+        sectionName: st.sectionName || '2',
+        date: today,
+        selfCheckTime: null,
+        teacherMark: 'absent',
+        finalStatus: 'absent',
+        isTruant: false,
+        parentMobile: st.parentMobile,
+      };
+    }
+    // Student 3: Truancy demo (self checked present at 6:50, but teacher marked absent in class!)
+    return {
+      id: `att-${st.id}-${today}`,
+      studentId: st.id,
+      studentName: st.name,
+      nationalId: st.nationalId,
+      schoolCode: st.schoolCode,
+      className: st.className || 'الأول المتوسط',
+      sectionName: st.sectionName || '1',
+      date: today,
+      selfCheckTime: '06:50',
+      teacherMark: 'absent',
+      finalStatus: 'absent',
+      isTruant: true,
+      parentMobile: st.parentMobile,
+    };
+  });
 }
+
+export const INITIAL_PERMISSIONS: StudentPermission[] = [
+  {
+    id: 'perm-demo-1',
+    studentId: 'usr-std-3',
+    studentName: 'سلطان فهد الدوسري (تجربة كشف الهروب)',
+    nationalId: '1100330033',
+    schoolCode: 'RAYA-1448',
+    className: 'الأول المتوسط',
+    sectionName: '1',
+    date: getTodayDateString(),
+    timeOut: '07:45',
+    timeIn: '07:55',
+    durationMinutes: 10,
+    teacherId: 'usr-tch-1',
+    teacherName: 'أ. فيصل خالد العتيبي',
+    reason: 'restroom',
+    notes: 'استأذن لدورة المياه في الحصة الأولى',
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'perm-demo-2',
+    studentId: 'usr-std-3',
+    studentName: 'سلطان فهد الدوسري (تجربة كشف الهروب)',
+    nationalId: '1100330033',
+    schoolCode: 'RAYA-1448',
+    className: 'الأول المتوسط',
+    sectionName: '1',
+    date: getTodayDateString(),
+    timeOut: '08:30',
+    timeIn: '08:42',
+    durationMinutes: 12,
+    teacherId: 'usr-tch-1',
+    teacherName: 'أ. فيصل خالد العتيبي',
+    reason: 'water',
+    notes: 'طلب شرب ماء في الحصة الثانية',
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'perm-demo-3',
+    studentId: 'usr-std-3',
+    studentName: 'سلطان فهد الدوسري (تجربة كشف الهروب)',
+    nationalId: '1100330033',
+    schoolCode: 'RAYA-1448',
+    className: 'الأول المتوسط',
+    sectionName: '1',
+    date: getTodayDateString(),
+    timeOut: '09:20',
+    timeIn: null,
+    teacherId: 'usr-tch-2',
+    teacherName: 'أ. تركي محمد الحربي',
+    reason: 'nurse',
+    notes: 'مراجعة المرشد الصحي / العيادة المدرسية',
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'perm-demo-4',
+    studentId: 'usr-std-1',
+    studentName: 'عبدالرحمن محمد إبراهيم الزهراني',
+    nationalId: '1100110011',
+    schoolCode: 'RAYA-1448',
+    className: 'الأول المتوسط',
+    sectionName: '1',
+    date: getTodayDateString(),
+    timeOut: '08:15',
+    timeIn: '08:20',
+    durationMinutes: 5,
+    teacherId: 'usr-tch-1',
+    teacherName: 'أ. فيصل خالد العتيبي',
+    reason: 'restroom',
+    notes: 'استئذان اعتيادي قصير',
+    createdAt: new Date().toISOString(),
+  },
+];
+
+export const INITIAL_BEHAVIOR_LOGS: StudentBehaviorLog[] = [
+  {
+    id: 'beh-1',
+    studentId: 'usr-std-1',
+    studentName: 'عبدالرحمن محمد إبراهيم الزهراني',
+    nationalId: '1100110011',
+    schoolCode: 'RAYA-1448',
+    className: 'الأول المتوسط',
+    sectionName: '1',
+    date: getTodayDateString(),
+    time: '08:00',
+    type: 'positive',
+    points: 2,
+    title: 'مشاركة وتفاعل صفي متميز',
+    category: 'المشاركة الصفية',
+    notes: 'حل مسألة رياضية متقدمة على السبورة بتفوق وشرحها لزملائه',
+    recordedById: 'usr-tch-1',
+    recordedByName: 'أ. فيصل خالد العتيبي',
+    recordedByRole: 'teacher',
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'beh-2',
+    studentId: 'usr-std-1',
+    studentName: 'عبدالرحمن محمد إبراهيم الزهراني',
+    nationalId: '1100110011',
+    schoolCode: 'RAYA-1448',
+    className: 'الأول المتوسط',
+    sectionName: '1',
+    date: getTodayDateString(),
+    time: '08:45',
+    type: 'positive',
+    points: 2,
+    title: 'تعاون وأخلاق عالية ومساعدة الزملاء',
+    category: 'الأخلاق والتعاون',
+    notes: 'مساعدة زميله في تنظيم مقاعد الفصل وتجهيز المعمل',
+    recordedById: 'usr-tch-2',
+    recordedByName: 'أ. تركي محمد الحربي',
+    recordedByRole: 'teacher',
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'beh-3',
+    studentId: 'usr-std-3',
+    studentName: 'سلطان فهد الدوسري (تجربة كشف الهروب)',
+    nationalId: '1100330033',
+    schoolCode: 'RAYA-1448',
+    className: 'الأول المتوسط',
+    sectionName: '1',
+    date: getTodayDateString(),
+    time: '07:50',
+    type: 'negative',
+    points: 2,
+    title: 'تشتيت الحصة وإثارة الفوضى',
+    category: 'إثارة الفوضى',
+    notes: 'التحدث بصوت مرتفع ومقاطعة الشرح المتكررة',
+    recordedById: 'usr-tch-1',
+    recordedByName: 'أ. فيصل خالد العتيبي',
+    recordedByRole: 'teacher',
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'beh-4',
+    studentId: 'usr-std-3',
+    studentName: 'سلطان فهد الدوسري (تجربة كشف الهروب)',
+    nationalId: '1100330033',
+    schoolCode: 'RAYA-1448',
+    className: 'الأول المتوسط',
+    sectionName: '1',
+    date: getTodayDateString(),
+    time: '09:30',
+    type: 'compensatory',
+    points: 2,
+    title: 'المشاركة المتميزة في الإذاعة المدرسية',
+    category: 'النشاط والإذاعة',
+    notes: 'إلقاء كلمة الصباح في الإذاعة المدرسية وتحسن في الالتزام',
+    recordedById: 'usr-emp-1',
+    recordedByName: 'أ. عبدالله ناصر القحطاني (مدير المدرسة)',
+    recordedByRole: 'employee',
+    createdAt: new Date().toISOString(),
+  },
+];

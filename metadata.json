@@ -1,7 +1,6 @@
 {
-  "name": "نظام حضورك الذكي",
-  "description": "نظام الحضور الذكي للمدارس مع السياج الجغرافي، كشف الهارب، تقارير نور، ولوحات المعلم والإدارة والطلاب وأولياء الأمور",
-  "requestFramePermissions": ["geolocation"],
+  "name": "حضورك - منظومة الحضور والانضباط المدرسي الذكية",
+  "description": "نظام الحضور والانضباط المدرسي الذكي بالسياج الجغرافي وكشف التباين والهروب ومطابقة نور",
+  "requestFramePermissions": ["geolocation", "camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
-

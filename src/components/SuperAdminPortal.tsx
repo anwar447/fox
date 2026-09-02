@@ -1,424 +1,485 @@
 import React, { useState } from 'react';
-import { School, User, SubscriptionPlan } from '../types';
+import { School, User, SubscriptionPaymentRequest } from '../types';
 import { 
-  ShieldCheck, 
-  Building2, 
-  Search, 
-  Power, 
-  Calendar, 
-  RefreshCw, 
-  CreditCard, 
-  AlertTriangle, 
-  CheckCircle2, 
-  Clock, 
-  Layers, 
-  Sparkles,
-  ArrowUpRight,
-  Filter,
-  Check
+  getSchools, saveSchools, getPaymentRequests, 
+  savePaymentRequests, updateSchool, deleteSchool 
+} from '../utils/storage';
+import { 
+  Crown, Building2, CreditCard, Check, X, 
+  Sparkles, ShieldCheck, Search, Plus, Calendar, AlertCircle,
+  PauseCircle, PlayCircle, Trash2, Edit3, ShieldAlert, CheckCircle,
+  Clock, RefreshCw, Phone, MapPin
 } from 'lucide-react';
-import { triggerNotification } from '../utils/notifications';
 
 interface SuperAdminPortalProps {
-  schools: School[];
-  users: User[];
-  onSaveSchool: (school: School) => void;
-  onDeleteSchool: (schoolId: string) => void;
-  onToggleSuspendSchool: (schoolId: string) => void;
+  currentUser: User;
+  onOpenCreateSchool: () => void;
 }
 
 export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
-  schools,
-  users,
-  onSaveSchool,
-  onDeleteSchool,
-  onToggleSuspendSchool,
+  currentUser,
+  onOpenCreateSchool,
 }) => {
-  const [searchSchool, setSearchSchool] = useState('');
-  const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'expiring' | 'suspended'>('all');
-  const [renewalSuccessToast, setRenewalSuccessToast] = useState<string | null>(null);
+  const [schools, setSchools] = useState<School[]>(getSchools());
+  const [payments, setPayments] = useState<SubscriptionPaymentRequest[]>(getPaymentRequests());
+  const [search, setSearch] = useState('');
+  const [statusMsg, setStatusMsg] = useState<{ type: 'success' | 'warning' | 'info'; text: string } | null>(null);
+  
+  // State for delete confirmation modal
+  const [schoolToDelete, setSchoolToDelete] = useState<School | null>(null);
+  // State for quick subscription change modal
+  const [editingSchool, setEditingSchool] = useState<School | null>(null);
 
-  const today = new Date();
-
-  // Helper to calculate days remaining
-  const getDaysRemaining = (expiryDateStr?: string) => {
-    if (!expiryDateStr) return 0;
-    const expiry = new Date(expiryDateStr);
-    const diffTime = expiry.getTime() - today.getTime();
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  const calculateFutureDate = (months: number): string => {
+    const d = new Date();
+    d.setMonth(d.getMonth() + months);
+    return d.toISOString().split('T')[0];
   };
 
-  // Stats calculation
-  const totalStudents = users.filter((u) => u.role === 'student').length;
-  const activeSchoolsCount = schools.filter((s) => !s.isSuspended && getDaysRemaining(s.subscriptionExpiryDate) > 0).length;
-  const suspendedSchoolsCount = schools.filter((s) => s.isSuspended).length;
-  const expiringSoonCount = schools.filter((s) => {
-    const days = getDaysRemaining(s.subscriptionExpiryDate);
-    return !s.isSuspended && days > 0 && days <= 30;
-  }).length;
+  const handleUpdateSchoolSubscription = (
+    school: School,
+    plan: 'free_forever' | 'yearly' | 'semester',
+    status: 'active' | 'pending_payment' = 'active'
+  ) => {
+    let endDate = school.subscriptionEndDate;
+    if (plan === 'free_forever') {
+      endDate = '2099-12-31';
+    } else if (plan === 'yearly') {
+      endDate = calculateFutureDate(12);
+    } else if (plan === 'semester') {
+      endDate = calculateFutureDate(6);
+    }
 
-  const handleRenewSubscription = (school: School, daysToAdd: number, planLabel: string) => {
-    const currentExpiry = new Date(school.subscriptionExpiryDate || new Date());
-    const baseDate = currentExpiry > today ? currentExpiry : today;
-    const newExpiry = new Date(baseDate.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
-    const newExpiryStr = newExpiry.toISOString().split('T')[0];
-
-    const updatedSchool: School = {
-      ...school,
-      subscriptionExpiryDate: newExpiryStr,
-      isSuspended: false,
-    };
-
-    onSaveSchool(updatedSchool);
-    
-    triggerNotification(
-      `تم تجديد اشتراك مدرسة (${school.name})`,
-      `تم تمديد الترخيص بمقدار ${planLabel} حتى تاريخ ${newExpiryStr} بنجاح.`,
-      'subscription',
-      school.code,
-      'all'
-    );
-
-    setRenewalSuccessToast(`تم تمديد ترخيص (${school.name}) حتى ${newExpiryStr} بنجاح ✓`);
-    setTimeout(() => setRenewalSuccessToast(null), 4000);
-  };
-
-  const handleChangePlan = (school: School, newPlan: SubscriptionPlan) => {
-    const maxStudents = newPlan === 'gold' ? 1000 : newPlan === 'silver' ? 600 : 250;
     const updated: School = {
       ...school,
-      subscriptionPlan: newPlan,
-      maxStudents: maxStudents,
+      subscriptionPlan: plan,
+      subscriptionStatus: status,
+      subscriptionEndDate: endDate,
+      isQuranSchool: plan === 'free_forever',
     };
-    onSaveSchool(updated);
-    setRenewalSuccessToast(`تم تحديث باقة (${school.name}) إلى الباقة ${newPlan.toUpperCase()} ✓`);
-    setTimeout(() => setRenewalSuccessToast(null), 3000);
+
+    updateSchool(updated);
+    const refreshed = getSchools();
+    setSchools(refreshed);
+
+    const planLabel = 
+      plan === 'free_forever' ? 'اشتراك مجاني دائم' :
+      plan === 'yearly' ? 'اشتراك سنوي (1 سنة)' : 'اشتراك نصف سنوي (فصلي)';
+
+    setStatusMsg({
+      type: 'success',
+      text: `✅ تم تحديث اشتراك مدرسة (${school.name}) إلى: [${planLabel}] والحالة: [${status === 'active' ? 'نشط' : 'موقوف مؤقتاً حتى السداد'}].`
+    });
+
+    if (editingSchool?.id === school.id) {
+      setEditingSchool(null);
+    }
   };
 
-  const filteredSchools = schools.filter((s) => {
-    const matchesSearch =
-      s.name.toLowerCase().includes(searchSchool.toLowerCase()) ||
-      s.code.toLowerCase().includes(searchSchool.toLowerCase()) ||
-      s.city.toLowerCase().includes(searchSchool.toLowerCase()) ||
-      s.managerName.toLowerCase().includes(searchSchool.toLowerCase());
+  const handleTogglePauseSubscription = (school: School) => {
+    const newStatus: 'active' | 'pending_payment' = school.subscriptionStatus === 'pending_payment' ? 'active' : 'pending_payment';
+    const updated: School = {
+      ...school,
+      subscriptionStatus: newStatus,
+    };
+    updateSchool(updated);
+    setSchools(getSchools());
 
-    const days = getDaysRemaining(s.subscriptionExpiryDate);
-    if (!matchesSearch) return false;
+    if (newStatus === 'pending_payment') {
+      setStatusMsg({
+        type: 'warning',
+        text: `⚠️ تم إيقاف مدرسة (${school.name}) مؤقتاً حتى السداد.`
+      });
+    } else {
+      setStatusMsg({
+        type: 'success',
+        text: `✅ تم إعادة تنشيط وتفعيل حساب مدرسة (${school.name}) بنجاح.`
+      });
+    }
+  };
 
-    if (filterStatus === 'active') return !s.isSuspended && days > 0;
-    if (filterStatus === 'suspended') return s.isSuspended;
-    if (filterStatus === 'expiring') return !s.isSuspended && days > 0 && days <= 30;
-    return true;
-  });
+  const handleDeleteSchool = (school: School) => {
+    deleteSchool(school.id);
+    const refreshed = getSchools();
+    setSchools(refreshed);
+    setSchoolToDelete(null);
+    setStatusMsg({
+      type: 'info',
+      text: `🗑️ تم حذف مدرسة (${school.name}) وكودها (${school.code}) من المنظومة بنجاح.`
+    });
+  };
+
+  const handleApprovePayment = (req: SubscriptionPaymentRequest) => {
+    // 1. Update payment status
+    const updatedPayments = payments.map((p) =>
+      p.id === req.id ? { ...p, status: 'approved' as const } : p
+    );
+    setPayments(updatedPayments);
+    savePaymentRequests(updatedPayments);
+
+    // 2. Extend school subscription
+    const school = schools.find((s) => s.code === req.schoolCode);
+    if (school) {
+      const monthsToAdd = req.plan === 'yearly' ? 12 : 6;
+      const updatedSchool: School = {
+        ...school,
+        subscriptionStatus: 'active',
+        subscriptionPlan: req.plan,
+        subscriptionEndDate: calculateFutureDate(monthsToAdd),
+      };
+      updateSchool(updatedSchool);
+      setSchools(getSchools());
+    }
+
+    setStatusMsg({
+      type: 'success',
+      text: `✅ تم اعتماد الحوالة البنكية وتفعيل اشتراك مدرسة (${req.schoolName}) بنجاح.`
+    });
+  };
+
+  const handleRejectPayment = (req: SubscriptionPaymentRequest) => {
+    const updatedPayments = payments.map((p) =>
+      p.id === req.id ? { ...p, status: 'rejected' as const } : p
+    );
+    setPayments(updatedPayments);
+    savePaymentRequests(updatedPayments);
+    setStatusMsg({
+      type: 'warning',
+      text: `❌ تم رفض الحوالة للمدرسة (${req.schoolName}).`
+    });
+  };
+
+  const filteredSchools = schools.filter(
+    (s) => s.name.includes(search) || s.code.includes(search) || s.city.includes(search)
+  );
 
   return (
-    <div className="space-y-6 animate-fadeIn pb-16 text-slate-800">
-      
-      {/* Top Banner (Owner License Dashboard) */}
-      <div className="bg-gradient-to-br from-purple-950 via-slate-900 to-slate-950 rounded-3xl p-6 sm:p-8 text-white shadow-2xl space-y-4 border border-purple-500/30">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="space-y-1.5">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/20 border border-purple-400/30 text-purple-300 text-xs font-black">
-              <ShieldCheck className="w-4 h-4" />
-              <span>لوحة تحكم المالك - إدارة التراخيص والاشتراكات المدرسية</span>
+    <div className="space-y-6 max-w-7xl mx-auto py-6 px-4 text-slate-800" dir="rtl">
+      {/* Top Banner */}
+      <div className="bg-gradient-to-l from-slate-900 via-slate-850 to-slate-900 text-white rounded-3xl p-6 sm:p-7 flex flex-wrap items-center justify-between gap-4 shadow-xl border border-slate-800">
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-400/30 flex items-center justify-center shadow-lg shadow-amber-500/10 shrink-0">
+            <Crown className="w-8 h-8" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="px-3 py-0.5 rounded-full bg-amber-400/20 text-amber-300 text-[11px] font-black border border-amber-400/30">
+                لوحة تحكم المشرف العام (Super Admin)
+              </span>
             </div>
-            <h1 className="text-xl sm:text-2xl font-black">
-              المتابعة المركزية لاشتراكات وتراخيص المدارس
-            </h1>
-            <p className="text-xs text-purple-200">
-              تجديد الاشتراكات، ترقية الباقات، تفعيل وإيقاف التراخيص فورياً لكافة المدارس المشتركة
+            <h2 className="text-xl sm:text-2xl font-black text-white mt-1">
+              إدارة التراخيص والاشتراكات والتحكم بالمدارس
+            </h2>
+            <p className="text-xs text-slate-400 font-medium">
+              التحكم الكامل: تحويل الاشتراكات لمجاني، سنة، نصف سنة، إيقاف مؤقت حتى السداد، أو حذف المدرسة.
             </p>
           </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => {
-                localStorage.clear();
-                window.location.href = window.location.pathname;
-              }}
-              className="p-2.5 rounded-2xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-400/30 text-rose-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
-              title="تفريغ ذاكرة المتصفح وبدء المنظومة نظيفة للمدارس الحقيقية فقط"
-            >
-              <RefreshCw className="w-3.5 h-3.5 text-rose-400" />
-              <span>تفريغ الذاكرة القديمة 🗑️</span>
-            </button>
-            <div className="p-3 rounded-2xl bg-white/10 border border-white/15 text-center min-w-[90px]">
-              <span className="text-[10px] text-purple-300 block">إجمالي المدارس</span>
-              <strong className="text-lg font-black text-white">{schools.length}</strong>
-            </div>
-            <div className="p-3 rounded-2xl bg-white/10 border border-white/15 text-center min-w-[90px]">
-              <span className="text-[10px] text-emerald-300 block">التراخيص النشطة</span>
-              <strong className="text-lg font-black text-emerald-400">{activeSchoolsCount}</strong>
-            </div>
-            <div className="p-3 rounded-2xl bg-white/10 border border-white/15 text-center min-w-[90px]">
-              <span className="text-[10px] text-amber-300 block">تنتهي قريباً</span>
-              <strong className="text-lg font-black text-amber-400">{expiringSoonCount}</strong>
-            </div>
-            <div className="p-3 rounded-2xl bg-white/10 border border-white/15 text-center min-w-[90px]">
-              <span className="text-[10px] text-rose-300 block">الموقوفة</span>
-              <strong className="text-lg font-black text-rose-400">{suspendedSchoolsCount}</strong>
-            </div>
-          </div>
         </div>
+
+        <button
+          onClick={onOpenCreateSchool}
+          className="py-3 px-5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center gap-2 shadow-lg shadow-emerald-600/30 cursor-pointer transition-all"
+        >
+          <Plus className="w-4 h-4" />
+          <span>إضافة مدرسة جديدة يدوياً</span>
+        </button>
       </div>
 
-      {/* Toast Alert */}
-      {renewalSuccessToast && (
-        <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs font-black flex items-center gap-2 shadow-md animate-fadeIn">
-          <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-          <span>{renewalSuccessToast}</span>
+      {statusMsg && (
+        <div className={`p-4 rounded-2xl text-xs font-bold shadow-xs border flex items-center justify-between ${
+          statusMsg.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-900' :
+          statusMsg.type === 'warning' ? 'bg-amber-50 border-amber-200 text-amber-900' :
+          'bg-slate-100 border-slate-200 text-slate-800'
+        }`}>
+          <span>{statusMsg.text}</span>
+          <button onClick={() => setStatusMsg(null)} className="text-slate-400 hover:text-slate-700 font-bold px-2 cursor-pointer">
+            ✕
+          </button>
         </div>
       )}
 
-      {/* Main License Manager Container */}
-      <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-xs space-y-6">
-        
-        {/* Search & Filters Bar */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <h2 className="text-base font-black text-slate-900 flex items-center gap-2">
-              <Building2 className="w-5 h-5 text-purple-600" />
-              <span>قائمة المدارس وتفاصيل التراخيص ({filteredSchools.length})</span>
-            </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              إدارة تواريخ الانتهاء، التجديد بضغطة زر، وإيقاف أو إعادة تفعيل الخدمة
-            </p>
+      {/* Pending Payment Requests */}
+      <div className="bg-white border border-slate-200/90 rounded-3xl p-6 space-y-4 shadow-xs">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-2">
+            <CreditCard className="w-5 h-5 text-amber-600" />
+            <h3 className="font-black text-base text-slate-900">
+              طلبات سداد الاشتراكات والتحويلات البنكية ({payments.filter((p) => p.status === 'pending').length})
+            </h3>
           </div>
+          <span className="text-xs text-slate-400 font-mono font-bold">
+            إجمالي الطلبات: {payments.length}
+          </span>
+        </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            
-            {/* Filter Tabs */}
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-bold">
-              <button
-                onClick={() => setFilterStatus('all')}
-                className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
-                  filterStatus === 'all' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                }`}
+        {payments.length === 0 ? (
+          <p className="text-xs text-slate-400 py-3 text-center bg-slate-50 rounded-2xl">لا توجد طلبات سداد جديدة حالياً.</p>
+        ) : (
+          <div className="space-y-2.5">
+            {payments.map((p) => (
+              <div
+                key={p.id}
+                className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 text-xs"
               >
-                الكل ({schools.length})
-              </button>
-              <button
-                onClick={() => setFilterStatus('active')}
-                className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
-                  filterStatus === 'active' ? 'bg-white text-emerald-700 shadow-xs' : 'text-slate-600 hover:text-emerald-700'
-                }`}
-              >
-                النشطة ({activeSchoolsCount})
-              </button>
-              <button
-                onClick={() => setFilterStatus('expiring')}
-                className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
-                  filterStatus === 'expiring' ? 'bg-white text-amber-700 shadow-xs' : 'text-slate-600 hover:text-amber-700'
-                }`}
-              >
-                تنتهي قريباً ({expiringSoonCount})
-              </button>
-              <button
-                onClick={() => setFilterStatus('suspended')}
-                className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
-                  filterStatus === 'suspended' ? 'bg-white text-rose-700 shadow-xs' : 'text-slate-600 hover:text-rose-700'
-                }`}
-              >
-                الموقوفة ({suspendedSchoolsCount})
-              </button>
-            </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <strong className="text-slate-900 text-sm">{p.schoolName}</strong>
+                    <span className="font-mono text-slate-500 text-[11px]">({p.schoolCode})</span>
+                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                      p.status === 'approved' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' :
+                      p.status === 'rejected' ? 'bg-rose-50 text-rose-800 border border-rose-200' : 'bg-amber-50 text-amber-800 border border-amber-200'
+                    }`}>
+                      {p.status === 'approved' ? 'معتمد ومفعل' : p.status === 'rejected' ? 'مرفوض' : 'قيد المراجعة'}
+                    </span>
+                    <span className="text-[10px] bg-slate-200 text-slate-700 px-2 py-0.5 rounded-md font-bold">
+                      {p.plan === 'yearly' ? 'اشتراك سنوي' : 'اشتراك فصلي'}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-1.5 flex flex-wrap gap-x-4 gap-y-1">
+                    <span>المحول: <strong className="text-slate-800">{p.senderName}</strong></span>
+                    <span>البنك: <strong className="text-slate-800">{p.senderBank}</strong></span>
+                    <span>المرجع: <strong className="font-mono text-slate-800">{p.referenceNumber}</strong></span>
+                    <span>المبلغ: <strong className="font-mono text-emerald-700 font-bold">{p.amount} ريال</strong></span>
+                  </div>
+                </div>
 
-            {/* Search Box */}
-            <div className="relative w-full sm:w-60">
-              <Search className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                {p.status === 'pending' && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleRejectPayment(p)}
+                      className="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold cursor-pointer"
+                    >
+                      رفض الحوالة
+                    </button>
+                    <button
+                      onClick={() => handleApprovePayment(p)}
+                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center gap-1.5 cursor-pointer shadow-sm"
+                    >
+                      <Check className="w-4 h-4" />
+                      <span>اعتماد وتفعيل المدرسة</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Schools Directory & Subscription Management */}
+      <div className="bg-white border border-slate-200/90 rounded-3xl p-6 space-y-5 shadow-xs">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-2">
+            <Building2 className="w-5 h-5 text-emerald-600" />
+            <h3 className="font-black text-base text-slate-900">
+              قائمة المدارس والتحكم بالاشتراكات ({schools.length})
+            </h3>
+          </div>
+          <div className="w-full sm:w-72">
+            <div className="relative">
               <input
                 type="text"
-                placeholder="بحث بالمدرسة، الكود، المدينة..."
-                value={searchSchool}
-                onChange={(e) => setSearchSchool(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-xl pr-9 pl-3 py-2 text-xs font-semibold focus:bg-white focus:outline-hidden"
+                placeholder="بحث بالاسم أو الكود أو المدينة..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-9 pl-3 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-emerald-500 font-medium"
               />
+              <Search className="w-4 h-4 text-slate-400 absolute right-3 top-3" />
             </div>
-
           </div>
         </div>
 
-        {/* Schools Cards List */}
-        <div className="space-y-4">
-          {filteredSchools.length === 0 ? (
-            <div className="text-center py-16 px-6 bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl space-y-3">
-              <Building2 className="w-12 h-12 text-slate-400 mx-auto" />
-              <h3 className="text-base font-black text-slate-800">لا توجد مدارس مسجلة حتى الآن</h3>
-              <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-                المنظومة في وضع الإنتاج الفعلي النظيف. ستظهر المدارس الجديدة فور قيام مديري المدارس بالتسجيل أو إنشائها.
-              </p>
-            </div>
-          ) : (
-            filteredSchools.map((school) => {
-            const schStudents = users.filter((u) => u.role === 'student' && u.schoolCode === school.code).length;
-            const schTeachers = users.filter((u) => u.role === 'teacher' && u.schoolCode === school.code).length;
-            const daysRemaining = getDaysRemaining(school.subscriptionExpiryDate);
-            const isExpired = daysRemaining <= 0;
-
-            const planBadge = 
-              school.subscriptionPlan === 'gold' ? { label: 'الباقة الذهبية', color: 'bg-amber-100 text-amber-900 border-amber-300' } :
-              school.subscriptionPlan === 'silver' ? { label: 'الباقة الفضية', color: 'bg-slate-200 text-slate-800 border-slate-300' } :
-              { label: 'الباقة التجريبية', color: 'bg-blue-100 text-blue-900 border-blue-300' };
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-xs">
+          {filteredSchools.map((sch) => {
+            const isSuspended = sch.subscriptionStatus === 'pending_payment';
+            const isFree = sch.subscriptionPlan === 'free_forever';
+            const isYearly = sch.subscriptionPlan === 'yearly';
+            const isSemester = sch.subscriptionPlan === 'semester';
 
             return (
-              <div
-                key={school.id}
-                className={`p-5 rounded-2xl border transition-all ${
-                  school.isSuspended
-                    ? 'bg-rose-50/40 border-rose-200'
-                    : isExpired
-                    ? 'bg-amber-50/40 border-amber-200'
-                    : 'bg-white border-slate-200 hover:border-purple-300 shadow-2xs'
+              <div 
+                key={sch.id} 
+                className={`rounded-3xl p-5 space-y-3.5 border transition-all ${
+                  isSuspended 
+                    ? 'bg-rose-50/50 border-rose-300 ring-1 ring-rose-200' 
+                    : 'bg-slate-50/80 border-slate-200/90 hover:border-slate-300'
                 }`}
               >
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5 text-xs">
-                  
-                  {/* School Main Details */}
-                  <div className="space-y-2 max-w-xl">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-black text-slate-900 text-sm sm:text-base">{school.name}</span>
-                      <span className="px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-900 font-mono font-bold text-xs">
-                        {school.code}
-                      </span>
-                      
-                      {/* Subscription Status Badge */}
-                      {school.isSuspended ? (
-                        <span className="px-2.5 py-0.5 rounded-full bg-rose-600 text-white font-bold text-[10px]">
-                          الترخيص موقوف ✗
-                        </span>
-                      ) : isExpired ? (
-                        <span className="px-2.5 py-0.5 rounded-full bg-amber-600 text-white font-bold text-[10px]">
-                          الاشتراك منتهي !
-                        </span>
-                      ) : (
-                        <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[10px]">
-                          الترخيص ساري ومفعّل ✓
-                        </span>
-                      )}
-
-                      {/* Plan Badge */}
-                      <span className={`px-2.5 py-0.5 rounded-full border font-bold text-[10px] ${planBadge.color}`}>
-                        {planBadge.label}
-                      </span>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-3 text-slate-500 text-[11px]">
-                      <span>المدينة: <strong className="text-slate-800">{school.city}</strong></span>
-                      <span>المدير: <strong className="text-slate-800">{school.managerName}</strong></span>
-                      <span>الطلاب: <strong className="text-slate-800">{schStudents} / {school.maxStudents || 500}</strong></span>
-                      <span>المعلمون: <strong className="text-slate-800">{schTeachers}</strong></span>
-                      <span>الهاتف: <strong className="font-mono text-slate-800">{school.contact}</strong></span>
-                    </div>
-
-                    {/* Subscription Expiry Timeline Info */}
-                    <div className="flex items-center gap-2 text-[11px] pt-1">
-                      <span className="text-slate-500 flex items-center gap-1">
-                        <Calendar className="w-3.5 h-3.5 text-purple-600" />
-                        <span>تاريخ انتهاء الترخيص:</span>
-                        <strong className="font-mono font-bold text-slate-900">
-                          {school.subscriptionExpiryDate || '2026-12-31'}
-                        </strong>
-                      </span>
-
-                      {!school.isSuspended && (
-                        <span className={`px-2 py-0.5 rounded-md font-bold text-[10px] ${
-                          daysRemaining <= 0
-                            ? 'bg-rose-100 text-rose-800'
-                            : daysRemaining <= 30
-                            ? 'bg-amber-100 text-amber-800'
-                            : 'bg-slate-100 text-slate-700'
-                        }`}>
-                          {daysRemaining <= 0 ? 'منتهي الصلاحية' : `متبقي ${daysRemaining} يوماً`}
+                {/* Header info */}
+                <div className="flex justify-between items-start gap-2">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-black text-slate-900 text-sm">{sch.name}</h4>
+                      {isSuspended && (
+                        <span className="px-2 py-0.5 rounded-md bg-rose-600 text-white text-[10px] font-black">
+                          موقوفة مؤقتاً ⚠️
                         </span>
                       )}
                     </div>
+                    <p className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-2">
+                      <span>{sch.city}</span>
+                      <span>•</span>
+                      <span>كود المدرسة: <strong className="font-mono text-emerald-700 font-bold">{sch.code}</strong></span>
+                    </p>
                   </div>
 
-                  {/* Actions: Quick Renewals & Suspend Toggle */}
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 pt-2 lg:pt-0 border-t lg:border-t-0 border-slate-100">
-                    
-                    {/* Quick Plan Selector */}
-                    <select
-                      value={school.subscriptionPlan || 'silver'}
-                      onChange={(e) => handleChangePlan(school, e.target.value as SubscriptionPlan)}
-                      className="bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1.5 text-[11px] font-bold text-slate-800 cursor-pointer"
-                      title="تغيير باقة الاشتراك"
-                    >
-                      <option value="free_trial">باقة تجريبية</option>
-                      <option value="silver">باقة فضية</option>
-                      <option value="gold">باقة ذهبية</option>
-                      <option value="free_forever">مجاني مدى الحياة ★</option>
-                    </select>
+                  {/* Plan badge */}
+                  <span className={`px-3 py-1 rounded-xl text-[11px] font-black shrink-0 ${
+                    isFree 
+                      ? 'bg-purple-100 text-purple-900 border border-purple-200' 
+                      : isYearly 
+                      ? 'bg-emerald-100 text-emerald-900 border border-emerald-200' 
+                      : 'bg-blue-100 text-blue-900 border border-blue-200'
+                  }`}>
+                    {isFree ? '🌟 مجاني دائم' : isYearly ? '👑 اشتراك سنوي' : '📅 اشتراك نصف سنوي'}
+                  </span>
+                </div>
 
-                    {/* Quick Renewal Buttons */}
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={() => handleRenewSubscription(school, 30, '+شهر واحد')}
-                        className="px-2.5 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-800 font-bold text-[11px] border border-purple-200 transition-colors cursor-pointer"
-                        title="تمديد الاشتراك شهراً إضافياً"
-                      >
-                        + شهر
-                      </button>
+                {/* Subscription & Geofence Details */}
+                <div className="bg-white p-3 rounded-2xl border border-slate-200/80 text-[11px] grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">حالة الاشتراك:</span>
+                    <strong className={`font-bold ${isSuspended ? 'text-rose-700' : 'text-emerald-700'}`}>
+                      {isSuspended ? 'موقوف مؤقتاً حتى السداد' : 'نشط ومفعل 🟢'}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">نهاية الاشتراك:</span>
+                    <strong className="font-mono text-slate-800 font-bold">
+                      {isFree ? 'دائم (غير محدد)' : sch.subscriptionEndDate}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">السياج الجغرافي:</span>
+                    <strong className="font-mono text-indigo-700 font-bold">{sch.radiusMeters} متر</strong>
+                  </div>
+                </div>
 
-                      <button
-                        onClick={() => handleRenewSubscription(school, 120, '+فصل دراسي')}
-                        className="px-2.5 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-800 font-bold text-[11px] border border-purple-200 transition-colors cursor-pointer"
-                        title="تمديد الاشتراك فصلاً كاملاً"
-                      >
-                        + فصل
-                      </button>
+                {/* Super Admin Control Actions Bar */}
+                <div className="pt-2 border-t border-slate-200/80 space-y-2">
+                  <div className="text-[11px] font-black text-slate-700 flex items-center gap-1.5">
+                    <Crown className="w-3.5 h-3.5 text-amber-600" />
+                    <span>التحكم في اشتراك المدرسة:</span>
+                  </div>
 
-                      <button
-                        onClick={() => handleRenewSubscription(school, 365, '+سنة كاملة')}
-                        className="px-3 py-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-bold text-[11px] transition-all shadow-2xs cursor-pointer flex items-center gap-1"
-                        title="تمديد الاشتراك سنة كاملة"
-                      >
-                        <RefreshCw className="w-3 h-3" />
-                        <span>+ سنة</span>
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          const updated: School = {
-                            ...school,
-                            subscriptionPlan: 'free_forever',
-                            subscriptionExpiryDate: '2099-12-31',
-                            isSuspended: false,
-                          };
-                          onSaveSchool(updated);
-                          setRenewalSuccessToast(`تم اعتماد باقة (مجاني مدى الحياة ★) لمدرسة ${school.name}`);
-                          setTimeout(() => setRenewalSuccessToast(null), 4000);
-                        }}
-                        className="px-2.5 py-1.5 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold text-[11px] border border-amber-300 transition-colors cursor-pointer"
-                        title="منح ترخيص مجاني دائم مدى الحياة"
-                      >
-                        ★ مجاني دائم
-                      </button>
-                    </div>
-
-                    {/* Suspend / Resume Button */}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {/* Free Plan Button */}
                     <button
-                      onClick={() => onToggleSuspendSchool(school.id)}
-                      className={`px-3 py-1.5 rounded-xl font-bold text-[11px] transition-all cursor-pointer flex items-center gap-1.5 ${
-                        school.isSuspended
-                          ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                          : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200'
+                      onClick={() => handleUpdateSchoolSubscription(sch, 'free_forever', 'active')}
+                      className={`px-2.5 py-1.5 rounded-xl font-bold text-[11px] cursor-pointer transition-colors ${
+                        isFree && !isSuspended
+                          ? 'bg-purple-700 text-white shadow-xs'
+                          : 'bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-200'
                       }`}
+                      title="تحويل إلى اشتراك مجاني دائم"
                     >
-                      <Power className="w-3.5 h-3.5" />
-                      <span>{school.isSuspended ? 'إعادة تفعيل الترخيص' : 'إيقاف مؤقت'}</span>
+                      🌟 مجاني
                     </button>
 
-                  </div>
+                    {/* 1 Year Plan Button */}
+                    <button
+                      onClick={() => handleUpdateSchoolSubscription(sch, 'yearly', 'active')}
+                      className={`px-2.5 py-1.5 rounded-xl font-bold text-[11px] cursor-pointer transition-colors ${
+                        isYearly && !isSuspended
+                          ? 'bg-emerald-700 text-white shadow-xs'
+                          : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200'
+                      }`}
+                      title="تفعيل اشتراك لمدة سنة كاملة"
+                    >
+                      👑 اشتراك سنة
+                    </button>
 
+                    {/* 6 Months Plan Button */}
+                    <button
+                      onClick={() => handleUpdateSchoolSubscription(sch, 'semester', 'active')}
+                      className={`px-2.5 py-1.5 rounded-xl font-bold text-[11px] cursor-pointer transition-colors ${
+                        isSemester && !isSuspended
+                          ? 'bg-blue-700 text-white shadow-xs'
+                          : 'bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-200'
+                      }`}
+                      title="تفعيل اشتراك لمدة نصف سنة (فصلي)"
+                    >
+                      📅 نصف سنة
+                    </button>
+
+                    {/* Pause / Resume Button */}
+                    <button
+                      onClick={() => handleTogglePauseSubscription(sch)}
+                      className={`px-3 py-1.5 rounded-xl font-bold text-[11px] flex items-center gap-1 cursor-pointer transition-colors ${
+                        isSuspended
+                          ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs'
+                          : 'bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300'
+                      }`}
+                      title={isSuspended ? 'إلغاء الإيقاف وإعادة التنشيط' : 'إيقاف المدرسة مؤقتاً حتى السداد'}
+                    >
+                      {isSuspended ? (
+                        <>
+                          <PlayCircle className="w-3.5 h-3.5" />
+                          <span>تنشيط الحساب ▶️</span>
+                        </>
+                      ) : (
+                        <>
+                          <PauseCircle className="w-3.5 h-3.5" />
+                          <span>إيقاف مؤقت حتى السداد ⏸️</span>
+                        </>
+                      )}
+                    </button>
+
+                    {/* Delete School Button */}
+                    <button
+                      onClick={() => setSchoolToDelete(sch)}
+                      className="p-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 mr-auto cursor-pointer transition-colors"
+                      title="حذف المدرسة نهائياً"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               </div>
             );
-          }))}
+          })}
         </div>
-
       </div>
 
+      {/* Delete School Confirmation Modal */}
+      {schoolToDelete && (
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) setSchoolToDelete(null); }}
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn"
+          dir="rtl"
+        >
+          <div className="bg-white border border-rose-200 rounded-3xl max-w-md w-full p-6 text-right space-y-4 shadow-2xl text-slate-800">
+            <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center mx-auto">
+              <Trash2 className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-1.5">
+              <h3 className="text-base font-black text-slate-900">
+                حذف مدرسة ({schoolToDelete.name}) نهائياً؟
+              </h3>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                هل أنت متأكد من رغبتك في حذف مدرسة ({schoolToDelete.name}) ذات الكود ({schoolToDelete.code}) من النظام؟ هذا الإجراء لا يمكن التراجع عنه.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 pt-2">
+              <button
+                onClick={() => setSchoolToDelete(null)}
+                className="py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
+              >
+                إلغاء
+              </button>
+              <button
+                onClick={() => handleDeleteSchool(schoolToDelete)}
+                className="py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs cursor-pointer shadow-md shadow-rose-600/20"
+              >
+                تأكيد حذف المدرسة 🗑️
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
