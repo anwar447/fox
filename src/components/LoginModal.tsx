@@ -98,12 +98,20 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       return;
     }
 
+    // Ensure managedSchoolCodes includes ALL schools the user belongs to
+    const allUserSchools = Array.from(new Set([
+      matchedUser.schoolCode,
+      ...(matchedUser.managedSchoolCodes || []),
+      ...(schoolCode ? [schoolCode] : []),
+    ]));
+
     // If logging into a specific managed school, set active schoolCode accordingly
     const userToLogin: User = {
       ...matchedUser,
-      schoolCode: schoolCode && (matchedUser.managedSchoolCodes?.includes(schoolCode) || matchedUser.schoolCode === schoolCode)
+      schoolCode: schoolCode && allUserSchools.includes(schoolCode)
         ? schoolCode
         : matchedUser.schoolCode,
+      managedSchoolCodes: allUserSchools.length > 1 ? allUserSchools : matchedUser.managedSchoolCodes,
     };
 
     onLoginSuccess(userToLogin);

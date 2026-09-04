@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { User, School, Attendance } from './types';
 import { 
   getCurrentUser, setCurrentUser, getSchools, 
-  getUsers, getAttendances, syncDataFromServer 
+  getUsers, saveUsers, getAttendances, syncDataFromServer 
 } from './utils/storage';
 import { parseParentRegistrationToken, parseMagicToken } from './utils/magicLink';
 import { getTodayDateString } from './utils/academic';
@@ -193,9 +193,37 @@ export function App() {
 
   const handleSwitchSchool = (school: School) => {
     if (currentUser) {
-      const updatedUser = { ...currentUser, schoolCode: school.code };
+      // Collect all assigned schools so switching school never loses any previously assigned school
+      const allCodes = Array.from(new Set([
+        currentUser.schoolCode,
+        ...(currentUser.managedSchoolCodes || []),
+        school.code,
+      ]));
+      const updatedUser: User = { 
+        ...currentUser, 
+        schoolCode: school.code,
+        managedSchoolCodes: allCodes,
+      };
       setCurrentUser(updatedUser);
       setUserState(updatedUser);
+
+      // Persist in all users in storage
+      const allUsers = getUsers();
+      let hasChange = false;
+      const updatedUsers = allUsers.map((u) => {
+        if (u.id === currentUser.id || u.nationalId === currentUser.nationalId) {
+          hasChange = true;
+          return {
+            ...u,
+            schoolCode: school.code,
+            managedSchoolCodes: allCodes,
+          };
+        }
+        return u;
+      });
+      if (hasChange) {
+        saveUsers(updatedUsers, true);
+      }
     }
     refreshAll();
   };
@@ -315,11 +343,16 @@ export function App() {
           )
         ) : currentUser.role === 'employee' && currentSchool ? (
           <EmployeeDashboard
+            key={currentSchool.code}
             currentUser={currentUser}
             currentSchool={currentSchool}
             schools={schools}
             onSwitchSchool={handleSwitchSchool}
-            onOpenCreateSchool={() => setIsSchoolWizardOpen(true)}
+            onOpenCreateSchool={
+              (!currentUser.staffTitle || currentUser.staffTitle === 'principal')
+                ? () => setIsSchoolWizardOpen(true)
+                : undefined
+            }
             onOpenDailyReport={() => setIsDailyReportOpen(true)}
             onOpenGatekeeperScanner={() => setIsGatekeeperScannerOpen(true)}
             onOpenMapPicker={() => setIsMapPickerOpen(true)}
@@ -337,6 +370,7 @@ export function App() {
           />
         ) : currentUser.role === 'teacher' && currentSchool ? (
           <TeacherPortal
+            key={currentSchool.code}
             currentUser={currentUser}
             currentSchool={currentSchool}
             schools={schools}

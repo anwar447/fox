@@ -89,13 +89,24 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
   const isFree = currentSchool.subscriptionPlan === 'free_forever';
   const isYearly = currentSchool.subscriptionPlan === 'yearly';
   const isSemester = currentSchool.subscriptionPlan === 'semester';
+  const isPrincipal = !currentUser.staffTitle || currentUser.staffTitle === 'principal';
 
-  // Admin managed schools list (max 2 schools)
+  // Admin and staff assigned schools list
   const adminManagedSchools = schools.filter(
     (s) =>
       currentUser.managedSchoolCodes?.includes(s.code) ||
       s.code === currentUser.schoolCode
   );
+
+  // Sync attendances and corrections whenever currentSchool changes
+  React.useEffect(() => {
+    setAttendances(
+      getAttendances().filter((a) => a.schoolCode === currentSchool.code && a.date === today)
+    );
+    setCorrections(
+      getCorrectionRequests().filter((c) => c.schoolCode === currentSchool.code && c.status === 'pending')
+    );
+  }, [currentSchool.code, today, refreshKey]);
 
   // Compute 5-day unexcused absence alerts across the school
   const studentsWithFiveDaysAbsenceAlert = allSchoolStudents.map((st) => {
@@ -215,7 +226,7 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
         )}
       />
 
-      {/* 3. Multi-School Management Bar for Administrators managing up to 2 schools */}
+      {/* 3. Multi-School Management Bar for Administrators and Staff */}
       <div className="bg-gradient-to-l from-slate-900 via-slate-850 to-slate-900 text-white rounded-3xl p-4 sm:p-5 flex flex-wrap items-center justify-between gap-3 shadow-md border border-slate-800">
         <div className="flex items-center gap-3">
           <div className="w-11 h-11 rounded-2xl bg-white/10 text-emerald-400 flex items-center justify-center font-bold shrink-0 shadow-inner">
@@ -223,13 +234,15 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="font-black text-sm text-white">المدارس المسندة لإدارتك</h3>
+              <h3 className="font-black text-sm text-white">المدارس المسندة لحسابك</h3>
               <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
-                {adminManagedSchools.length > 0 ? adminManagedSchools.length : 1} من 2 مدرسة مسجلة
+                {adminManagedSchools.length} {adminManagedSchools.length > 1 ? 'مدارس مسندة' : 'مدرسة مسندة'}
               </span>
             </div>
             <p className="text-xs text-slate-300 font-medium mt-0.5">
-              يمكنك إدارة مدرستين كحد أقصى بحسابك المعتمد والتبديل بينهما بضغطة زر.
+              {isPrincipal 
+                ? 'يمكنك إدارة مدرستين كحد أقصى بحسابك المعتمد والتبديل المباشر بينهما بضغطة زر.'
+                : 'يمكنك العمل في المدارس المسندة إليك والتنقل المباشر والعودة بينها دون تسجيل الخروج.'}
             </p>
           </div>
         </div>
@@ -246,6 +259,7 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
                   if (target) onSwitchSchool(target);
                 }}
                 className="bg-slate-900 text-emerald-300 font-bold text-xs rounded-lg px-2 py-1 border border-slate-700 focus:outline-emerald-500 cursor-pointer"
+                title="التبديل بين المدارس المسندة إليك"
               >
                 {adminManagedSchools.map((sch) => (
                   <option key={sch.id} value={sch.code} className="bg-slate-900 text-white">
@@ -260,7 +274,7 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
             </div>
           )}
 
-          {adminManagedSchools.length < 2 && onOpenCreateSchool && (
+          {isPrincipal && adminManagedSchools.length < 2 && onOpenCreateSchool && (
             <button
               onClick={onOpenCreateSchool}
               className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center gap-1.5 shadow-md shadow-emerald-600/20 cursor-pointer transition-all"

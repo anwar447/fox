@@ -88,7 +88,8 @@ export const StaffManagementModal: React.FC<StaffManagementModalProps> = ({
     setMobile(staff.mobile || '');
     setPassword(staff.password || '123');
     setStaffTitle(staff.staffTitle || (staff.role === 'teacher' ? 'teacher' : 'admin_assistant'));
-    setManagedSchoolCodes(staff.managedSchoolCodes || []);
+    const userManaged = staff.managedSchoolCodes || [];
+    setManagedSchoolCodes(userManaged.filter((c) => c !== school.code));
     setSelectedClasses(staff.assignedClasses || []);
     setActiveTab('form');
     setMsg('');
@@ -136,11 +137,12 @@ export const StaffManagementModal: React.FC<StaffManagementModalProps> = ({
     }
 
     const userRole: UserRole = staffTitle === 'teacher' ? 'teacher' : 'employee';
+    const fullAssignedSchools = Array.from(new Set([school.code, ...managedSchoolCodes]));
 
     if (editingUserId) {
       // Update existing
       const updated = existingUsers.map((u) => {
-        if (u.id === editingUserId) {
+        if (u.id === editingUserId || u.nationalId === cleanNid) {
           return {
             ...u,
             name: name.trim(),
@@ -149,7 +151,7 @@ export const StaffManagementModal: React.FC<StaffManagementModalProps> = ({
             password: password || '123',
             role: userRole,
             staffTitle: staffTitle,
-            managedSchoolCodes: managedSchoolCodes.length > 0 ? managedSchoolCodes : undefined,
+            managedSchoolCodes: fullAssignedSchools,
             assignedClasses: userRole === 'teacher' ? selectedClasses : undefined,
           };
         }
@@ -168,7 +170,7 @@ export const StaffManagementModal: React.FC<StaffManagementModalProps> = ({
         role: userRole,
         staffTitle: staffTitle,
         schoolCode: school.code,
-        managedSchoolCodes: managedSchoolCodes.length > 0 ? managedSchoolCodes : undefined,
+        managedSchoolCodes: fullAssignedSchools,
         assignedClasses: userRole === 'teacher' ? selectedClasses : undefined,
       };
       saveUsers([...existingUsers, newStaff]);
