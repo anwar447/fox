@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { User, School, Attendance } from './types';
 import { 
   getCurrentUser, setCurrentUser, getSchools, 
-  getUsers, getAttendances 
+  getUsers, getAttendances, syncDataFromServer 
 } from './utils/storage';
 import { parseParentRegistrationToken, parseMagicToken } from './utils/magicLink';
 import { getTodayDateString } from './utils/academic';
@@ -45,9 +45,13 @@ export function App() {
   const [users, setUsers] = useState<User[]>(() => getUsers());
   const [attendances, setAttendances] = useState<Attendance[]>(() => getAttendances());
 
-  // Current active school
+  // Current active school (only resolved when a school user is logged in or superadmin is managing a school)
   const currentSchool: School | null = 
-    schools.find((s) => s.code === currentUser?.schoolCode) || schools[0] || null;
+    currentUser?.role === 'superadmin' && impersonatedSchool
+      ? impersonatedSchool
+      : currentUser && currentUser.role !== 'superadmin' && currentUser.schoolCode
+      ? schools.find((s) => s.code === currentUser.schoolCode) || schools[0] || null
+      : null;
 
   // Modals state
   const [isLoginOpen, setIsLoginOpen] = useState(false);
@@ -81,8 +85,26 @@ export function App() {
   const [selectedStudentForDossier, setSelectedStudentForDossier] = useState<User | null>(null);
   const [selectedStudentForQr, setSelectedStudentForQr] = useState<User | null>(null);
   const [selectedAttendanceForCorrection, setSelectedAttendanceForCorrection] = useState<Attendance | null>(null);
+  const [impersonatedSchool, setImpersonatedSchool] = useState<School | null>(null);
 
-  // Parse Magic Link / Registration Token on page load
+  // Initial & periodic server sync
+  useEffect(() => {
+    const doSync = () => {
+      syncDataFromServer().then((data) => {
+        if (data) {
+          if (Array.isArray(data.schools)) setSchools(data.schools);
+          if (Array.isArray(data.users)) setUsers(data.users);
+          if (Array.isArray(data.attendances)) setAttendances(data.attendances);
+        }
+      });
+    };
+
+    doSync();
+    const interval = setInterval(doSync, 6000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Parse Magic Link / Registration Token / Direct URL on page load
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     
@@ -100,32 +122,41 @@ export function App() {
       }
     }
 
-    // Staff Self-Registration Token
-    const staffToken = params.get('joinStaff') || params.get('joinTeacher') || params.get('staffToken');
-    if (staffToken) {
-      const parsed = parseParentRegistrationToken(staffToken);
-      if (parsed?.schoolCode) {
-        setStaffRegSchoolCode(parsed.schoolCode);
+    // Direct actions (e.g. ?joinSchool=SCH-7912&action=register)
+    const directAction = params.get('action');
+    const directSchoolCode = params.get('joinSchool') || params.get('schoolCode') || params.get('code') || params.get('school');
+    const directStaffCode = params.get('joinStaff') || params.get('joinTeacher') || params.get('staffToken');
+
+    if (directStaffCode) {
+      const parsed = parseParentRegistrationToken(directStaffCode);
+      const codeToUse = parsed?.schoolCode || directStaffCode.trim().toUpperCase();
+      setStaffRegSchoolCode(codeToUse);
+      setIsStaffSelfRegOpen(true);
+      return;
+    }
+
+    if (directSchoolCode) {
+      const parsed = parseParentRegistrationToken(directSchoolCode);
+      const codeToUse = parsed?.schoolCode || directSchoolCode.trim().toUpperCase();
+      if (directAction === 'staff' || directAction === 'teacher') {
+        setStaffRegSchoolCode(codeToUse);
         setIsStaffSelfRegOpen(true);
-        return;
-      } else if (schools.some((s) => s.code.toLowerCase() === staffToken.toLowerCase())) {
-        const found = schools.find((s) => s.code.toLowerCase() === staffToken.toLowerCase());
-        setStaffRegSchoolCode(found?.code || staffToken.toUpperCase());
-        setIsStaffSelfRegOpen(true);
-        return;
+      } else {
+        setSelfRegSchoolCode(codeToUse);
+        setIsSelfRegOpen(true);
       }
+      return;
     }
 
     // Parent / Student Self-Registration Token
-    const token = params.get('regToken') || params.get('join') || params.get('joinSchool') || params.get('school');
+    const token = params.get('regToken') || params.get('join');
     if (token) {
       const parsed = parseParentRegistrationToken(token);
       if (parsed?.schoolCode) {
         setSelfRegSchoolCode(parsed.schoolCode);
         setIsSelfRegOpen(true);
-      } else if (schools.some((s) => s.code.toLowerCase() === token.toLowerCase())) {
-        const found = schools.find((s) => s.code.toLowerCase() === token.toLowerCase());
-        setSelfRegSchoolCode(found?.code || token.toUpperCase());
+      } else {
+        setSelfRegSchoolCode(token.toUpperCase());
         setIsSelfRegOpen(true);
       }
     }
@@ -188,6 +219,7 @@ export function App() {
         onSwitchSchool={handleSwitchSchool}
         onLogout={handleLogout}
         onOpenLogin={() => setIsLoginOpen(true)}
+        onOpenRegisterSchool={() => setIsSchoolWizardOpen(true)}
         onOpenDonationModal={() => setIsDonationOpen(true)}
       />
 
@@ -202,21 +234,79 @@ export function App() {
             onOpenLogin={() => setIsLoginOpen(true)}
             onOpenRegisterSchool={() => setIsSchoolWizardOpen(true)}
             onOpenParentRegistration={() => {
-              setSelfRegSchoolCode(currentSchool?.code || schools[0]?.code || '');
+              setSelfRegSchoolCode('');
               setIsSelfRegOpen(true);
             }}
             onOpenStaffRegistration={() => {
-              setStaffRegSchoolCode(currentSchool?.code || schools[0]?.code || '');
+              setStaffRegSchoolCode('');
               setIsStaffSelfRegOpen(true);
             }}
             onOpenPaymentModal={openPaymentWithPlan}
             onOpenDonationModal={() => setIsDonationOpen(true)}
           />
         ) : currentUser.role === 'superadmin' ? (
-          <SuperAdminPortal
-            currentUser={currentUser}
-            onOpenCreateSchool={() => setIsSchoolWizardOpen(true)}
-          />
+          impersonatedSchool ? (
+            <div className="space-y-4">
+              {/* Top return bar for Super Admin */}
+              <div className="bg-gradient-to-r from-amber-600 via-amber-700 to-amber-800 text-white px-4 sm:px-6 py-3 shadow-lg flex flex-wrap items-center justify-between gap-3 border-b border-amber-500/50" dir="rtl">
+                <div className="flex items-center gap-3">
+                  <span className="p-2 rounded-xl bg-amber-500/40 border border-amber-300/30 text-amber-100 text-sm font-bold shadow-xs">
+                    👑 وضع المشرف العام
+                  </span>
+                  <div>
+                    <span className="text-xs text-amber-200 block">أنت الآن تدير المدرسة وتتحكم بكافة الصلاحيات:</span>
+                    <strong className="text-sm sm:text-base font-black text-white">
+                      {impersonatedSchool.name} ({impersonatedSchool.code})
+                    </strong>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setImpersonatedSchool(null)}
+                  className="py-2 px-4 rounded-xl bg-white hover:bg-amber-50 text-amber-950 font-black text-xs shadow-md transition-all cursor-pointer flex items-center gap-1.5"
+                >
+                  <span>العودة للوحة تحكم المشرف العام ↵</span>
+                </button>
+              </div>
+
+              {/* Render full Employee Dashboard as principal proxy */}
+              <EmployeeDashboard
+                currentUser={{
+                  ...currentUser,
+                  role: 'employee',
+                  name: `${currentUser.name} (إشراف)`,
+                  schoolCode: impersonatedSchool.code,
+                }}
+                currentSchool={impersonatedSchool}
+                schools={schools}
+                onSwitchSchool={(s) => setImpersonatedSchool(s)}
+                onOpenCreateSchool={() => setIsSchoolWizardOpen(true)}
+                onOpenDailyReport={() => setIsDailyReportOpen(true)}
+                onOpenGatekeeperScanner={() => setIsGatekeeperScannerOpen(true)}
+                onOpenMapPicker={() => setIsMapPickerOpen(true)}
+                onOpenClassExcelManager={() => setIsClassExcelManagerOpen(true)}
+                onOpenStaffManagement={() => setIsStaffManagementOpen(true)}
+                onOpenStaffRegistrationLink={() => setIsStaffRegLinkOpen(true)}
+                onOpenArchiveReport={() => setIsArchiveReportOpen(true)}
+                onOpenParentRegistrationLink={() => setIsParentRegLinkOpen(true)}
+                onOpenDirectStudentRegistration={() => {
+                  setSelfRegSchoolCode(impersonatedSchool.code);
+                  setIsSelfRegOpen(true);
+                }}
+                onOpenStudentDossier={(student) => setSelectedStudentForDossier(student)}
+              />
+            </div>
+          ) : (
+            <SuperAdminPortal
+              currentUser={currentUser}
+              schools={schools}
+              users={users}
+              attendances={attendances}
+              onRefresh={refreshAll}
+              onOpenCreateSchool={() => setIsSchoolWizardOpen(true)}
+              onImpersonateSchool={(sch) => setImpersonatedSchool(sch)}
+            />
+          )
         ) : currentUser.role === 'employee' && currentSchool ? (
           <EmployeeDashboard
             currentUser={currentUser}
@@ -522,7 +612,9 @@ export function App() {
         onClose={() => setIsSchoolWizardOpen(false)}
         onSchoolCreated={(newSchool, adminUser) => {
           refreshAll();
-          handleLoginSuccess(adminUser);
+          if (currentUser?.role !== 'superadmin') {
+            handleLoginSuccess(adminUser);
+          }
         }}
         initialPlan="yearly"
       />

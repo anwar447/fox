@@ -39,6 +39,14 @@ export const ParentStudentSelfRegistrationModal: React.FC<ParentStudentSelfRegis
     initialSchoolCode || schools[0]?.code || ''
   );
 
+  React.useEffect(() => {
+    if (initialSchoolCode) {
+      setSelectedSchoolCode(initialSchoolCode);
+    } else if (schools.length > 0 && !selectedSchoolCode) {
+      setSelectedSchoolCode(schools[0].code);
+    }
+  }, [initialSchoolCode, schools]);
+
   const [parentName, setParentName] = useState('');
   const [parentNationalId, setParentNationalId] = useState('');
   const [parentMobile, setParentMobile] = useState('');

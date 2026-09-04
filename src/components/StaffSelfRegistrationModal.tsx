@@ -25,6 +25,14 @@ export const StaffSelfRegistrationModal: React.FC<StaffSelfRegistrationModalProp
     initialSchoolCode || schools[0]?.code || ''
   );
 
+  React.useEffect(() => {
+    if (initialSchoolCode) {
+      setSelectedSchoolCode(initialSchoolCode);
+    } else if (schools.length > 0 && !selectedSchoolCode) {
+      setSelectedSchoolCode(schools[0].code);
+    }
+  }, [initialSchoolCode, schools]);
+
   const [name, setName] = useState('');
   const [nationalId, setNationalId] = useState('');
   const [mobile, setMobile] = useState('');

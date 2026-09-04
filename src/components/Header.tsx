@@ -13,6 +13,7 @@ interface HeaderProps {
   onSwitchSchool?: (school: School) => void;
   onLogout: () => void;
   onOpenLogin: () => void;
+  onOpenRegisterSchool?: () => void;
   onOpenDonationModal: () => void;
 }
 
@@ -23,6 +24,7 @@ export const Header: React.FC<HeaderProps> = ({
   onSwitchSchool,
   onLogout,
   onOpenLogin,
+  onOpenRegisterSchool,
   onOpenDonationModal,
 }) => {
   const getRoleBadge = (role: string) => {
@@ -63,9 +65,11 @@ export const Header: React.FC<HeaderProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-base font-black text-slate-900 tracking-wide">
-                حُضُورَكْ <span className="text-emerald-600 text-xs font-semibold">| النظام المدرسي الذكي</span>
+                حُضُورَكْ <span className="text-emerald-600 text-xs font-semibold">
+                  {currentUser?.role === 'superadmin' ? '| لوحة المشرف العام' : '| النظام المدرسي الذكي'}
+                </span>
               </h1>
-              {currentSchool && (
+              {currentUser && currentUser.role !== 'superadmin' && currentSchool && (
                 <span className="hidden sm:inline-block px-2 py-0.5 rounded-full bg-slate-100 text-[11px] font-mono text-slate-700 border border-slate-200 font-bold">
                   كود: {currentSchool.code}
                 </span>
@@ -73,7 +77,7 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
 
             {/* If admin manages multiple schools, show quick switcher */}
-            {adminManagedSchools.length > 1 && onSwitchSchool ? (
+            {currentUser && adminManagedSchools.length > 1 && onSwitchSchool ? (
               <div className="flex items-center gap-1.5 mt-0.5">
                 <span className="text-[10px] text-slate-500 font-bold">المدرسة الحالية:</span>
                 <select
@@ -93,7 +97,11 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
             ) : (
               <p className="text-[11px] text-slate-500 font-medium">
-                {currentSchool ? currentSchool.name : 'المنظومة التعليمية الرقمية'}
+                {currentUser?.role === 'superadmin' 
+                  ? 'الإشراف وإدارة جميع المدارس والتراخيص بالمملكة'
+                  : currentUser && currentSchool 
+                    ? currentSchool.name 
+                    : 'المنصة السحابية لضبط الحضور والانضباط المدرسي 1448هـ'}
               </p>
             )}
           </div>
@@ -134,12 +142,23 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             </div>
           ) : (
-            <button
-              onClick={onOpenLogin}
-              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-md shadow-emerald-600/20 cursor-pointer"
-            >
-              تسجيل الدخول ↵
-            </button>
+            <div className="flex items-center gap-2">
+              {onOpenRegisterSchool && (
+                <button
+                  onClick={onOpenRegisterSchool}
+                  className="hidden sm:flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold transition-all cursor-pointer"
+                >
+                  <Building2 className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>تسجيل مدرسة جديدة 🚀</span>
+                </button>
+              )}
+              <button
+                onClick={onOpenLogin}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-md shadow-emerald-600/20 cursor-pointer"
+              >
+                تسجيل الدخول ↵
+              </button>
+            </div>
           )}
         </div>
       </div>

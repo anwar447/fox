@@ -3,26 +3,80 @@ import {
   SubscriptionPaymentRequest, SystemNotification, 
   StudentPermission, StudentBehaviorLog, AdministrativeAbsenceAction 
 } from '../types';
-import { INITIAL_SCHOOLS, INITIAL_USERS, INITIAL_PERMISSIONS, INITIAL_BEHAVIOR_LOGS, generateInitialAttendances } from '../data/seedData';
+import { INITIAL_SCHOOLS, INITIAL_USERS, INITIAL_PERMISSIONS, INITIAL_BEHAVIOR_LOGS } from '../data/seedData';
 import { getTodayDateString } from './academic';
 
-const SCHOOLS_KEY = 'hodoorak_schools_prod_v2';
-const USERS_KEY = 'hodoorak_users_prod_v2';
-const ATTENDANCES_KEY = 'hodoorak_attendances_prod_v2';
-const PERMISSIONS_KEY = 'hodoorak_permissions_prod_v2';
-const BEHAVIOR_KEY = 'hodoorak_behavior_prod_v2';
-const CORRECTIONS_KEY = 'hodoorak_corrections_prod_v2';
-const PAYMENTS_KEY = 'hodoorak_payments_prod_v2';
-const NOTIFICATIONS_KEY = 'hodoorak_notifications_prod_v2';
-const CURRENT_USER_KEY = 'hodoorak_current_user_prod_v2';
-const ABSENCE_ACTIONS_KEY = 'hodoorak_absence_actions_prod_v2';
+const STORAGE_VERSION = 'v4_clean';
+const SCHOOLS_KEY = `hodoorak_schools_${STORAGE_VERSION}`;
+const USERS_KEY = `hodoorak_users_${STORAGE_VERSION}`;
+const ATTENDANCES_KEY = `hodoorak_attendances_${STORAGE_VERSION}`;
+const PERMISSIONS_KEY = `hodoorak_permissions_${STORAGE_VERSION}`;
+const BEHAVIOR_KEY = `hodoorak_behavior_${STORAGE_VERSION}`;
+const CORRECTIONS_KEY = `hodoorak_corrections_${STORAGE_VERSION}`;
+const PAYMENTS_KEY = `hodoorak_payments_${STORAGE_VERSION}`;
+const NOTIFICATIONS_KEY = `hodoorak_notifications_${STORAGE_VERSION}`;
+const CURRENT_USER_KEY = `hodoorak_current_user_${STORAGE_VERSION}`;
+const ABSENCE_ACTIONS_KEY = `hodoorak_absence_actions_${STORAGE_VERSION}`;
+
+// Helper for fire-and-forget or background server API sync
+async function apiPost(endpoint: string, body: any): Promise<any> {
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (err) {
+    console.warn(`Sync failed for ${endpoint}:`, err);
+  }
+  return null;
+}
+
+// 0. Full Sync with Server
+export async function syncDataFromServer(): Promise<{
+  schools: School[];
+  users: User[];
+  attendances: Attendance[];
+  permissions: StudentPermission[];
+  behavior_logs: StudentBehaviorLog[];
+  absence_actions: AdministrativeAbsenceAction[];
+  corrections: CorrectionRequest[];
+  payments: SubscriptionPaymentRequest[];
+  notifications: SystemNotification[];
+} | null> {
+  try {
+    const res = await fetch('/api/sync');
+    if (res.ok) {
+      const result = await res.json();
+      if (result.success && result.data) {
+        const d = result.data;
+        if (Array.isArray(d.schools)) saveSchools(d.schools, false);
+        if (Array.isArray(d.users)) saveUsers(d.users, false);
+        if (Array.isArray(d.attendances)) saveAttendances(d.attendances, false);
+        if (Array.isArray(d.permissions)) savePermissions(d.permissions, false);
+        if (Array.isArray(d.behavior_logs)) saveBehaviorLogs(d.behavior_logs, false);
+        if (Array.isArray(d.absence_actions)) saveAbsenceActions(d.absence_actions, false);
+        if (Array.isArray(d.corrections)) saveCorrectionRequests(d.corrections, false);
+        if (Array.isArray(d.payments)) savePaymentRequests(d.payments, false);
+        if (Array.isArray(d.notifications)) saveSystemNotifications(d.notifications, false);
+        return d;
+      }
+    }
+  } catch (err) {
+    console.warn('Could not sync with server:', err);
+  }
+  return null;
+}
 
 // 1. Schools
 export function getSchools(): School[] {
   try {
     const raw = localStorage.getItem(SCHOOLS_KEY);
     if (!raw) {
-      saveSchools(INITIAL_SCHOOLS);
+      saveSchools(INITIAL_SCHOOLS, false);
       return INITIAL_SCHOOLS;
     }
     const parsed = JSON.parse(raw);
@@ -32,9 +86,11 @@ export function getSchools(): School[] {
   }
 }
 
-
-export function saveSchools(schools: School[]): void {
+export function saveSchools(schools: School[], syncServer: boolean = true): void {
   localStorage.setItem(SCHOOLS_KEY, JSON.stringify(schools));
+  if (syncServer) {
+    apiPost('/api/sync', { schools });
+  }
 }
 
 export function addSchool(school: School): void {
@@ -45,7 +101,8 @@ export function addSchool(school: School): void {
   } else {
     list.push(school);
   }
-  saveSchools(list);
+  saveSchools(list, true);
+  apiPost('/api/schools', school);
 }
 
 export function updateSchool(school: School): void {
@@ -53,13 +110,15 @@ export function updateSchool(school: School): void {
   const idx = list.findIndex((s) => s.id === school.id || s.code === school.code);
   if (idx >= 0) {
     list[idx] = school;
-    saveSchools(list);
+    saveSchools(list, true);
+    apiPost('/api/schools', school);
   }
 }
 
 export function deleteSchool(schoolIdOrCode: string): void {
   const list = getSchools().filter((s) => s.id !== schoolIdOrCode && s.code !== schoolIdOrCode);
-  saveSchools(list);
+  saveSchools(list, true);
+  fetch(`/api/schools/${encodeURIComponent(schoolIdOrCode)}`, { method: 'DELETE' }).catch(() => {});
 }
 
 // 2. Users
@@ -67,7 +126,7 @@ export function getUsers(): User[] {
   try {
     const raw = localStorage.getItem(USERS_KEY);
     if (!raw) {
-      saveUsers(INITIAL_USERS);
+      saveUsers(INITIAL_USERS, false);
       return INITIAL_USERS;
     }
     const parsed = JSON.parse(raw);
@@ -77,8 +136,11 @@ export function getUsers(): User[] {
   }
 }
 
-export function saveUsers(users: User[]): void {
+export function saveUsers(users: User[], syncServer: boolean = true): void {
   localStorage.setItem(USERS_KEY, JSON.stringify(users));
+  if (syncServer) {
+    apiPost('/api/sync', { users });
+  }
 }
 
 export function addUser(user: User): void {
@@ -89,7 +151,8 @@ export function addUser(user: User): void {
   } else {
     list.push(user);
   }
-  saveUsers(list);
+  saveUsers(list, true);
+  apiPost('/api/users', user);
 }
 
 export function updateUser(user: User): void {
@@ -97,13 +160,15 @@ export function updateUser(user: User): void {
   const idx = list.findIndex((u) => u.id === user.id);
   if (idx >= 0) {
     list[idx] = user;
-    saveUsers(list);
+    saveUsers(list, true);
+    apiPost('/api/users', user);
   }
 }
 
 export function deleteUser(userId: string): void {
   const list = getUsers().filter((u) => u.id !== userId);
-  saveUsers(list);
+  saveUsers(list, true);
+  fetch(`/api/users/${encodeURIComponent(userId)}`, { method: 'DELETE' }).catch(() => {});
 }
 
 // 3. Attendances
@@ -111,10 +176,7 @@ export function getAttendances(): Attendance[] {
   try {
     const raw = localStorage.getItem(ATTENDANCES_KEY);
     if (!raw) {
-      const users = getUsers();
-      const initialAtt = generateInitialAttendances(users, 'RAYA-1448');
-      saveAttendances(initialAtt);
-      return initialAtt;
+      return [];
     }
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
@@ -123,8 +185,11 @@ export function getAttendances(): Attendance[] {
   }
 }
 
-export function saveAttendances(attendances: Attendance[]): void {
+export function saveAttendances(attendances: Attendance[], syncServer: boolean = true): void {
   localStorage.setItem(ATTENDANCES_KEY, JSON.stringify(attendances));
+  if (syncServer) {
+    apiPost('/api/attendances', attendances);
+  }
 }
 
 export function getAttendancesForDate(schoolCode: string, date: string): Attendance[] {
@@ -145,15 +210,15 @@ export function updateAttendance(attendance: Attendance): void {
   } else {
     all.push(attendance);
   }
-  saveAttendances(all);
+  saveAttendances(all, true);
 }
 
-// 3.5 Student Classroom Permissions (الاستئذان وتكرار الخروج من الحصة)
+// 3.5 Student Classroom Permissions
 export function getPermissions(): StudentPermission[] {
   try {
     const raw = localStorage.getItem(PERMISSIONS_KEY);
     if (!raw) {
-      savePermissions(INITIAL_PERMISSIONS);
+      savePermissions(INITIAL_PERMISSIONS, false);
       return INITIAL_PERMISSIONS;
     }
     const parsed = JSON.parse(raw);
@@ -163,14 +228,18 @@ export function getPermissions(): StudentPermission[] {
   }
 }
 
-export function savePermissions(permissions: StudentPermission[]): void {
+export function savePermissions(permissions: StudentPermission[], syncServer: boolean = true): void {
   localStorage.setItem(PERMISSIONS_KEY, JSON.stringify(permissions));
+  if (syncServer) {
+    apiPost('/api/permissions', permissions);
+  }
 }
 
 export function addPermission(perm: StudentPermission): void {
   const list = getPermissions();
   list.unshift(perm);
-  savePermissions(list);
+  savePermissions(list, true);
+  apiPost('/api/permissions', perm);
 }
 
 export function returnStudentPermission(permissionId: string, timeIn?: string): void {
@@ -181,7 +250,6 @@ export function returnStudentPermission(permissionId: string, timeIn?: string): 
     const actualTimeIn = timeIn || new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit', hour12: false });
     perm.timeIn = actualTimeIn;
     
-    // Calculate duration
     try {
       const [outH, outM] = perm.timeOut.split(':').map(Number);
       const [inH, inM] = actualTimeIn.split(':').map(Number);
@@ -194,7 +262,7 @@ export function returnStudentPermission(permissionId: string, timeIn?: string): 
       // fallback
     }
     
-    savePermissions(list);
+    savePermissions(list, true);
   }
 }
 
@@ -240,7 +308,7 @@ export function confirmGuardExitPermission(
   perm.exitGateStatus = 'confirmed_exited';
   perm.guardConfirmedAt = timeStr;
   perm.guardName = guardName;
-  savePermissions(list);
+  savePermissions(list, true);
 
   // Synchronize with Attendance records
   const attendances = getAttendances();
@@ -272,17 +340,17 @@ export function confirmGuardExitPermission(
       pickupPersonName: perm.pickupPerson,
     });
   }
-  saveAttendances(attendances);
+  saveAttendances(attendances, true);
 
   return { success: true, permission: perm };
 }
 
-// 3.8 Student Behavior Logs (سجل السلوك والمواظبة والدرجات التعويضية)
+// 3.8 Student Behavior Logs
 export function getBehaviorLogs(): StudentBehaviorLog[] {
   try {
     const raw = localStorage.getItem(BEHAVIOR_KEY);
     if (!raw) {
-      saveBehaviorLogs(INITIAL_BEHAVIOR_LOGS);
+      saveBehaviorLogs(INITIAL_BEHAVIOR_LOGS, false);
       return INITIAL_BEHAVIOR_LOGS;
     }
     const parsed = JSON.parse(raw);
@@ -292,19 +360,22 @@ export function getBehaviorLogs(): StudentBehaviorLog[] {
   }
 }
 
-export function saveBehaviorLogs(logs: StudentBehaviorLog[]): void {
+export function saveBehaviorLogs(logs: StudentBehaviorLog[], syncServer: boolean = true): void {
   localStorage.setItem(BEHAVIOR_KEY, JSON.stringify(logs));
+  if (syncServer) {
+    apiPost('/api/sync', { behavior_logs: logs });
+  }
 }
 
 export function addBehaviorLog(log: StudentBehaviorLog): void {
   const list = getBehaviorLogs();
   list.unshift(log);
-  saveBehaviorLogs(list);
+  saveBehaviorLogs(list, true);
 }
 
 export function deleteBehaviorLog(logId: string): void {
   const list = getBehaviorLogs().filter((b) => b.id !== logId);
-  saveBehaviorLogs(list);
+  saveBehaviorLogs(list, true);
 }
 
 export function getBehaviorLogsForStudent(studentId: string): StudentBehaviorLog[] {
@@ -325,14 +396,17 @@ export function getCorrectionRequests(): CorrectionRequest[] {
   }
 }
 
-export function saveCorrectionRequests(reqs: CorrectionRequest[]): void {
+export function saveCorrectionRequests(reqs: CorrectionRequest[], syncServer: boolean = true): void {
   localStorage.setItem(CORRECTIONS_KEY, JSON.stringify(reqs));
+  if (syncServer) {
+    apiPost('/api/sync', { corrections: reqs });
+  }
 }
 
 export function addCorrectionRequest(req: CorrectionRequest): void {
   const list = getCorrectionRequests();
   list.unshift(req);
-  saveCorrectionRequests(list);
+  saveCorrectionRequests(list, true);
 }
 
 export function updateCorrectionRequest(req: CorrectionRequest): void {
@@ -340,7 +414,7 @@ export function updateCorrectionRequest(req: CorrectionRequest): void {
   const idx = list.findIndex((r) => r.id === req.id);
   if (idx >= 0) {
     list[idx] = req;
-    saveCorrectionRequests(list);
+    saveCorrectionRequests(list, true);
   }
 }
 
@@ -354,14 +428,17 @@ export function getPaymentRequests(): SubscriptionPaymentRequest[] {
   }
 }
 
-export function savePaymentRequests(reqs: SubscriptionPaymentRequest[]): void {
+export function savePaymentRequests(reqs: SubscriptionPaymentRequest[], syncServer: boolean = true): void {
   localStorage.setItem(PAYMENTS_KEY, JSON.stringify(reqs));
+  if (syncServer) {
+    apiPost('/api/sync', { payments: reqs });
+  }
 }
 
 export function addPaymentRequest(req: SubscriptionPaymentRequest): void {
   const list = getPaymentRequests();
   list.unshift(req);
-  savePaymentRequests(list);
+  savePaymentRequests(list, true);
 }
 
 export function updatePaymentRequest(req: SubscriptionPaymentRequest): void {
@@ -369,7 +446,7 @@ export function updatePaymentRequest(req: SubscriptionPaymentRequest): void {
   const idx = list.findIndex((r) => r.id === req.id);
   if (idx >= 0) {
     list[idx] = req;
-    savePaymentRequests(list);
+    savePaymentRequests(list, true);
   }
 }
 
@@ -383,14 +460,17 @@ export function getSystemNotifications(): SystemNotification[] {
   }
 }
 
-export function saveSystemNotifications(n: SystemNotification[]): void {
+export function saveSystemNotifications(n: SystemNotification[], syncServer: boolean = true): void {
   localStorage.setItem(NOTIFICATIONS_KEY, JSON.stringify(n));
+  if (syncServer) {
+    apiPost('/api/sync', { notifications: n });
+  }
 }
 
 export function addSystemNotification(n: SystemNotification): void {
   const list = getSystemNotifications();
   list.unshift(n);
-  saveSystemNotifications(list);
+  saveSystemNotifications(list, true);
 }
 
 export function updateUserAvatar(userId: string, avatarDataUrl: string): void {
@@ -398,7 +478,7 @@ export function updateUserAvatar(userId: string, avatarDataUrl: string): void {
   const idx = users.findIndex((u) => u.id === userId);
   if (idx >= 0) {
     users[idx].avatar = avatarDataUrl;
-    saveUsers(users);
+    saveUsers(users, true);
 
     const currentUser = getCurrentUser();
     if (currentUser && currentUser.id === userId) {
@@ -408,7 +488,7 @@ export function updateUserAvatar(userId: string, avatarDataUrl: string): void {
   }
 }
 
-// 6.5 Administrative Absence Actions (إجراءات الإنذار وتكرار الغياب 5 أيام)
+// 6.5 Administrative Absence Actions
 export function getAbsenceActions(): AdministrativeAbsenceAction[] {
   try {
     const raw = localStorage.getItem(ABSENCE_ACTIONS_KEY);
@@ -418,22 +498,24 @@ export function getAbsenceActions(): AdministrativeAbsenceAction[] {
   }
 }
 
-export function saveAbsenceActions(actions: AdministrativeAbsenceAction[]): void {
+export function saveAbsenceActions(actions: AdministrativeAbsenceAction[], syncServer: boolean = true): void {
   localStorage.setItem(ABSENCE_ACTIONS_KEY, JSON.stringify(actions));
+  if (syncServer) {
+    apiPost('/api/sync', { absence_actions: actions });
+  }
 }
 
 export function addAbsenceAction(action: AdministrativeAbsenceAction): void {
   const list = getAbsenceActions();
   list.unshift(action);
-  saveAbsenceActions(list);
+  saveAbsenceActions(list, true);
 
-  // If resetCycle is requested, update user's lastAbsenceResetDate
   if (action.resetCycle) {
     const users = getUsers();
     const idx = users.findIndex((u) => u.id === action.studentId);
     if (idx >= 0) {
       users[idx].lastAbsenceResetDate = action.date || getTodayDateString();
-      saveUsers(users);
+      saveUsers(users, true);
     }
   }
 }
@@ -467,29 +549,33 @@ export function saveCurrentUserSession(user: User | null): void {
 export const getCurrentUser = getCurrentUserSession;
 export const setCurrentUser = saveCurrentUserSession;
 
-// 8. Clean Production Reset (بدء تشغيل إنتاجي نظيف بدون بيانات وسجلات تجريبية)
+// 8. Clean Production Reset
 export function cleanResetToEmptyProductionData(): void {
-  // Clear all dynamic attendances, permissions, logs, corrections, absence actions
-  saveAttendances([]);
-  savePermissions([]);
-  saveBehaviorLogs([]);
-  saveCorrectionRequests([]);
-  saveAbsenceActions([]);
-  savePaymentRequests([]);
-  saveSystemNotifications([]);
+  saveAttendances([], true);
+  savePermissions([], true);
+  saveBehaviorLogs([], true);
+  saveCorrectionRequests([], true);
+  saveAbsenceActions([], true);
+  savePaymentRequests([], true);
+  saveSystemNotifications([], true);
 
-  // Reset users' lastAbsenceResetDate
   const users = getUsers().map((u) => ({
     ...u,
     lastAbsenceResetDate: undefined,
   }));
-  saveUsers(users);
+  saveUsers(users, true);
 
   window.location.reload();
 }
 
-// 9. Reset All
-export function resetAllDataToSeed(): void {
+// 9. Reset All Data Completely on Server and Local
+export async function resetAllDataToSeed(): Promise<void> {
+  try {
+    await fetch('/api/reset-all', { method: 'POST' });
+  } catch (err) {
+    console.warn('Reset all API call failed:', err);
+  }
+
   localStorage.removeItem(SCHOOLS_KEY);
   localStorage.removeItem(USERS_KEY);
   localStorage.removeItem(ATTENDANCES_KEY);
