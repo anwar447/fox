@@ -10,7 +10,7 @@ import {
   Sparkles, ShieldCheck, Search, Plus, Calendar, AlertCircle,
   PauseCircle, PlayCircle, Trash2, Edit3, ShieldAlert, CheckCircle,
   Clock, RefreshCw, Phone, MapPin, Users, UserCheck, ExternalLink,
-  Copy, Share2, Layers, School as SchoolIcon, ArrowRight
+  Copy, Share2, Layers, School as SchoolIcon, ArrowRight, Code2
 } from 'lucide-react';
 
 interface SuperAdminPortalProps {
@@ -21,6 +21,7 @@ interface SuperAdminPortalProps {
   onRefresh: () => void;
   onOpenCreateSchool: () => void;
   onImpersonateSchool?: (school: School) => void;
+  onOpenApiIntegration?: (school: School) => void;
 }
 
 export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
@@ -31,6 +32,7 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
   onRefresh,
   onOpenCreateSchool,
   onImpersonateSchool,
+  onOpenApiIntegration,
 }) => {
   const [payments, setPayments] = useState<SubscriptionPaymentRequest[]>(getPaymentRequests());
   const [search, setSearch] = useState('');
@@ -606,6 +608,18 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
                           </>
                         )}
                       </button>
+
+                      {/* Counselor API Integration Button */}
+                      {onOpenApiIntegration && (
+                        <button
+                          onClick={() => onOpenApiIntegration(sch)}
+                          className="px-2.5 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border border-indigo-200 font-bold text-[11px] flex items-center gap-1 cursor-pointer transition-colors"
+                          title="توكن وربط API الموجه الطلابي"
+                        >
+                          <Code2 className="w-3.5 h-3.5 text-indigo-600" />
+                          <span>API الموجه 🔌</span>
+                        </button>
+                      )}
 
                       {/* Delete School Button */}
                       <button

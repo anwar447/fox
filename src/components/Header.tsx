@@ -46,8 +46,8 @@ export const Header: React.FC<HeaderProps> = ({
 
   const badge = currentUser ? getRoleBadge(currentUser.role) : null;
 
-  // Managed schools for employee
-  const adminManagedSchools = currentUser?.role === 'employee' && schools.length > 0
+  // Managed schools for any user (Principal, Vice Principal, Teacher, Administrative Assistant, etc.)
+  const userAssignedSchools = currentUser && schools.length > 0
     ? schools.filter((s) => 
         currentUser.managedSchoolCodes?.includes(s.code) || 
         s.code === currentUser.schoolCode
@@ -76,8 +76,8 @@ export const Header: React.FC<HeaderProps> = ({
               )}
             </div>
 
-            {/* If admin manages multiple schools, show quick switcher */}
-            {currentUser && adminManagedSchools.length > 1 && onSwitchSchool ? (
+            {/* If user has multiple assigned schools (Teacher, Assistant, Principal), show quick switcher */}
+            {currentUser && userAssignedSchools.length > 1 && onSwitchSchool ? (
               <div className="flex items-center gap-1.5 mt-0.5">
                 <span className="text-[10px] text-slate-500 font-bold">المدرسة الحالية:</span>
                 <select
@@ -86,9 +86,10 @@ export const Header: React.FC<HeaderProps> = ({
                     const target = schools.find((s) => s.code === e.target.value);
                     if (target) onSwitchSchool(target);
                   }}
-                  className="bg-emerald-50 border border-emerald-300 text-emerald-950 font-bold text-xs rounded-lg px-2 py-0.5 focus:outline-emerald-500 cursor-pointer"
+                  className="bg-emerald-50 border border-emerald-300 text-emerald-950 font-bold text-xs rounded-lg px-2 py-0.5 focus:outline-emerald-500 cursor-pointer shadow-2xs"
+                  title="التبديل بين المدارس المسندة إليك"
                 >
-                  {adminManagedSchools.map((sch) => (
+                  {userAssignedSchools.map((sch) => (
                     <option key={sch.id} value={sch.code}>
                       🏢 {sch.name} ({sch.code})
                     </option>

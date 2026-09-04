@@ -32,6 +32,7 @@ export interface School {
   contactMobile: string;
   isQuranSchool?: boolean;
   customClasses?: SchoolClassSection[];
+  apiToken?: string; // رمز التوكن البرمجي لربط الأنظمة الخارجية والموجه الطلابي
 }
 
 export interface User {

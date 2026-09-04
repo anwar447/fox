@@ -23,7 +23,7 @@ import {
   Sparkles, ShieldCheck, UserPlus, FileSpreadsheet, Plus, GraduationCap,
   Activity, ShieldAlert, LogOut, Trash2, RefreshCw, User as UserIcon,
   Crown, CreditCard, Megaphone, HardDrive, Database, ArrowLeftRight,
-  FileCheck
+  FileCheck, Code2
 } from 'lucide-react';
 
 interface EmployeeDashboardProps {
@@ -42,6 +42,7 @@ interface EmployeeDashboardProps {
   onOpenParentRegistrationLink: () => void;
   onOpenDirectStudentRegistration: () => void;
   onOpenStudentDossier: (student: User) => void;
+  onOpenCounselorApi?: () => void;
 }
 
 export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
@@ -60,6 +61,7 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
   onOpenParentRegistrationLink,
   onOpenDirectStudentRegistration,
   onOpenStudentDossier,
+  onOpenCounselorApi,
 }) => {
   const today = getTodayDateString();
   const [attendances, setAttendances] = useState<Attendance[]>(() =>
@@ -360,6 +362,18 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
               <Database className="w-4 h-4 text-emerald-600" />
               <span>تخزين ونسخ البيانات 💾</span>
             </button>
+
+            {/* Counselor & External App API Integration */}
+            {onOpenCounselorApi && (
+              <button
+                onClick={onOpenCounselorApi}
+                className="py-2.5 px-3.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-200 font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                title="الحصول على رمز التوكن وروابط الربط البرمجي لتطبيق الموجه الطلابي والأنظمة الخارجية"
+              >
+                <Code2 className="w-4 h-4 text-purple-600" />
+                <span>ربط الموجه الطلابي (API) 🔌</span>
+              </button>
+            )}
 
             <button
               onClick={onOpenStaffManagement}

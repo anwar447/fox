@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { School, User, StaffTitle, UserRole } from '../types';
-import { getUsers, saveUsers } from '../utils/storage';
+import { getUsers, saveUsers, getSchools } from '../utils/storage';
 import { buildTeacherWhatsAppInvitation, buildMagicLinkUrl } from '../utils/magicLink';
 import { 
   Users, UserPlus, Trash2, Edit2, Check, X, 
   MessageSquare, Share2, Sparkles, BookOpen, Key, Phone, 
-  Copy, ShieldCheck, Filter
+  Copy, ShieldCheck, Filter, Building2
 } from 'lucide-react';
 
 interface StaffManagementModalProps {
@@ -29,6 +29,10 @@ export const StaffManagementModal: React.FC<StaffManagementModalProps> = ({
   const [msg, setMsg] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  // All schools in platform for multi-school assignment
+  const allSystemSchools = getSchools();
+  const otherSchools = allSystemSchools.filter((s) => s.code !== school.code);
+
   // Editing state
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
 
@@ -38,6 +42,7 @@ export const StaffManagementModal: React.FC<StaffManagementModalProps> = ({
   const [mobile, setMobile] = useState('');
   const [password, setPassword] = useState('123');
   const [staffTitle, setStaffTitle] = useState<StaffTitle>('teacher');
+  const [managedSchoolCodes, setManagedSchoolCodes] = useState<string[]>([]);
   
   // Assigned classes for teacher
   const [selectedClasses, setSelectedClasses] = useState<{ className: string; sectionName: string }[]>([]);
@@ -47,7 +52,8 @@ export const StaffManagementModal: React.FC<StaffManagementModalProps> = ({
   if (!isOpen) return null;
 
   const allSchoolStaff = getUsers().filter(
-    (u) => (u.role === 'teacher' || u.role === 'employee') && u.schoolCode === school.code
+    (u) => (u.role === 'teacher' || u.role === 'employee') && 
+           (u.schoolCode === school.code || u.managedSchoolCodes?.includes(school.code))
   );
 
   const filteredStaff = allSchoolStaff.filter((u) => {
@@ -69,6 +75,7 @@ export const StaffManagementModal: React.FC<StaffManagementModalProps> = ({
     setMobile('');
     setPassword('123');
     setStaffTitle('teacher');
+    setManagedSchoolCodes([]);
     setSelectedClasses([]);
     setActiveTab('form');
     setMsg('');
@@ -81,9 +88,18 @@ export const StaffManagementModal: React.FC<StaffManagementModalProps> = ({
     setMobile(staff.mobile || '');
     setPassword(staff.password || '123');
     setStaffTitle(staff.staffTitle || (staff.role === 'teacher' ? 'teacher' : 'admin_assistant'));
+    setManagedSchoolCodes(staff.managedSchoolCodes || []);
     setSelectedClasses(staff.assignedClasses || []);
     setActiveTab('form');
     setMsg('');
+  };
+
+  const toggleSchoolAssignment = (code: string) => {
+    if (managedSchoolCodes.includes(code)) {
+      setManagedSchoolCodes(managedSchoolCodes.filter((c) => c !== code));
+    } else {
+      setManagedSchoolCodes([...managedSchoolCodes, code]);
+    }
   };
 
   const handleAddClassToTeacher = () => {
@@ -110,7 +126,7 @@ export const StaffManagementModal: React.FC<StaffManagementModalProps> = ({
     const cleanNid = nationalId.trim();
     const existingUsers = getUsers();
 
-    // Check duplicate ID
+    // Check duplicate ID in current school
     const duplicate = existingUsers.find(
       (u) => u.nationalId === cleanNid && u.schoolCode === school.code && u.id !== editingUserId
     );
@@ -133,13 +149,14 @@ export const StaffManagementModal: React.FC<StaffManagementModalProps> = ({
             password: password || '123',
             role: userRole,
             staffTitle: staffTitle,
+            managedSchoolCodes: managedSchoolCodes.length > 0 ? managedSchoolCodes : undefined,
             assignedClasses: userRole === 'teacher' ? selectedClasses : undefined,
           };
         }
         return u;
       });
       saveUsers(updated);
-      setMsg('✅ تم تحديث بيانات المعلم/الموظف بنجاح!');
+      setMsg('✅ تم تحديث بيانات المعلم/الموظف والمدارس المسندة بنجاح!');
     } else {
       // Create new
       const newStaff: User = {
@@ -151,10 +168,11 @@ export const StaffManagementModal: React.FC<StaffManagementModalProps> = ({
         role: userRole,
         staffTitle: staffTitle,
         schoolCode: school.code,
+        managedSchoolCodes: managedSchoolCodes.length > 0 ? managedSchoolCodes : undefined,
         assignedClasses: userRole === 'teacher' ? selectedClasses : undefined,
       };
       saveUsers([...existingUsers, newStaff]);
-      setMsg('✅ تم إضافة الكادر التعليمي بنجاح!');
+      setMsg('✅ تم إضافة الكادر والمدارس المسندة بنجاح!');
     }
 
     setActiveTab('list');
@@ -344,6 +362,14 @@ export const StaffManagementModal: React.FC<StaffManagementModalProps> = ({
                         <tr key={staff.id} className="hover:bg-slate-50/80 transition-colors">
                           <td className="p-3">
                             <strong className="text-slate-900 block font-bold">{staff.name}</strong>
+                            {staff.managedSchoolCodes && staff.managedSchoolCodes.length > 0 && (
+                              <div className="mt-1 flex items-center gap-1">
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 border border-amber-200 text-amber-900 text-[10px] font-bold">
+                                  <Building2 className="w-3 h-3 text-amber-600" />
+                                  <span>مسند لـ {staff.managedSchoolCodes.length + 1} مدارس</span>
+                                </span>
+                              </div>
+                            )}
                           </td>
                           <td className="p-3 font-mono text-slate-600">{staff.nationalId}</td>
                           <td className="p-3">
@@ -558,6 +584,48 @@ export const StaffManagementModal: React.FC<StaffManagementModalProps> = ({
                     * إذا لم تحدد فصولاً معينة، سيتاح للمعلم الوصول لجميع فصول المدرسة.
                   </p>
                 )}
+              </div>
+            )}
+
+            {/* Multi-School Assignment Section */}
+            {otherSchools.length > 0 && (
+              <div className="bg-amber-50/80 border border-amber-200 rounded-2xl p-4 space-y-2.5">
+                <div className="flex items-center gap-2">
+                  <Building2 className="w-4 h-4 text-amber-700" />
+                  <span className="font-bold text-amber-950 text-xs">
+                    إسناد مدارس إضافية للموظف / المعلم (العمل في أكثر من مدرسة بنفس الحساب):
+                  </span>
+                </div>
+                <p className="text-[11px] text-amber-800 leading-relaxed">
+                  يمكن للمعلم أو المساعد الإداري الدخول بحسابه الموحد والتبديل السريع بين هذه المدارس مباشرة دون الحاجة لإنشاء حسابات أو كلمات مرور متعددة.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                  {otherSchools.map((s) => {
+                    const isChecked = managedSchoolCodes.includes(s.code);
+                    return (
+                      <div
+                        key={s.id}
+                        onClick={() => toggleSchoolAssignment(s.code)}
+                        className={`p-3 rounded-xl border flex items-center gap-3 cursor-pointer select-none transition-all ${
+                          isChecked
+                            ? 'bg-amber-100/90 border-amber-400 text-amber-950 shadow-xs'
+                            : 'bg-white border-slate-200 text-slate-700 hover:border-amber-300'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => {}} // Controlled by container click
+                          className="w-4 h-4 accent-amber-600 rounded cursor-pointer"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <span className="block text-xs font-bold truncate">{s.name}</span>
+                          <span className="text-[10px] text-slate-500 font-mono">كود: {s.code}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
 

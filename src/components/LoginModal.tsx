@@ -68,21 +68,28 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       }
     }
 
-    // 2. School User Login (Teacher, Student, Parent, Principal, Guard)
-    const matchedUser = users.find(
+    // 2. School User Login (Teacher, Student, Parent, Principal, Guard, Assistant)
+    let matchedUser = users.find(
       (u) =>
         u.nationalId === cleanNid &&
-        (u.schoolCode === schoolCode || u.role === 'superadmin')
+        (u.schoolCode === schoolCode || u.managedSchoolCodes?.includes(schoolCode) || u.role === 'superadmin')
     );
 
+    // If not found in the selected school, check if they exist in another school or have multi-school access
     if (!matchedUser) {
-      const existsInOtherSchool = users.find((u) => u.nationalId === cleanNid);
-      if (existsInOtherSchool) {
-        setErrorMsg(`رقم الهوية مسجل في مدرسة أخرى (كود: ${existsInOtherSchool.schoolCode}). يرجى اختيار المدرسة الصحيحة من القائمة.`);
+      const anyAccount = users.find((u) => u.nationalId === cleanNid);
+      if (anyAccount) {
+        if (anyAccount.managedSchoolCodes && anyAccount.managedSchoolCodes.length > 0) {
+          // Has multiple schools, log in with their primary school
+          matchedUser = anyAccount;
+        } else {
+          setErrorMsg(`رقم الهوية مسجل في مدرسة أخرى (كود: ${anyAccount.schoolCode}). يرجى اختيار المدرسة الصحيحة من القائمة أو الدخول عبرها.`);
+          return;
+        }
       } else {
         setErrorMsg('رقم الهوية غير مسجل في هذه المدرسة. تأكد من كود المدرسة ورقم الهوية أو قم بالتسجيل الذاتي.');
+        return;
       }
-      return;
     }
 
     const validPass = matchedUser.password || '123';
@@ -91,7 +98,15 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       return;
     }
 
-    onLoginSuccess(matchedUser);
+    // If logging into a specific managed school, set active schoolCode accordingly
+    const userToLogin: User = {
+      ...matchedUser,
+      schoolCode: schoolCode && (matchedUser.managedSchoolCodes?.includes(schoolCode) || matchedUser.schoolCode === schoolCode)
+        ? schoolCode
+        : matchedUser.schoolCode,
+    };
+
+    onLoginSuccess(userToLogin);
     onClose();
   };
 

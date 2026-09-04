@@ -15,16 +15,21 @@ import { StudentPermissionModal } from './StudentPermissionModal';
 import { BehaviorRecordModal } from './BehaviorRecordModal';
 import { LiveClockHeader } from './LiveClockHeader';
 import { BroadcastAlertBanner } from './BroadcastAlertBanner';
+import { Building2 } from 'lucide-react';
 
 interface TeacherPortalProps {
   currentUser: User;
   currentSchool: School;
+  schools?: School[];
+  onSwitchSchool?: (school: School) => void;
   onOpenDossier: (student: User) => void;
 }
 
 export const TeacherPortal: React.FC<TeacherPortalProps> = ({
   currentUser,
   currentSchool,
+  schools = [],
+  onSwitchSchool,
   onOpenDossier,
 }) => {
   const today = getTodayDateString();
@@ -32,6 +37,11 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
   const allAttendances = getAttendances();
   const [permissionsVersion, setPermissionsVersion] = useState(0);
   const [behaviorVersion, setBehaviorVersion] = useState(0);
+
+  // Assigned schools for this teacher/user
+  const teacherSchools = schools.filter(
+    (s) => s.code === currentSchool.code || currentUser.managedSchoolCodes?.includes(s.code) || s.code === currentUser.schoolCode
+  );
 
   // Student Behavior Modal State
   const [selectedStudentForBehavior, setSelectedStudentForBehavior] = useState<User | null>(null);
@@ -212,12 +222,35 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
               بوابة المعلم ورصد الحصص والاستئذان
             </span>
             <h2 className="text-lg font-black text-slate-900 mt-1">أهلاً بك، {currentUser.name}</h2>
-            <p className="text-xs text-slate-500 font-medium">رصد الحضور ومتابعة تكرار استئذان الطلاب بين الحصص</p>
+            <p className="text-xs text-slate-500 font-medium">
+              المدرسة الحالية: <strong className="text-indigo-900">{currentSchool.name}</strong> (كود: {currentSchool.code})
+            </p>
           </div>
         </div>
 
-        {/* Class & Section pickers */}
-        <div className="flex items-center gap-2 text-xs">
+        {/* Multi-School Switcher for Teacher + Class & Section pickers */}
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          {teacherSchools.length > 1 && onSwitchSchool && (
+            <div className="flex items-center gap-1 bg-amber-50 border border-amber-200 rounded-xl px-2.5 py-1.5 shadow-2xs">
+              <Building2 className="w-3.5 h-3.5 text-amber-700" />
+              <span className="text-[11px] font-bold text-amber-950">المدرسة:</span>
+              <select
+                value={currentSchool.code}
+                onChange={(e) => {
+                  const target = schools.find((s) => s.code === e.target.value);
+                  if (target) onSwitchSchool(target);
+                }}
+                className="bg-white border border-amber-300 text-amber-950 font-bold text-xs rounded-lg px-2 py-1 focus:outline-amber-500 cursor-pointer"
+              >
+                {teacherSchools.map((sch) => (
+                  <option key={sch.id} value={sch.code}>
+                    {sch.name} ({sch.code})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <select
             value={selectedClass}
             onChange={(e) => setSelectedClass(e.target.value)}

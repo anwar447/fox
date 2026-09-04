@@ -121,6 +121,30 @@ export function deleteSchool(schoolIdOrCode: string): void {
   fetch(`/api/schools/${encodeURIComponent(schoolIdOrCode)}`, { method: 'DELETE' }).catch(() => {});
 }
 
+export async function generateSchoolApiToken(schoolCode: string): Promise<string | null> {
+  try {
+    const res = await fetch(`/api/schools/${encodeURIComponent(schoolCode)}/generate-api-token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    if (res.ok) {
+      const result = await res.json();
+      if (result.success && result.apiToken) {
+        const list = getSchools();
+        const idx = list.findIndex((s) => s.code === schoolCode);
+        if (idx >= 0) {
+          list[idx].apiToken = result.apiToken;
+          saveSchools(list, false);
+        }
+        return result.apiToken;
+      }
+    }
+  } catch (err) {
+    console.error('Failed to generate token:', err);
+  }
+  return null;
+}
+
 // 2. Users
 export function getUsers(): User[] {
   try {

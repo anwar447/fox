@@ -38,12 +38,17 @@ import { StaffManagementModal } from './components/StaffManagementModal';
 import { AdminArchiveReportModal } from './components/AdminArchiveReportModal';
 import { InteractiveMapPicker } from './components/InteractiveMapPicker';
 import { SchoolCreationWizard } from './components/SchoolCreationWizard';
+import { CounselorApiIntegrationModal } from './components/CounselorApiIntegrationModal';
 
 export function App() {
   const [currentUser, setUserState] = useState<User | null>(() => getCurrentUser());
   const [schools, setSchools] = useState<School[]>(() => getSchools());
   const [users, setUsers] = useState<User[]>(() => getUsers());
   const [attendances, setAttendances] = useState<Attendance[]>(() => getAttendances());
+  const [impersonatedSchool, setImpersonatedSchool] = useState<School | null>(null);
+
+  // Selected School for API integration modal (Counselor app)
+  const [selectedSchoolForApi, setSelectedSchoolForApi] = useState<School | null>(null);
 
   // Current active school (only resolved when a school user is logged in or superadmin is managing a school)
   const currentSchool: School | null = 
@@ -85,7 +90,6 @@ export function App() {
   const [selectedStudentForDossier, setSelectedStudentForDossier] = useState<User | null>(null);
   const [selectedStudentForQr, setSelectedStudentForQr] = useState<User | null>(null);
   const [selectedAttendanceForCorrection, setSelectedAttendanceForCorrection] = useState<Attendance | null>(null);
-  const [impersonatedSchool, setImpersonatedSchool] = useState<School | null>(null);
 
   // Initial & periodic server sync
   useEffect(() => {
@@ -294,6 +298,7 @@ export function App() {
                   setIsSelfRegOpen(true);
                 }}
                 onOpenStudentDossier={(student) => setSelectedStudentForDossier(student)}
+                onOpenCounselorApi={() => setSelectedSchoolForApi(impersonatedSchool)}
               />
             </div>
           ) : (
@@ -305,6 +310,7 @@ export function App() {
               onRefresh={refreshAll}
               onOpenCreateSchool={() => setIsSchoolWizardOpen(true)}
               onImpersonateSchool={(sch) => setImpersonatedSchool(sch)}
+              onOpenApiIntegration={(sch) => setSelectedSchoolForApi(sch)}
             />
           )
         ) : currentUser.role === 'employee' && currentSchool ? (
@@ -327,11 +333,14 @@ export function App() {
               setIsSelfRegOpen(true);
             }}
             onOpenStudentDossier={(student) => setSelectedStudentForDossier(student)}
+            onOpenCounselorApi={() => setSelectedSchoolForApi(currentSchool)}
           />
         ) : currentUser.role === 'teacher' && currentSchool ? (
           <TeacherPortal
             currentUser={currentUser}
             currentSchool={currentSchool}
+            schools={schools}
+            onSwitchSchool={handleSwitchSchool}
             onOpenDossier={(student) => setSelectedStudentForDossier(student)}
           />
         ) : currentUser.role === 'parent' && currentSchool ? (
@@ -618,6 +627,16 @@ export function App() {
         }}
         initialPlan="yearly"
       />
+
+      {/* 18. Counselor & External Application API Integration Modal */}
+      {selectedSchoolForApi && (
+        <CounselorApiIntegrationModal
+          isOpen={!!selectedSchoolForApi}
+          onClose={() => setSelectedSchoolForApi(null)}
+          school={selectedSchoolForApi}
+          onSchoolUpdated={() => refreshAll()}
+        />
+      )}
     </div>
   );
 }
