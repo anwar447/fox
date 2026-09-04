@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { School, User } from '../types';
 import { addSchool, addUser, getUsers, saveUsers } from '../utils/storage';
 import { 
   Building2, MapPin, Check, X, Sparkles, 
-  ShieldCheck, Phone, Navigation, Layers 
+  ShieldCheck, Phone, Navigation, Layers, Crown, CreditCard
 } from 'lucide-react';
 import { getCurrentCoordinates } from '../utils/geo';
 
@@ -39,8 +39,18 @@ export const SchoolCreationWizard: React.FC<SchoolCreationWizardProps> = ({
   const [adminPassword, setAdminPassword] = useState('123456');
 
   const [selectedPlan, setSelectedPlan] = useState<'trial' | 'semester' | 'yearly' | 'free_forever'>(
-    type === 'quran' ? 'free_forever' : initialPlan
+    initialPlan
   );
+
+  // Sync initialPlan on open or prop change
+  useEffect(() => {
+    if (isOpen) {
+      setSelectedPlan(initialPlan);
+      if (initialPlan === 'free_forever') {
+        setType('quran');
+      }
+    }
+  }, [isOpen, initialPlan]);
 
   if (!isOpen) return null;
 
@@ -149,7 +159,80 @@ export const SchoolCreationWizard: React.FC<SchoolCreationWizardProps> = ({
         <form onSubmit={handleFinish} className="space-y-4 text-xs">
           {step === 1 && (
             <div className="space-y-3 animate-fadeIn">
-              <h4 className="font-bold text-slate-900">1. البيانات الأساسية للمنشأة التعليمية:</h4>
+              
+              {/* Selected Plan Display & Selector */}
+              <div className="space-y-2 pb-2">
+                <label className="block text-slate-700 font-bold text-xs">خطة الاشتراك المختارة للمدرسة:</label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedPlan('yearly');
+                      if (type === 'quran') setType('middle');
+                    }}
+                    className={`p-2.5 rounded-2xl border text-right transition-all cursor-pointer flex flex-col justify-between ${
+                      selectedPlan === 'yearly'
+                        ? 'bg-emerald-50 border-emerald-500 ring-1 ring-emerald-500 text-emerald-950 shadow-xs'
+                        : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-black text-xs">اشتراك سنوي 🔥</span>
+                      <Crown className={`w-3.5 h-3.5 ${selectedPlan === 'yearly' ? 'text-emerald-600' : 'text-slate-400'}`} />
+                    </div>
+                    <span className="font-bold text-[11px] text-emerald-700 mt-1">499 ريال / سنة</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedPlan('semester');
+                      if (type === 'quran') setType('middle');
+                    }}
+                    className={`p-2.5 rounded-2xl border text-right transition-all cursor-pointer flex flex-col justify-between ${
+                      selectedPlan === 'semester'
+                        ? 'bg-blue-50 border-blue-500 ring-1 ring-blue-500 text-blue-950 shadow-xs'
+                        : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-black text-xs">اشتراك فصلي</span>
+                      <CreditCard className={`w-3.5 h-3.5 ${selectedPlan === 'semester' ? 'text-blue-600' : 'text-slate-400'}`} />
+                    </div>
+                    <span className="font-bold text-[11px] text-blue-700 mt-1">299 ريال / فصل</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedPlan('free_forever');
+                      setType('quran');
+                    }}
+                    className={`p-2.5 rounded-2xl border text-right transition-all cursor-pointer flex flex-col justify-between ${
+                      selectedPlan === 'free_forever'
+                        ? 'bg-amber-50 border-amber-500 ring-1 ring-amber-500 text-amber-950 shadow-xs'
+                        : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-black text-xs">وقف قرآني 🌟</span>
+                      <Sparkles className={`w-3.5 h-3.5 ${selectedPlan === 'free_forever' ? 'text-amber-600' : 'text-slate-400'}`} />
+                    </div>
+                    <span className="font-bold text-[11px] text-amber-700 mt-1">مجاناً مدى الحياة</span>
+                  </button>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-emerald-50/70 border border-emerald-200 text-[11px] text-emerald-800 flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>
+                    {selectedPlan === 'free_forever'
+                      ? 'مدارس وحلقات تحفيظ القرآن الكريم معفية ومجانية بالكامل مدى الحياة (0 ريال).'
+                      : 'ستبدأ فترتك فوراً بكامل ميزات النظام، ويتم تذكيرك بالسداد وتأكيد الاشتراك بعد إضافة الطلاب والكادر.'}
+                  </span>
+                </div>
+              </div>
+
+              <h4 className="font-bold text-slate-900 pt-1">1. البيانات الأساسية للمنشأة التعليمية:</h4>
               <div>
                 <label className="block text-slate-700 font-bold mb-1">اسم المدرسة أو المجمع التعليمي *</label>
                 <input

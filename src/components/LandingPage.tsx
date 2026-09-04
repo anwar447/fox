@@ -145,9 +145,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             </div>
             <button
               onClick={() => onOpenPaymentModal('free_forever')}
-              className="w-full py-3 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-black text-xs transition-colors cursor-pointer shadow-sm"
+              className="w-full py-3 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-black text-xs transition-colors cursor-pointer shadow-sm flex items-center justify-center gap-1.5"
             >
-              تسجيل مدرسة قرآنية (مجاناً)
+              <span>تسجيل مدرسة قرآنية (مجاناً مدى الحياة) 🌟</span>
             </button>
           </div>
 
@@ -169,9 +169,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             </div>
             <button
               onClick={() => onOpenPaymentModal('semester')}
-              className="w-full py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-black text-xs transition-colors cursor-pointer shadow-sm"
+              className="w-full py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-black text-xs transition-colors cursor-pointer shadow-sm flex items-center justify-center gap-1.5"
             >
-              اختيار الخطة الفصلية
+              <span>تسجيل المدرسة وبدء الخطة الفصلية (299 ريال) 🚀</span>
             </button>
           </div>
 
@@ -194,11 +194,17 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             </div>
             <button
               onClick={() => onOpenPaymentModal('yearly')}
-              className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow-md shadow-emerald-600/20 transition-colors cursor-pointer"
+              className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow-md shadow-emerald-600/20 transition-colors cursor-pointer flex items-center justify-center gap-1.5"
             >
-              الاشتراك السنوي الأفضل
+              <span>تسجيل المدرسة وبدء الاشتراك السنوي (499 ريال) 🔥</span>
             </button>
           </div>
+        </div>
+
+        {/* Informative Step-by-Step Flow Explanation */}
+        <div className="bg-emerald-50/60 border border-emerald-200/80 rounded-2xl p-3.5 max-w-3xl mx-auto flex items-center justify-center gap-2 text-xs text-emerald-900 font-bold">
+          <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span>خطوة بخطوة: ابدأ بتسجيل مدرستك الآن وتجربة المنظومة، وعند إضافة كشوفات طلابك وكادرك المدرسي يتم استكمال السداد والتفعيل النهائي بسهولة.</span>
         </div>
       </div>
 

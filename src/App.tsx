@@ -84,7 +84,9 @@ export function App() {
   const [isStaffManagementOpen, setIsStaffManagementOpen] = useState(false);
   const [isArchiveReportOpen, setIsArchiveReportOpen] = useState(false);
   const [isMapPickerOpen, setIsMapPickerOpen] = useState(false);
+  // School Creation Wizard
   const [isSchoolWizardOpen, setIsSchoolWizardOpen] = useState(false);
+  const [wizardInitialPlan, setWizardInitialPlan] = useState<'trial' | 'semester' | 'yearly' | 'free_forever'>('yearly');
 
   // Student Dossier & QR Card & Correction
   const [selectedStudentForDossier, setSelectedStudentForDossier] = useState<User | null>(null);
@@ -229,12 +231,11 @@ export function App() {
   };
 
   const openPaymentWithPlan = (plan: 'semester' | 'yearly' | 'free_forever') => {
-    if (plan === 'free_forever') {
-      setIsSchoolWizardOpen(true);
-    } else {
+    setWizardInitialPlan(plan);
+    if (plan !== 'free_forever') {
       setSelectedPlanForPayment(plan);
-      setIsPaymentOpen(true);
     }
+    setIsSchoolWizardOpen(true);
   };
 
   return (
@@ -327,6 +328,10 @@ export function App() {
                 }}
                 onOpenStudentDossier={(student) => setSelectedStudentForDossier(student)}
                 onOpenCounselorApi={() => setSelectedSchoolForApi(impersonatedSchool)}
+                onOpenPaymentModal={(plan) => {
+                  setSelectedPlanForPayment(plan);
+                  setIsPaymentOpen(true);
+                }}
               />
             </div>
           ) : (
@@ -367,6 +372,10 @@ export function App() {
             }}
             onOpenStudentDossier={(student) => setSelectedStudentForDossier(student)}
             onOpenCounselorApi={() => setSelectedSchoolForApi(currentSchool)}
+            onOpenPaymentModal={(plan) => {
+              setSelectedPlanForPayment(plan);
+              setIsPaymentOpen(true);
+            }}
           />
         ) : currentUser.role === 'teacher' && currentSchool ? (
           <TeacherPortal
@@ -479,11 +488,11 @@ export function App() {
       )}
 
       {/* 5. Payment Info Modal */}
-      {currentSchool && (
+      {(currentSchool || (schools && schools.length > 0)) && (
         <PaymentInfoModal
           isOpen={isPaymentOpen}
           onClose={() => setIsPaymentOpen(false)}
-          school={currentSchool}
+          school={currentSchool || schools[0]}
           plan={selectedPlanForPayment}
           onSuccess={() => {
             refreshAll();
@@ -659,7 +668,7 @@ export function App() {
             handleLoginSuccess(adminUser);
           }
         }}
-        initialPlan="yearly"
+        initialPlan={wizardInitialPlan}
       />
 
       {/* 18. Counselor & External Application API Integration Modal */}

@@ -4,7 +4,7 @@ import {
   getAttendances, saveAttendances, getUsers, 
   getCorrectionRequests, saveCorrectionRequests, updateCorrectionRequest,
   getPermissions, addSystemNotification, cleanResetToEmptyProductionData,
-  getSystemNotifications
+  getSystemNotifications, getPaymentRequests
 } from '../utils/storage';
 import { getTodayDateString } from '../utils/academic';
 import { soundManager } from '../utils/audio';
@@ -43,6 +43,7 @@ interface EmployeeDashboardProps {
   onOpenDirectStudentRegistration: () => void;
   onOpenStudentDossier: (student: User) => void;
   onOpenCounselorApi?: () => void;
+  onOpenPaymentModal?: (plan: 'semester' | 'yearly') => void;
 }
 
 export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
@@ -62,6 +63,7 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
   onOpenDirectStudentRegistration,
   onOpenStudentDossier,
   onOpenCounselorApi,
+  onOpenPaymentModal,
 }) => {
   const today = getTodayDateString();
   const [attendances, setAttendances] = useState<Attendance[]>(() =>
@@ -90,6 +92,11 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
   const isYearly = currentSchool.subscriptionPlan === 'yearly';
   const isSemester = currentSchool.subscriptionPlan === 'semester';
   const isPrincipal = !currentUser.staffTitle || currentUser.staffTitle === 'principal';
+
+  // Subscription payment requests status
+  const schoolPayments = getPaymentRequests().filter((p) => p.schoolCode === currentSchool.code);
+  const pendingPayment = schoolPayments.find((p) => p.status === 'pending');
+  const approvedPayment = schoolPayments.find((p) => p.status === 'approved');
 
   // Admin and staff assigned schools list
   const adminManagedSchools = schools.filter(
@@ -311,6 +318,133 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
         </div>
       )}
 
+      {/* Subscription Payment Status & Post-Onboarding Reminder */}
+      {!isSuspended && !isFree && isPrincipal && (
+        <>
+          {/* 1. Pending payment review banner */}
+          {pendingPayment && (
+            <div className="bg-amber-50 border border-amber-300 text-amber-950 p-4 sm:p-5 rounded-3xl flex flex-wrap items-center justify-between gap-3 text-xs shadow-xs animate-fadeIn">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-600 text-white flex items-center justify-center font-black shrink-0 shadow-sm">
+                  <Clock className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <strong className="font-black text-sm block">⏳ إشعار السداد البنكي قيد المراجعة والاعتماد</strong>
+                    <span className="px-2 py-0.5 rounded-full bg-amber-200/80 text-amber-900 font-bold text-[10px]">
+                      مرجع: {pendingPayment.referenceNumber}
+                    </span>
+                  </div>
+                  <span className="text-amber-800 text-[11px] font-medium block mt-0.5">
+                    تم استلام بيانات التحويل البنكي بقيمة ({pendingPayment.amount} ريال) وجاري مراجعتها واعتمادها من المشرف العام. جميع ميزات المنظومة تعمل لديك بكامل طاقتها.
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {onOpenPaymentModal && (
+                  <button
+                    onClick={() => onOpenPaymentModal(isYearly ? 'yearly' : 'semester')}
+                    className="px-3.5 py-2 rounded-xl bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs cursor-pointer transition-all"
+                  >
+                    <span>عرض تفاصيل التحويل 💳</span>
+                  </button>
+                )}
+                <a
+                  href="https://wa.me/966548171965"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3.5 py-2 rounded-xl bg-amber-600 text-white hover:bg-amber-500 font-bold text-xs cursor-pointer transition-all flex items-center gap-1 shadow-xs"
+                >
+                  <span>واتساب الدعم 💬</span>
+                </a>
+              </div>
+            </div>
+          )}
+
+          {/* 2. Active without approved payment: Remind after adding students and staff */}
+          {!approvedPayment && !pendingPayment && (
+            allSchoolStudents.length > 0 || allSchoolTeachers.length > 0 ? (
+              <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border-2 border-emerald-300 rounded-3xl p-5 sm:p-6 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-fadeIn">
+                <div className="flex items-start sm:items-center gap-3.5">
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-md">
+                    <Crown className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="font-black text-sm sm:text-base text-slate-900">
+                        🎉 تم تجهيز المدرسة بنجاح! ({allSchoolStudents.length} طالب و {allSchoolTeachers.length} كادر تعليمي)
+                      </h3>
+                      <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">
+                        {isYearly ? 'الاشتراك السنوي (499 ريال)' : 'الاشتراك الفصلي (299 ريال)'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600 font-medium mt-1 leading-relaxed max-w-2xl">
+                      لقد أتممت إضافة طلابك وكادرك المدرسي بنجاح. يرجى استكمال التحويل البنكي وتأكيد السداد لتثبيت اشتراك المدرسة وضمان استمرارية التقارير الصباحية وإشعارات أولياء الأمور دون انقطاع.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
+                  {onOpenPaymentModal && (
+                    <button
+                      onClick={() => onOpenPaymentModal(isYearly ? 'yearly' : 'semester')}
+                      className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center gap-2 shadow-md shadow-emerald-600/20 cursor-pointer transition-all"
+                    >
+                      <CreditCard className="w-4 h-4" />
+                      <span>استكمال وتأكيد السداد البنكي 💳</span>
+                    </button>
+                  )}
+                  <a
+                    href="https://wa.me/966548171965"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-3.5 py-2.5 rounded-xl bg-white hover:bg-slate-50 text-emerald-800 border border-emerald-200 font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-all"
+                  >
+                    <span>مساعدة الدعم 💬</span>
+                  </a>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-slate-50 border border-slate-200 rounded-3xl p-4 sm:p-5 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-fadeIn">
+                <div className="flex items-start sm:items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-slate-800 text-white flex items-center justify-center shrink-0 shadow-sm">
+                    <Sparkles className="w-5 h-5 text-emerald-400" />
+                  </div>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="font-bold text-xs sm:text-sm text-slate-900">
+                        📋 مرحباً بك! خطتك المحددة: {isYearly ? 'اشتراك سنوي كامل (499 ريال)' : 'اشتراك فصلي (299 ريال)'}
+                      </h3>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-200 text-slate-800 font-bold">
+                        فترة إعداد وتجهيز مفعّلة
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      الخطوة الأولى: ابدأ برفع كشوفات طلابك (عبر إكسل نظام نور) ودعوة كادرك التعليمي، وعند اكتمال التجهيز سيتم تذكيرك بالسداد لتثبيت التفعيل.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <button
+                    onClick={onOpenClassExcelManager}
+                    className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                    <span>رفع كشوفات نور (Excel)</span>
+                  </button>
+                  <button
+                    onClick={onOpenStaffRegistrationLink}
+                    className="px-3 py-2 rounded-xl bg-white hover:bg-slate-100 text-indigo-700 border border-indigo-200 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                    <span>دعوة الكادر</span>
+                  </button>
+                </div>
+              </div>
+            )
+          )}
+        </>
+      )}
+
       {/* Top Action Bar & School Summary */}
       <div className="bg-white border border-slate-200/90 rounded-3xl p-6 space-y-5 shadow-xs">
         <div className="flex flex-wrap items-center justify-between gap-4">
@@ -496,8 +630,18 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 text-xs text-slate-500 font-medium mr-auto">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 font-medium mr-auto">
             <span>نطاق التحضير الذاتي: <strong className="font-mono text-emerald-700 font-bold">{currentSchool.radiusMeters}م</strong></span>
+            
+            {onOpenPaymentModal && !isFree && isPrincipal && !approvedPayment && (
+              <button
+                onClick={() => onOpenPaymentModal(isYearly ? 'yearly' : 'semester')}
+                className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[11px] flex items-center gap-1 shadow-xs cursor-pointer transition-all mr-2"
+              >
+                <CreditCard className="w-3.5 h-3.5" />
+                <span>{pendingPayment ? 'بيانات التحويل 💳' : 'استكمال السداد 💳'}</span>
+              </button>
+            )}
           </div>
         </div>
 
