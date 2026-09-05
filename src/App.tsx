@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, School, Attendance } from './types';
 import { 
-  getCurrentUser, setCurrentUser, getSchools, 
+  getCurrentUser, setCurrentUser, getSchools, saveSchools,
   getUsers, saveUsers, getAttendances, syncDataFromServer 
 } from './utils/storage';
 import { parseParentRegistrationToken, parseMagicToken } from './utils/magicLink';
@@ -50,12 +50,17 @@ export function App() {
   // Selected School for API integration modal (Counselor app)
   const [selectedSchoolForApi, setSelectedSchoolForApi] = useState<School | null>(null);
 
+  const [urlSchoolCode, setUrlSchoolCode] = useState<string>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('school') || params.get('code') || params.get('schoolCode') || params.get('joinSchool') || '';
+  });
+
   // Current active school (only resolved when a school user is logged in or superadmin is managing a school)
   const currentSchool: School | null = 
     currentUser?.role === 'superadmin' && impersonatedSchool
       ? impersonatedSchool
       : currentUser && currentUser.role !== 'superadmin' && currentUser.schoolCode
-      ? schools.find((s) => s.code === currentUser.schoolCode) || schools[0] || null
+      ? schools.find((s) => s.code?.toUpperCase() === currentUser.schoolCode?.toUpperCase()) || null
       : null;
 
   // Modals state
@@ -98,15 +103,21 @@ export function App() {
     const doSync = () => {
       syncDataFromServer().then((data) => {
         if (data) {
-          if (Array.isArray(data.schools)) setSchools(data.schools);
-          if (Array.isArray(data.users)) setUsers(data.users);
-          if (Array.isArray(data.attendances)) setAttendances(data.attendances);
+          if (Array.isArray(data.schools) && data.schools.length > 0) {
+            setSchools(data.schools);
+          }
+          if (Array.isArray(data.users) && data.users.length > 0) {
+            setUsers(data.users);
+          }
+          if (Array.isArray(data.attendances)) {
+            setAttendances(data.attendances);
+          }
         }
       });
     };
 
     doSync();
-    const interval = setInterval(doSync, 6000);
+    const interval = setInterval(doSync, 8000);
     return () => clearInterval(interval);
   }, []);
 
@@ -144,9 +155,12 @@ export function App() {
     if (directSchoolCode) {
       const parsed = parseParentRegistrationToken(directSchoolCode);
       const codeToUse = parsed?.schoolCode || directSchoolCode.trim().toUpperCase();
+      setUrlSchoolCode(codeToUse);
       if (directAction === 'staff' || directAction === 'teacher') {
         setStaffRegSchoolCode(codeToUse);
         setIsStaffSelfRegOpen(true);
+      } else if (directAction === 'login') {
+        setIsLoginOpen(true);
       } else {
         setSelfRegSchoolCode(codeToUse);
         setIsSelfRegOpen(true);
@@ -456,6 +470,7 @@ export function App() {
         onClose={() => setIsLoginOpen(false)}
         schools={schools}
         users={users}
+        initialSchoolCode={currentSchool?.code || urlSchoolCode || selfRegSchoolCode || staffRegSchoolCode || undefined}
         onLoginSuccess={handleLoginSuccess}
         onOpenRegisterSchool={() => {
           setIsLoginOpen(false);
@@ -463,7 +478,7 @@ export function App() {
         }}
         onOpenParentRegistration={() => {
           setIsLoginOpen(false);
-          setSelfRegSchoolCode(currentSchool?.code || schools[0]?.code || '');
+          setSelfRegSchoolCode(currentSchool?.code || urlSchoolCode || schools[0]?.code || '');
           setIsSelfRegOpen(true);
         }}
       />
@@ -529,9 +544,11 @@ export function App() {
       {/* 8. Staff Management Modal (Teachers & Staff) */}
       {currentSchool && (
         <StaffManagementModal
+          key={`staff-mgr-${currentSchool.code}`}
           isOpen={isStaffManagementOpen}
           onClose={() => setIsStaffManagementOpen(false)}
           school={currentSchool}
+          currentUser={currentUser}
           onUpdated={() => refreshAll()}
           onOpenStaffInvitationLink={() => setIsStaffRegLinkOpen(true)}
         />
@@ -625,6 +642,7 @@ export function App() {
       {/* 14. Class & Excel Manager Modal */}
       {currentSchool && (
         <ClassExcelManagerModal
+          key={`class-mgr-${currentSchool.code}`}
           isOpen={isClassExcelManagerOpen}
           onClose={() => setIsClassExcelManagerOpen(false)}
           school={currentSchool}
@@ -635,6 +653,7 @@ export function App() {
       {/* 15. Admin Archive Report Modal */}
       {currentSchool && (
         <AdminArchiveReportModal
+          key={`archive-${currentSchool.code}`}
           isOpen={isArchiveReportOpen}
           onClose={() => setIsArchiveReportOpen(false)}
           school={currentSchool}
@@ -644,6 +663,7 @@ export function App() {
       {/* 16. Interactive Map Geofence Picker Modal */}
       {isMapPickerOpen && currentSchool && (
         <InteractiveMapPicker
+          key={`map-picker-${currentSchool.code}`}
           initialLat={currentSchool.lat}
           initialLng={currentSchool.lng}
           initialRadius={currentSchool.radiusMeters}
@@ -651,7 +671,7 @@ export function App() {
           onSave={(lat, lng, radius) => {
             const updated = { ...currentSchool, lat, lng, radiusMeters: radius };
             const allSchools = getSchools().map((s) => (s.code === currentSchool.code ? updated : s));
-            localStorage.setItem('hodoorak_schools_prod_v1', JSON.stringify(allSchools));
+            saveSchools(allSchools, true);
             setIsMapPickerOpen(false);
             refreshAll();
           }}

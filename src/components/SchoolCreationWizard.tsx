@@ -6,6 +6,7 @@ import {
   ShieldCheck, Phone, Navigation, Layers, Crown, CreditCard
 } from 'lucide-react';
 import { getCurrentCoordinates } from '../utils/geo';
+import { getDefaultClassesForSchoolType } from '../utils/schoolClasses';
 
 interface SchoolCreationWizardProps {
   isOpen: boolean;
@@ -89,10 +90,7 @@ export const SchoolCreationWizard: React.FC<SchoolCreationWizardProps> = ({
       subscriptionEndDate: isQuran ? '2099-12-31' : '2027-01-01',
       contactMobile: contactMobile.trim() || '0500000000',
       isQuranSchool: isQuran,
-      customClasses: [
-        { id: 'c-1', className: type === 'elementary' ? 'الأول الابتدائي' : type === 'secondary' ? 'الأول الثانوي' : 'الأول المتوسط', sections: ['1', '2'] },
-        { id: 'c-2', className: type === 'elementary' ? 'الثاني الابتدائي' : type === 'secondary' ? 'الثاني الثانوي' : 'الثاني المتوسط', sections: ['1', '2'] },
-      ],
+      customClasses: getDefaultClassesForSchoolType(type, isQuran),
     };
 
     addSchool(newSchool);

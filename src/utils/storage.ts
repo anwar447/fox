@@ -35,7 +35,200 @@ async function apiPost(endpoint: string, body: any): Promise<any> {
   return null;
 }
 
-// 0. Full Sync with Server
+const DELETED_SCHOOLS_KEY = 'hodoorak_deleted_schools_registry';
+export const DEFAULT_PURGED_DEMO_SCHOOLS = ['RAYA-1448', 'SCH-RAYA-1', 'QURAN-100', 'SCH-QURAN-1'];
+
+export function getDeletedSchools(): string[] {
+  try {
+    const raw = localStorage.getItem(DELETED_SCHOOLS_KEY);
+    const parsed: string[] = raw ? JSON.parse(raw) : [];
+    const set = new Set<string>([
+      ...DEFAULT_PURGED_DEMO_SCHOOLS.map((s) => s.toUpperCase()),
+      ...parsed.map((s) => String(s).toUpperCase()),
+    ]);
+    return Array.from(set);
+  } catch {
+    return [...DEFAULT_PURGED_DEMO_SCHOOLS];
+  }
+}
+
+export function recordDeletedSchool(idOrCode: string, extraCode?: string): void {
+  try {
+    const list = getDeletedSchools();
+    const toAdd = [idOrCode, extraCode].filter(Boolean) as string[];
+    toAdd.forEach((val) => {
+      const upper = String(val).toUpperCase();
+      if (!list.includes(upper)) list.push(upper);
+    });
+    localStorage.setItem(DELETED_SCHOOLS_KEY, JSON.stringify(list));
+
+    // Permanently purge this deleted school from ALL historical and legacy localStorage keys
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('hodoorak_schools')) {
+        try {
+          const content = localStorage.getItem(k);
+          if (content) {
+            const parsed = JSON.parse(content);
+            if (Array.isArray(parsed)) {
+              const filtered = parsed.filter((s: School) => {
+                const sCode = String(s.code || '').toUpperCase();
+                const sId = String(s.id || '').toUpperCase();
+                return !toAdd.some((del) => {
+                  const delUpper = String(del).toUpperCase();
+                  return delUpper === sCode || delUpper === sId;
+                });
+              });
+              localStorage.setItem(k, JSON.stringify(filtered));
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Error recording deleted school:', err);
+  }
+}
+
+// Auto-recover items from any historical/legacy localStorage key version
+function recoverLegacyItems<T>(
+  prefix: string, 
+  keyExtractor: (item: T) => string,
+  shouldSkipItem?: (item: T) => boolean
+): T[] {
+  const map = new Map<string, T>();
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(prefix)) {
+        try {
+          const content = localStorage.getItem(k);
+          if (content) {
+            const parsed = JSON.parse(content);
+            if (Array.isArray(parsed)) {
+              parsed.forEach((item) => {
+                if (item) {
+                  if (shouldSkipItem && shouldSkipItem(item)) return;
+                  const id = keyExtractor(item);
+                  if (id) {
+                    if (map.has(id)) {
+                      map.set(id, { ...map.get(id), ...item });
+                    } else {
+                      map.set(id, item);
+                    }
+                  }
+                }
+              });
+            }
+          }
+        } catch {
+          // ignore parsing error
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Error reading legacy storage:', err);
+  }
+  return Array.from(map.values());
+}
+
+export function mergeSchools(existing: School[], incoming: School[]): School[] {
+  const deleted = getDeletedSchools();
+  const isDeleted = (codeOrId?: string) => {
+    if (!codeOrId) return false;
+    return deleted.includes(String(codeOrId).toUpperCase());
+  };
+
+  const map = new Map<string, School>();
+  existing.forEach((s) => {
+    if (s && (s.code || s.id)) {
+      if (!isDeleted(s.code) && !isDeleted(s.id)) {
+        map.set(String(s.code || s.id).toUpperCase(), s);
+      }
+    }
+  });
+  incoming.forEach((s) => {
+    if (s && (s.code || s.id)) {
+      if (!isDeleted(s.code) && !isDeleted(s.id)) {
+        const key = String(s.code || s.id).toUpperCase();
+        if (map.has(key)) {
+          const prev = map.get(key)!;
+          map.set(key, {
+            ...prev,
+            ...s,
+            customClasses: (s.customClasses && s.customClasses.length > 0) ? s.customClasses : prev.customClasses,
+          });
+        } else {
+          map.set(key, s);
+        }
+      }
+    }
+  });
+  return Array.from(map.values());
+}
+
+export function mergeUsers(existing: User[], incoming: User[]): User[] {
+  const map = new Map<string, User>();
+  existing.forEach((u) => {
+    if (u) {
+      const key = u.id || `${u.nationalId}_${u.schoolCode || ''}`;
+      map.set(key, u);
+    }
+  });
+  incoming.forEach((u) => {
+    if (u) {
+      const key = u.id || `${u.nationalId}_${u.schoolCode || ''}`;
+      if (map.has(key)) {
+        map.set(key, { ...map.get(key)!, ...u });
+      } else {
+        map.set(key, u);
+      }
+    }
+  });
+  return Array.from(map.values());
+}
+
+export function mergeAttendances(existing: Attendance[], incoming: Attendance[]): Attendance[] {
+  const map = new Map<string, Attendance>();
+  existing.forEach((a) => {
+    if (a) {
+      const key = a.id || `${a.studentId}_${a.date}`;
+      map.set(key, a);
+    }
+  });
+  incoming.forEach((a) => {
+    if (a) {
+      const key = a.id || `${a.studentId}_${a.date}`;
+      if (map.has(key)) {
+        map.set(key, { ...map.get(key)!, ...a });
+      } else {
+        map.set(key, a);
+      }
+    }
+  });
+  return Array.from(map.values());
+}
+
+function mergeById<T extends { id?: string }>(existing: T[], incoming: T[]): T[] {
+  const map = new Map<string, T>();
+  existing.forEach((item) => {
+    if (item && item.id) map.set(item.id, item);
+  });
+  incoming.forEach((item) => {
+    if (item && item.id) {
+      if (map.has(item.id)) {
+        map.set(item.id, { ...map.get(item.id)!, ...item });
+      } else {
+        map.set(item.id, item);
+      }
+    }
+  });
+  return Array.from(map.values());
+}
+
+// 0. Full Sync with Server (Non-destructive two-way synchronization)
 export async function syncDataFromServer(): Promise<{
   schools: School[];
   users: User[];
@@ -48,21 +241,107 @@ export async function syncDataFromServer(): Promise<{
   notifications: SystemNotification[];
 } | null> {
   try {
+    const localSchools = getSchools();
+    const localUsers = getUsers();
+    const localAttendances = getAttendances();
+    const localPermissions = getPermissions();
+    const localBehaviorLogs = getBehaviorLogs();
+    const localAbsenceActions = getAbsenceActions();
+    const localCorrections = getCorrectionRequests();
+    const localPayments = getPaymentRequests();
+    const localNotifications = getSystemNotifications();
+
+    // 1. If we have local data, push to server first so the server never drops them
+    if (localSchools.length > 0 || localUsers.length > 1) {
+      await apiPost('/api/sync', {
+        schools: localSchools,
+        users: localUsers,
+        attendances: localAttendances,
+        permissions: localPermissions,
+        behavior_logs: localBehaviorLogs,
+        absence_actions: localAbsenceActions,
+        corrections: localCorrections,
+        payments: localPayments,
+        notifications: localNotifications,
+        deleted_schools: getDeletedSchools(),
+      });
+    }
+
+    // 2. Fetch server state
     const res = await fetch('/api/sync');
     if (res.ok) {
       const result = await res.json();
       if (result.success && result.data) {
         const d = result.data;
-        if (Array.isArray(d.schools)) saveSchools(d.schools, false);
-        if (Array.isArray(d.users)) saveUsers(d.users, false);
-        if (Array.isArray(d.attendances)) saveAttendances(d.attendances, false);
-        if (Array.isArray(d.permissions)) savePermissions(d.permissions, false);
-        if (Array.isArray(d.behavior_logs)) saveBehaviorLogs(d.behavior_logs, false);
-        if (Array.isArray(d.absence_actions)) saveAbsenceActions(d.absence_actions, false);
-        if (Array.isArray(d.corrections)) saveCorrectionRequests(d.corrections, false);
-        if (Array.isArray(d.payments)) savePaymentRequests(d.payments, false);
-        if (Array.isArray(d.notifications)) saveSystemNotifications(d.notifications, false);
-        return d;
+
+        // Sync deleted schools from server
+        if (Array.isArray(d.deleted_schools) && d.deleted_schools.length > 0) {
+          d.deleted_schools.forEach((del: string) => {
+            recordDeletedSchool(del);
+          });
+        }
+
+        // Non-destructive merging respecting deleted items
+        if (Array.isArray(d.schools)) {
+          const mergedSchools = mergeSchools(localSchools, d.schools);
+          saveSchools(mergedSchools, false);
+        } else if (localSchools.length > 0) {
+          apiPost('/api/sync', { schools: localSchools, deleted_schools: getDeletedSchools() });
+        }
+
+        if (Array.isArray(d.users) && d.users.length > 0) {
+          const mergedUsers = mergeUsers(localUsers, d.users);
+          saveUsers(mergedUsers, false);
+        } else if (localUsers.length > 1) {
+          apiPost('/api/sync', { users: localUsers });
+        }
+
+        if (Array.isArray(d.attendances) && d.attendances.length > 0) {
+          const mergedAtt = mergeAttendances(localAttendances, d.attendances);
+          saveAttendances(mergedAtt, false);
+        }
+
+        if (Array.isArray(d.permissions) && d.permissions.length > 0) {
+          const merged = mergeById(localPermissions, d.permissions);
+          savePermissions(merged, false);
+        }
+
+        if (Array.isArray(d.behavior_logs) && d.behavior_logs.length > 0) {
+          const merged = mergeById(localBehaviorLogs, d.behavior_logs);
+          saveBehaviorLogs(merged, false);
+        }
+
+        if (Array.isArray(d.absence_actions) && d.absence_actions.length > 0) {
+          const merged = mergeById(localAbsenceActions, d.absence_actions);
+          saveAbsenceActions(merged, false);
+        }
+
+        if (Array.isArray(d.corrections) && d.corrections.length > 0) {
+          const merged = mergeById(localCorrections, d.corrections);
+          saveCorrectionRequests(merged, false);
+        }
+
+        if (Array.isArray(d.payments) && d.payments.length > 0) {
+          const merged = mergeById(localPayments, d.payments);
+          savePaymentRequests(merged, false);
+        }
+
+        if (Array.isArray(d.notifications) && d.notifications.length > 0) {
+          const merged = mergeById(localNotifications, d.notifications);
+          saveSystemNotifications(merged, false);
+        }
+
+        return {
+          schools: getSchools(),
+          users: getUsers(),
+          attendances: getAttendances(),
+          permissions: getPermissions(),
+          behavior_logs: getBehaviorLogs(),
+          absence_actions: getAbsenceActions(),
+          corrections: getCorrectionRequests(),
+          payments: getPaymentRequests(),
+          notifications: getSystemNotifications(),
+        };
       }
     }
   } catch (err) {
@@ -74,22 +353,55 @@ export async function syncDataFromServer(): Promise<{
 // 1. Schools
 export function getSchools(): School[] {
   try {
+    const deletedList = getDeletedSchools();
+    const isSchoolDeleted = (s: School) => {
+      const sCode = String(s?.code || '').toUpperCase();
+      const sId = String(s?.id || '').toUpperCase();
+      return deletedList.includes(sCode) || deletedList.includes(sId);
+    };
+
     const raw = localStorage.getItem(SCHOOLS_KEY);
-    if (!raw) {
-      saveSchools(INITIAL_SCHOOLS, false);
-      return INITIAL_SCHOOLS;
+    let current: School[] = [];
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) current = parsed.filter((s) => !isSchoolDeleted(s));
     }
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : INITIAL_SCHOOLS;
+
+    // Auto-recover from any historical localStorage versions (ignoring deleted schools)
+    const recovered = recoverLegacyItems<School>(
+      'hodoorak_schools', 
+      (s) => (s.code || s.id || '').toUpperCase(),
+      isSchoolDeleted
+    );
+    if (recovered.length > current.length) {
+      current = mergeSchools(current, recovered);
+      localStorage.setItem(SCHOOLS_KEY, JSON.stringify(current));
+    }
+
+    if (current.length === 0 && INITIAL_SCHOOLS.length > 0) {
+      const nonDeletedInitial = INITIAL_SCHOOLS.filter((s) => !isSchoolDeleted(s));
+      if (nonDeletedInitial.length > 0) {
+        saveSchools(nonDeletedInitial, false);
+        return nonDeletedInitial;
+      }
+    }
+    return current;
   } catch {
     return INITIAL_SCHOOLS;
   }
 }
 
 export function saveSchools(schools: School[], syncServer: boolean = true): void {
-  localStorage.setItem(SCHOOLS_KEY, JSON.stringify(schools));
+  const deleted = getDeletedSchools();
+  const cleanSchools = schools.filter((s) => {
+    const sCode = String(s.code || '').toUpperCase();
+    const sId = String(s.id || '').toUpperCase();
+    return !deleted.includes(sCode) && !deleted.includes(sId);
+  });
+
+  localStorage.setItem(SCHOOLS_KEY, JSON.stringify(cleanSchools));
   if (syncServer) {
-    apiPost('/api/sync', { schools });
+    apiPost('/api/sync', { schools: cleanSchools, deleted_schools: deleted });
   }
 }
 
@@ -109,16 +421,36 @@ export function updateSchool(school: School): void {
   const list = getSchools();
   const idx = list.findIndex((s) => s.id === school.id || s.code === school.code);
   if (idx >= 0) {
-    list[idx] = school;
-    saveSchools(list, true);
-    apiPost('/api/schools', school);
+    list[idx] = { ...list[idx], ...school };
+  } else {
+    list.push(school);
   }
+  saveSchools(list, true);
+  apiPost('/api/schools', school);
 }
 
-export function deleteSchool(schoolIdOrCode: string): void {
-  const list = getSchools().filter((s) => s.id !== schoolIdOrCode && s.code !== schoolIdOrCode);
-  saveSchools(list, true);
+export function deleteSchool(schoolIdOrCode: string, extraCode?: string): void {
+  recordDeletedSchool(schoolIdOrCode, extraCode);
+  const deleted = getDeletedSchools();
+
+  const list = getSchools().filter((s) => {
+    const sId = String(s.id || '').toUpperCase();
+    const sCode = String(s.code || '').toUpperCase();
+    return !deleted.includes(sId) && !deleted.includes(sCode);
+  });
+  saveSchools(list, false);
+
+  // Send DELETE to server API
   fetch(`/api/schools/${encodeURIComponent(schoolIdOrCode)}`, { method: 'DELETE' }).catch(() => {});
+  if (extraCode && extraCode !== schoolIdOrCode) {
+    fetch(`/api/schools/${encodeURIComponent(extraCode)}`, { method: 'DELETE' }).catch(() => {});
+  }
+
+  // Push updated list with deleted markers to sync endpoint
+  apiPost('/api/sync', { 
+    schools: list,
+    deleted_schools: deleted 
+  });
 }
 
 export async function generateSchoolApiToken(schoolCode: string): Promise<string | null> {
@@ -149,12 +481,19 @@ export async function generateSchoolApiToken(schoolCode: string): Promise<string
 export function getUsers(): User[] {
   try {
     const raw = localStorage.getItem(USERS_KEY);
-    if (!raw) {
-      saveUsers(INITIAL_USERS, false);
-      return INITIAL_USERS;
+    let current: User[] = [];
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) current = parsed;
     }
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_USERS;
+
+    const recovered = recoverLegacyItems<User>('hodoorak_users', (u) => u.id || `${u.nationalId}_${u.schoolCode || ''}`);
+    if (recovered.length > current.length) {
+      current = mergeUsers(current, recovered);
+      localStorage.setItem(USERS_KEY, JSON.stringify(current));
+    }
+
+    return current.length > 0 ? current : INITIAL_USERS;
   } catch {
     return INITIAL_USERS;
   }
@@ -171,7 +510,7 @@ export function addUser(user: User): void {
   const list = getUsers();
   const idx = list.findIndex((u) => u.nationalId === user.nationalId && u.schoolCode === user.schoolCode);
   if (idx >= 0) {
-    list[idx] = user;
+    list[idx] = { ...list[idx], ...user };
   } else {
     list.push(user);
   }
@@ -183,10 +522,12 @@ export function updateUser(user: User): void {
   const list = getUsers();
   const idx = list.findIndex((u) => u.id === user.id);
   if (idx >= 0) {
-    list[idx] = user;
-    saveUsers(list, true);
-    apiPost('/api/users', user);
+    list[idx] = { ...list[idx], ...user };
+  } else {
+    list.push(user);
   }
+  saveUsers(list, true);
+  apiPost('/api/users', user);
 }
 
 export function deleteUser(userId: string): void {
@@ -199,11 +540,19 @@ export function deleteUser(userId: string): void {
 export function getAttendances(): Attendance[] {
   try {
     const raw = localStorage.getItem(ATTENDANCES_KEY);
-    if (!raw) {
-      return [];
+    let current: Attendance[] = [];
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) current = parsed;
     }
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+
+    const recovered = recoverLegacyItems<Attendance>('hodoorak_attendances', (a) => a.id || `${a.studentId}_${a.date}`);
+    if (recovered.length > current.length) {
+      current = mergeAttendances(current, recovered);
+      localStorage.setItem(ATTENDANCES_KEY, JSON.stringify(current));
+    }
+
+    return current;
   } catch {
     return [];
   }

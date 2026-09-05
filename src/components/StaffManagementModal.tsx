@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { School, User, StaffTitle, UserRole } from '../types';
 import { getUsers, saveUsers, getSchools } from '../utils/storage';
 import { buildTeacherWhatsAppInvitation, buildMagicLinkUrl } from '../utils/magicLink';
+import { getSchoolClasses } from '../utils/schoolClasses';
 import { 
   Users, UserPlus, Trash2, Edit2, Check, X, 
   MessageSquare, Share2, Sparkles, BookOpen, Key, Phone, 
@@ -12,6 +13,7 @@ interface StaffManagementModalProps {
   isOpen: boolean;
   onClose: () => void;
   school: School;
+  currentUser?: User | null;
   onUpdated: () => void;
   onOpenStaffInvitationLink?: () => void;
 }
@@ -20,6 +22,7 @@ export const StaffManagementModal: React.FC<StaffManagementModalProps> = ({
   isOpen,
   onClose,
   school,
+  currentUser,
   onUpdated,
   onOpenStaffInvitationLink,
 }) => {
@@ -29,9 +32,11 @@ export const StaffManagementModal: React.FC<StaffManagementModalProps> = ({
   const [msg, setMsg] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // All schools in platform for multi-school assignment
+  // Multi-school assignment should ONLY be visible to superadmin
+  // For standard school principals or employees, they should strictly only manage staff for their own school!
+  const isSuperAdmin = currentUser?.role === 'superadmin';
   const allSystemSchools = getSchools();
-  const otherSchools = allSystemSchools.filter((s) => s.code !== school.code);
+  const otherSchools = isSuperAdmin ? allSystemSchools.filter((s) => s.code !== school.code) : [];
 
   // Editing state
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
@@ -44,10 +49,18 @@ export const StaffManagementModal: React.FC<StaffManagementModalProps> = ({
   const [staffTitle, setStaffTitle] = useState<StaffTitle>('teacher');
   const [managedSchoolCodes, setManagedSchoolCodes] = useState<string[]>([]);
   
-  // Assigned classes for teacher
+  // Assigned classes for teacher (strictly scoped to this school)
+  const availableSchoolClasses = useMemo(() => getSchoolClasses(school), [school]);
   const [selectedClasses, setSelectedClasses] = useState<{ className: string; sectionName: string }[]>([]);
-  const [tempClassName, setTempClassName] = useState(school.customClasses?.[0]?.className || 'الأول المتوسط');
-  const [tempSectionName, setTempSectionName] = useState(school.customClasses?.[0]?.sections?.[0] || '1');
+  const [tempClassName, setTempClassName] = useState(availableSchoolClasses[0]?.className || '');
+  const [tempSectionName, setTempSectionName] = useState(availableSchoolClasses[0]?.sections?.[0] || '1');
+
+  useEffect(() => {
+    if (availableSchoolClasses.length > 0) {
+      setTempClassName(availableSchoolClasses[0].className);
+      setTempSectionName(availableSchoolClasses[0].sections?.[0] || '1');
+    }
+  }, [school.code, availableSchoolClasses]);
 
   if (!isOpen) return null;
 
@@ -520,24 +533,21 @@ export const StaffManagementModal: React.FC<StaffManagementModalProps> = ({
                 <div className="flex flex-wrap items-center gap-2">
                   <select
                     value={tempClassName}
-                    onChange={(e) => setTempClassName(e.target.value)}
+                    onChange={(e) => {
+                      const newClass = e.target.value;
+                      setTempClassName(newClass);
+                      const matched = availableSchoolClasses.find((c) => c.className === newClass);
+                      if (matched && matched.sections.length > 0) {
+                        setTempSectionName(matched.sections[0]);
+                      }
+                    }}
                     className="bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-800 font-medium"
                   >
-                    {school.customClasses && school.customClasses.length > 0 ? (
-                      school.customClasses.map((c) => (
-                        <option key={c.id} value={c.className}>
-                          {c.className}
-                        </option>
-                      ))
-                    ) : (
-                      <>
-                        <option value="الأول المتوسط">الأول المتوسط</option>
-                        <option value="الثاني المتوسط">الثاني المتوسط</option>
-                        <option value="الثالث المتوسط">الثالث المتوسط</option>
-                        <option value="الأول الابتدائي">الأول الابتدائي</option>
-                        <option value="الأول الثانوي">الأول الثانوي</option>
-                      </>
-                    )}
+                    {availableSchoolClasses.map((c) => (
+                      <option key={c.id} value={c.className}>
+                        {c.className}
+                      </option>
+                    ))}
                   </select>
 
                   <select
@@ -545,13 +555,15 @@ export const StaffManagementModal: React.FC<StaffManagementModalProps> = ({
                     onChange={(e) => setTempSectionName(e.target.value)}
                     className="bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-800 font-medium"
                   >
-                    <option value="1">فصل (1)</option>
-                    <option value="2">فصل (2)</option>
-                    <option value="3">فصل (3)</option>
-                    <option value="4">فصل (4)</option>
-                    <option value="5">فصل (5)</option>
-                    <option value="أ">شعبة (أ)</option>
-                    <option value="ب">شعبة (ب)</option>
+                    {(() => {
+                      const matched = availableSchoolClasses.find((c) => c.className === tempClassName);
+                      const sections = matched && matched.sections.length > 0 ? matched.sections : ['1', '2', '3'];
+                      return sections.map((sec) => (
+                        <option key={sec} value={sec}>
+                          شعبة / فصل ({sec})
+                        </option>
+                      ));
+                    })()}
                   </select>
 
                   <button

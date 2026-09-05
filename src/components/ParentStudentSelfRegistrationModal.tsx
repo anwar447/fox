@@ -5,6 +5,7 @@ import {
 import { 
   getUsers, saveUsers, getAttendances, saveAttendances 
 } from '../utils/storage';
+import { getSchoolClasses } from '../utils/schoolClasses';
 import { getTodayDateString } from '../utils/academic';
 import { 
   Building2, UserCheck, X, Check, 
@@ -47,46 +48,20 @@ export const ParentStudentSelfRegistrationModal: React.FC<ParentStudentSelfRegis
     }
   }, [initialSchoolCode, schools]);
 
-  const [parentName, setParentName] = useState('');
-  const [parentNationalId, setParentNationalId] = useState('');
-  const [parentMobile, setParentMobile] = useState('');
-  const [relationship, setRelationship] = useState('أب');
-  const [parentPassword, setParentPassword] = useState('');
-
   const currentSchool = useMemo(() => {
-    return schools.find((s) => s.code === selectedSchoolCode) || schools[0];
-  }, [schools, selectedSchoolCode]);
+    return schools.find((s) => s.code?.toUpperCase() === selectedSchoolCode?.toUpperCase()) || (initialSchoolCode ? null : schools[0]);
+  }, [schools, selectedSchoolCode, initialSchoolCode]);
+
+  const isLockedSchool = Boolean(initialSchoolCode && currentSchool);
+
+  const [parentName, setParentName] = useState('');
 
   const availableClasses: SchoolClassSection[] = useMemo(() => {
     if (!currentSchool) return [];
-    if (currentSchool.customClasses && currentSchool.customClasses.length > 0) {
-      return currentSchool.customClasses;
-    }
-    if (currentSchool.type === 'elementary') {
-      return [
-        { id: 'c-1', className: 'الأول الابتدائي', sections: ['1', '2', '3', 'أ', 'ب'] },
-        { id: 'c-2', className: 'الثاني الابتدائي', sections: ['1', '2', '3', 'أ', 'ب'] },
-        { id: 'c-3', className: 'الثالث الابتدائي', sections: ['1', '2', '3', 'أ', 'ب'] },
-        { id: 'c-4', className: 'الرابع الابتدائي', sections: ['1', '2', '3', 'أ', 'ب'] },
-        { id: 'c-5', className: 'الخامس الابتدائي', sections: ['1', '2', '3', 'أ', 'ب'] },
-        { id: 'c-6', className: 'السادس الابتدائي', sections: ['1', '2', '3', 'أ', 'ب'] },
-      ];
-    }
-    if (currentSchool.type === 'secondary') {
-      return [
-        { id: 'c-1', className: 'الأول الثانوي (مسارات)', sections: ['1', '2', '3', '4', 'أ', 'ب'] },
-        { id: 'c-2', className: 'الثاني الثانوي', sections: ['1', '2', '3', '4', 'أ', 'ب'] },
-        { id: 'c-3', className: 'الثالث الثانوي', sections: ['1', '2', '3', '4', 'أ', 'ب'] },
-      ];
-    }
-    return [
-      { id: 'c-1', className: 'الأول المتوسط', sections: ['1', '2', '3', 'أ', 'ب'] },
-      { id: 'c-2', className: 'الثاني المتوسط', sections: ['1', '2', '3', 'أ', 'ب'] },
-      { id: 'c-3', className: 'الثالث المتوسط', sections: ['1', '2', '3', 'أ', 'ب'] },
-    ];
+    return getSchoolClasses(currentSchool);
   }, [currentSchool]);
 
-  const defaultClass = availableClasses[0]?.className || 'الأول المتوسط';
+  const defaultClass = availableClasses[0]?.className || '';
   const defaultSection = availableClasses[0]?.sections[0] || '1';
 
   const [students, setStudents] = useState<StudentFormItem[]>([
@@ -396,24 +371,50 @@ export const ParentStudentSelfRegistrationModal: React.FC<ParentStudentSelfRegis
             /* FORM */
             <form onSubmit={handleSubmit} className="space-y-6">
               
-              {/* School Selector */}
-              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
-                <label className="block text-xs font-black text-slate-800 flex items-center gap-1.5">
-                  <Building2 className="w-4 h-4 text-emerald-700" />
-                  <span>المدرسة المراد الانضمام والتسجيل فيها:</span>
-                </label>
-                <select
-                  value={selectedSchoolCode}
-                  onChange={(e) => setSelectedSchoolCode(e.target.value)}
-                  className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900"
-                >
-                  {schools.map((s) => (
-                    <option key={s.code} value={s.code}>
-                      {s.name} ({s.city}) - كود: {s.code}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {/* School Information / Selector */}
+              {isLockedSchool && currentSchool ? (
+                <div className="bg-emerald-50/90 border border-emerald-300/80 rounded-2xl p-4 flex items-center justify-between gap-3 shadow-xs">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-11 h-11 rounded-2xl bg-emerald-600 text-white flex items-center justify-center font-black shrink-0 shadow-sm">
+                      <Building2 className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="text-sm font-black text-emerald-950 truncate">{currentSchool.name}</h4>
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-200/70 text-emerald-900 text-[11px] font-mono font-bold">
+                          كود: {currentSchool.code}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-emerald-700 font-medium mt-0.5">
+                        {currentSchool.city ? `المدينة: ${currentSchool.city} • ` : ''}
+                        رابط التسجيل المعتمد والمخصص لطلاب وأولياء أمور هذه المدرسة
+                      </p>
+                    </div>
+                  </div>
+                  <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-bold shrink-0 shadow-xs">
+                    <Check className="w-4 h-4" />
+                    <span>مدرسة معتمدة</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
+                  <label className="block text-xs font-black text-slate-800 flex items-center gap-1.5">
+                    <Building2 className="w-4 h-4 text-emerald-700" />
+                    <span>المدرسة المراد الانضمام والتسجيل فيها:</span>
+                  </label>
+                  <select
+                    value={selectedSchoolCode}
+                    onChange={(e) => setSelectedSchoolCode(e.target.value)}
+                    className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900"
+                  >
+                    {schools.map((s) => (
+                      <option key={s.code} value={s.code}>
+                        {s.name} ({s.city}) - كود: {s.code}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {/* Parent Information */}
               <div className="space-y-3">

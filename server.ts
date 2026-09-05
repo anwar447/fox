@@ -24,12 +24,15 @@ interface DatabaseSchema {
   corrections: any[];
   payments: any[];
   notifications: any[];
+  deleted_schools: string[];
 }
+
+const KNOWN_PURGED_SCHOOLS = ['RAYA-1448', 'SCH-RAYA-1', 'QURAN-100', 'SCH-QURAN-1'];
 
 const DEFAULT_SUPERADMIN = {
   id: 'usr-admin-1',
   nationalId: '1000000000',
-  name: 'المشرف العام (سوبر ادمن)',
+  name: 'المهندس أنور (المالك والمطور)',
   mobile: '0500000000',
   password: 'admin',
   role: 'superadmin',
@@ -47,6 +50,7 @@ function getInitialDB(): DatabaseSchema {
     corrections: [],
     payments: [],
     notifications: [],
+    deleted_schools: [...KNOWN_PURGED_SCHOOLS],
   };
 }
 
@@ -62,18 +66,54 @@ function loadDatabase(): DatabaseSchema {
     }
     const content = fs.readFileSync(DB_FILE, 'utf-8');
     const data = JSON.parse(content);
-    // Ensure structure
-    return {
-      schools: Array.isArray(data.schools) ? data.schools : [],
-      users: Array.isArray(data.users) && data.users.length > 0 ? data.users : [DEFAULT_SUPERADMIN],
-      attendances: Array.isArray(data.attendances) ? data.attendances : [],
+
+    // Merge deleted_schools registry
+    const rawDeleted: string[] = Array.isArray(data.deleted_schools) ? data.deleted_schools : [];
+    const deletedSet = new Set<string>([
+      ...KNOWN_PURGED_SCHOOLS.map((k) => k.toUpperCase()),
+      ...rawDeleted.map((k: string) => String(k).toUpperCase()),
+    ]);
+    const deleted_schools = Array.from(deletedSet);
+
+    // Filter out any schools that match deleted registry
+    const rawSchools: any[] = Array.isArray(data.schools) ? data.schools : [];
+    const schools = rawSchools.filter((s) => {
+      const sId = String(s?.id || '').toUpperCase();
+      const sCode = String(s?.code || '').toUpperCase();
+      return !deletedSet.has(sId) && !deletedSet.has(sCode);
+    });
+
+    // Filter out users belonging to purged/deleted schools (except superadmin)
+    const rawUsers: any[] = Array.isArray(data.users) && data.users.length > 0 ? data.users : [DEFAULT_SUPERADMIN];
+    const users = rawUsers.filter((u) => {
+      if (u.role === 'superadmin' || u.schoolCode === 'SUPERADMIN') return true;
+      const sCode = String(u.schoolCode || '').toUpperCase();
+      return !deletedSet.has(sCode);
+    });
+
+    // Filter attendances belonging to deleted schools
+    const rawAtt: any[] = Array.isArray(data.attendances) ? data.attendances : [];
+    const attendances = rawAtt.filter((a) => {
+      const sCode = String(a.schoolCode || '').toUpperCase();
+      return !deletedSet.has(sCode);
+    });
+
+    const sanitized: DatabaseSchema = {
+      schools,
+      users: users.length > 0 ? users : [DEFAULT_SUPERADMIN],
+      attendances,
       permissions: Array.isArray(data.permissions) ? data.permissions : [],
       behavior_logs: Array.isArray(data.behavior_logs) ? data.behavior_logs : [],
       absence_actions: Array.isArray(data.absence_actions) ? data.absence_actions : [],
       corrections: Array.isArray(data.corrections) ? data.corrections : [],
       payments: Array.isArray(data.payments) ? data.payments : [],
       notifications: Array.isArray(data.notifications) ? data.notifications : [],
+      deleted_schools,
     };
+
+    // Save back sanitized database immediately
+    fs.writeFileSync(DB_FILE, JSON.stringify(sanitized, null, 2), 'utf-8');
+    return sanitized;
   } catch (err) {
     console.error('Error loading database, resetting to default:', err);
     return getInitialDB();
@@ -99,6 +139,7 @@ let db = loadDatabase();
 
 // 1. Full Data Sync endpoint
 app.get('/api/sync', (req, res) => {
+  if (!Array.isArray(db.deleted_schools)) db.deleted_schools = [];
   res.json({
     success: true,
     data: db,
@@ -108,15 +149,143 @@ app.get('/api/sync', (req, res) => {
 app.post('/api/sync', (req, res) => {
   const incoming = req.body;
   if (incoming) {
-    if (Array.isArray(incoming.schools)) db.schools = incoming.schools;
-    if (Array.isArray(incoming.users)) db.users = incoming.users;
-    if (Array.isArray(incoming.attendances)) db.attendances = incoming.attendances;
-    if (Array.isArray(incoming.permissions)) db.permissions = incoming.permissions;
-    if (Array.isArray(incoming.behavior_logs)) db.behavior_logs = incoming.behavior_logs;
-    if (Array.isArray(incoming.absence_actions)) db.absence_actions = incoming.absence_actions;
-    if (Array.isArray(incoming.corrections)) db.corrections = incoming.corrections;
-    if (Array.isArray(incoming.payments)) db.payments = incoming.payments;
-    if (Array.isArray(incoming.notifications)) db.notifications = incoming.notifications;
+    if (!Array.isArray(db.deleted_schools)) db.deleted_schools = [];
+
+    // Track explicitly deleted schools
+    if (Array.isArray(incoming.deleted_schools) && incoming.deleted_schools.length > 0) {
+      incoming.deleted_schools.forEach((del: string) => {
+        const u = String(del || '').toUpperCase();
+        if (u && !db.deleted_schools.includes(u)) {
+          db.deleted_schools.push(u);
+        }
+      });
+      // Purge deleted schools from memory
+      db.schools = db.schools.filter((s) => {
+        const sId = String(s.id || '').toUpperCase();
+        const sCode = String(s.code || '').toUpperCase();
+        return !db.deleted_schools.includes(sId) && !db.deleted_schools.includes(sCode);
+      });
+    }
+
+    // 1. Schools: Union merge by code or ID (ignoring any deleted school)
+    if (Array.isArray(incoming.schools) && incoming.schools.length > 0) {
+      const deletedSet = new Set((db.deleted_schools || []).map((x: string) => String(x).toUpperCase()));
+      const schoolMap = new Map<string, any>();
+      db.schools.forEach((s) => {
+        if (s && (s.code || s.id)) {
+          const key = String(s.code || s.id).toUpperCase();
+          const idKey = String(s.id || '').toUpperCase();
+          if (!deletedSet.has(key) && !deletedSet.has(idKey)) {
+            schoolMap.set(key, s);
+          }
+        }
+      });
+      incoming.schools.forEach((s) => {
+        if (s && (s.code || s.id)) {
+          const key = String(s.code || s.id).toUpperCase();
+          const idKey = String(s.id || '').toUpperCase();
+          if (!deletedSet.has(key) && !deletedSet.has(idKey)) {
+            if (schoolMap.has(key)) {
+              schoolMap.set(key, { ...schoolMap.get(key), ...s });
+            } else {
+              schoolMap.set(key, s);
+            }
+          }
+        }
+      });
+      db.schools = Array.from(schoolMap.values());
+    }
+
+    // 2. Users: Union merge by ID or (nationalId + schoolCode)
+    if (Array.isArray(incoming.users) && incoming.users.length > 0) {
+      const userMap = new Map<string, any>();
+      db.users.forEach((u) => {
+        if (u && (u.id || u.nationalId)) {
+          const key = u.id || `${u.nationalId}_${u.schoolCode || ''}`;
+          userMap.set(key, u);
+        }
+      });
+      incoming.users.forEach((u) => {
+        if (u && (u.id || u.nationalId)) {
+          const key = u.id || `${u.nationalId}_${u.schoolCode || ''}`;
+          if (userMap.has(key)) {
+            userMap.set(key, { ...userMap.get(key), ...u });
+          } else {
+            userMap.set(key, u);
+          }
+        }
+      });
+      db.users = Array.from(userMap.values());
+    }
+
+    // 3. Attendances: Union merge by ID or composite key
+    if (Array.isArray(incoming.attendances) && incoming.attendances.length > 0) {
+      const attMap = new Map<string, any>();
+      db.attendances.forEach((a) => {
+        if (a && a.id) attMap.set(a.id, a);
+        else if (a) attMap.set(`${a.studentId}_${a.date}`, a);
+      });
+      incoming.attendances.forEach((a) => {
+        const key = a?.id || (a ? `${a.studentId}_${a.date}` : null);
+        if (key) {
+          if (attMap.has(key)) {
+            attMap.set(key, { ...attMap.get(key), ...a });
+          } else {
+            attMap.set(key, a);
+          }
+        }
+      });
+      db.attendances = Array.from(attMap.values());
+    }
+
+    // 4. Permissions
+    if (Array.isArray(incoming.permissions) && incoming.permissions.length > 0) {
+      const permMap = new Map<string, any>();
+      db.permissions.forEach((p) => p?.id && permMap.set(p.id, p));
+      incoming.permissions.forEach((p) => p?.id && permMap.set(p.id, { ...permMap.get(p.id), ...p }));
+      db.permissions = Array.from(permMap.values());
+    }
+
+    // 5. Behavior logs
+    if (Array.isArray(incoming.behavior_logs) && incoming.behavior_logs.length > 0) {
+      const bMap = new Map<string, any>();
+      db.behavior_logs.forEach((b) => b?.id && bMap.set(b.id, b));
+      incoming.behavior_logs.forEach((b) => b?.id && bMap.set(b.id, { ...bMap.get(b.id), ...b }));
+      db.behavior_logs = Array.from(bMap.values());
+    }
+
+    // 6. Absence actions
+    if (Array.isArray(incoming.absence_actions) && incoming.absence_actions.length > 0) {
+      const actMap = new Map<string, any>();
+      db.absence_actions.forEach((act) => act?.id && actMap.set(act.id, act));
+      incoming.absence_actions.forEach((act) => act?.id && actMap.set(act.id, { ...actMap.get(act.id), ...act }));
+      db.absence_actions = Array.from(actMap.values());
+    }
+
+    // 7. Corrections
+    if (Array.isArray(incoming.corrections) && incoming.corrections.length > 0) {
+      const corMap = new Map<string, any>();
+      db.corrections.forEach((c) => c?.id && corMap.set(c.id, c));
+      incoming.corrections.forEach((c) => c?.id && corMap.set(c.id, { ...corMap.get(c.id), ...c }));
+      db.corrections = Array.from(corMap.values());
+    }
+
+    // 8. Payments
+    if (Array.isArray(incoming.payments) && incoming.payments.length > 0) {
+      const payMap = new Map<string, any>();
+      db.payments.forEach((p) => p?.id && payMap.set(p.id, p));
+      incoming.payments.forEach((p) => p?.id && payMap.set(p.id, { ...payMap.get(p.id), ...p }));
+      db.payments = Array.from(payMap.values());
+    }
+
+    // 9. Notifications
+    if (Array.isArray(incoming.notifications) && incoming.notifications.length > 0) {
+      const notifMap = new Map<string, any>();
+      db.notifications.forEach((n) => n?.id && notifMap.set(n.id, n));
+      incoming.notifications.forEach((n) => n?.id && notifMap.set(n.id, { ...notifMap.get(n.id), ...n }));
+      db.notifications = Array.from(notifMap.values());
+    }
+
     saveDatabase(db);
   }
   res.json({ success: true, data: db });
@@ -124,7 +293,11 @@ app.post('/api/sync', (req, res) => {
 
 // 2. Schools endpoints
 app.get('/api/schools', (req, res) => {
-  res.json({ success: true, schools: db.schools });
+  const deletedSet = new Set<string>((db.deleted_schools || []).map((x) => String(x).toUpperCase()));
+  const activeSchools = (db.schools || []).filter(
+    (s) => !deletedSet.has(String(s.id || '').toUpperCase()) && !deletedSet.has(String(s.code || '').toUpperCase())
+  );
+  res.json({ success: true, schools: activeSchools, deleted_schools: db.deleted_schools });
 });
 
 app.get('/api/schools/:code', (req, res) => {
@@ -159,9 +332,30 @@ app.post('/api/schools', (req, res) => {
 
 app.delete('/api/schools/:idOrCode', (req, res) => {
   const param = req.params.idOrCode;
-  db.schools = db.schools.filter((s) => s.id !== param && s.code !== param);
+  const paramUpper = String(param || '').toUpperCase();
+  if (!Array.isArray(db.deleted_schools)) db.deleted_schools = [];
+  if (paramUpper && !db.deleted_schools.includes(paramUpper)) {
+    db.deleted_schools.push(paramUpper);
+  }
+
+  // Find matching school to also record both its ID and its CODE in deleted_schools
+  const matched = db.schools.filter(
+    (s) => String(s.id || '').toUpperCase() === paramUpper || String(s.code || '').toUpperCase() === paramUpper
+  );
+  matched.forEach((m) => {
+    if (m.id && !db.deleted_schools.includes(m.id.toUpperCase())) db.deleted_schools.push(m.id.toUpperCase());
+    if (m.code && !db.deleted_schools.includes(m.code.toUpperCase())) db.deleted_schools.push(m.code.toUpperCase());
+  });
+
+  // Purge school
+  db.schools = db.schools.filter((s) => {
+    const sId = String(s.id || '').toUpperCase();
+    const sCode = String(s.code || '').toUpperCase();
+    return sId !== paramUpper && sCode !== paramUpper;
+  });
+
   saveDatabase(db);
-  res.json({ success: true, schools: db.schools });
+  res.json({ success: true, schools: db.schools, deleted_schools: db.deleted_schools });
 });
 
 // 3. Users endpoints

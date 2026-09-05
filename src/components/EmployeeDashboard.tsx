@@ -23,7 +23,7 @@ import {
   Sparkles, ShieldCheck, UserPlus, FileSpreadsheet, Plus, GraduationCap,
   Activity, ShieldAlert, LogOut, Trash2, RefreshCw, User as UserIcon,
   Crown, CreditCard, Megaphone, HardDrive, Database, ArrowLeftRight,
-  FileCheck, Code2
+  FileCheck, Code2, Paperclip, Eye, ExternalLink, FileCheck2, HelpCircle, CheckCircle2
 } from 'lucide-react';
 
 interface EmployeeDashboardProps {
@@ -72,6 +72,13 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
   const [corrections, setCorrections] = useState<CorrectionRequest[]>(() =>
     getCorrectionRequests().filter((c) => c.schoolCode === currentSchool.code && c.status === 'pending')
   );
+  const [allSchoolCorrections, setAllSchoolCorrections] = useState<CorrectionRequest[]>(() =>
+    getCorrectionRequests().filter((c) => c.schoolCode === currentSchool.code)
+  );
+  const [excuseFilterTab, setExcuseFilterTab] = useState<'pending' | 'resolved'>('pending');
+  const [rejectingRequest, setRejectingRequest] = useState<CorrectionRequest | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [previewAttachment, setPreviewAttachment] = useState<{ url: string; title: string } | null>(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'present' | 'absent' | 'late' | 'truant'>('all');
   const [actionModalStudent, setActionModalStudent] = useState<User | null>(null);
@@ -110,9 +117,9 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
     setAttendances(
       getAttendances().filter((a) => a.schoolCode === currentSchool.code && a.date === today)
     );
-    setCorrections(
-      getCorrectionRequests().filter((c) => c.schoolCode === currentSchool.code && c.status === 'pending')
-    );
+    const schoolReqs = getCorrectionRequests().filter((c) => c.schoolCode === currentSchool.code);
+    setAllSchoolCorrections(schoolReqs);
+    setCorrections(schoolReqs.filter((c) => c.status === 'pending'));
   }, [currentSchool.code, today, refreshKey]);
 
   // Compute 5-day unexcused absence alerts across the school
@@ -177,7 +184,7 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
     addSystemNotification({
       id: `notif-appr-${Date.now()}`,
       title: `✅ تم قبول عذر الغياب: ${req.studentName}`,
-      message: `تم اعتماد العذر الطبي/الرسمي ليوم (${req.date}) واستعادة درجة المواظبة المخصومة (+1 درجة) تلقائياً.`,
+      message: `تم اعتماد العذر الطبي/الرسمي ليوم (${req.date}) واستعادة درجة المواظبة المخصومة (+1 درجة) تلقائياً. ملاحظة الإدارة: ${updatedReq.adminDecisionNotes}`,
       type: 'success',
       targetRole: 'all',
       schoolCode: currentSchool.code,
@@ -186,21 +193,31 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
     });
 
     soundManager.playSuccess();
-    setCorrections(getCorrectionRequests().filter((c) => c.schoolCode === currentSchool.code && c.status === 'pending'));
+    const updatedAll = getCorrectionRequests().filter((c) => c.schoolCode === currentSchool.code);
+    setAllSchoolCorrections(updatedAll);
+    setCorrections(updatedAll.filter((c) => c.status === 'pending'));
   };
 
-  const handleRejectCorrection = (req: CorrectionRequest) => {
+  const handleOpenRejectModal = (req: CorrectionRequest) => {
+    setRejectingRequest(req);
+    setRejectReason('التقرير الطبي غير مختوم أو غير صادر من جهة معتمدة (منصة صحتي).');
+  };
+
+  const handleConfirmReject = () => {
+    if (!rejectingRequest) return;
+    const finalReason = rejectReason.trim() || 'تم رفض العذر لعدم كفاية المستند المرفق أو تعارضه مع لائحة المواظبة.';
+    
     const updatedReq: CorrectionRequest = { 
-      ...req, 
+      ...rejectingRequest, 
       status: 'rejected',
-      adminDecisionNotes: 'تم رفض الطلب لعدم كفاية المستند المرفق أو تعارضه مع اللائحة.'
+      adminDecisionNotes: finalReason
     };
     updateCorrectionRequest(updatedReq);
 
     addSystemNotification({
       id: `notif-rej-${Date.now()}`,
-      title: `✕ لم يتم قبول العذر: ${req.studentName}`,
-      message: `نعتذر، لم يتم اعتماد العذر المقدم ليوم (${req.date}). يمكنك مراجعة إدارة المدرسة للمتابعة.`,
+      title: `✕ تم رفض عذر الغياب: ${rejectingRequest.studentName}`,
+      message: `نعتذر، لم يتم اعتماد العذر المقدم ليوم (${rejectingRequest.date}). سبب الرفض المدون من الإدارة: "${finalReason}".`,
       type: 'warning',
       targetRole: 'all',
       schoolCode: currentSchool.code,
@@ -209,7 +226,11 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
     });
 
     soundManager.playWarning();
-    setCorrections(getCorrectionRequests().filter((c) => c.schoolCode === currentSchool.code && c.status === 'pending'));
+    setRejectingRequest(null);
+    setRejectReason('');
+    const updatedAll = getCorrectionRequests().filter((c) => c.schoolCode === currentSchool.code);
+    setAllSchoolCorrections(updatedAll);
+    setCorrections(updatedAll.filter((c) => c.status === 'pending'));
   };
 
   const filteredAttendances = attendances.filter((a) => {
@@ -646,7 +667,7 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
         </div>
 
         {/* Real-time KPI Stats Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 text-center pt-2">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2.5 text-center pt-2">
           <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 space-y-1">
             <span className="text-[11px] text-slate-500 block font-bold">نسبة الحضور</span>
             <span className="text-xl font-black text-emerald-700">{attendanceRate}%</span>
@@ -676,6 +697,29 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
             <span className="text-[11px] text-slate-500 block font-bold">استئذانات الحصص</span>
             <span className="text-xl font-black text-indigo-700">{allPermissions.length}</span>
           </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              const el = document.getElementById('school-excuses-section');
+              if (el) el.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className={`border rounded-2xl p-3 space-y-1 cursor-pointer transition-all text-center ${
+              corrections.length > 0
+                ? 'bg-amber-50 border-amber-300 text-amber-950 shadow-xs hover:bg-amber-100 ring-1 ring-amber-300/60'
+                : 'bg-slate-50 border border-slate-200 text-slate-800 hover:bg-slate-100/70'
+            }`}
+          >
+            <span className={`text-[11px] font-bold flex items-center justify-center gap-1 ${
+              corrections.length > 0 ? 'text-amber-800' : 'text-slate-500'
+            }`}>
+              <FileText className={`w-3.5 h-3.5 ${corrections.length > 0 ? 'text-amber-600 animate-pulse' : 'text-slate-400'}`} />
+              <span>الأعذار المعلقة</span>
+            </span>
+            <span className={`text-xl font-black block ${corrections.length > 0 ? 'text-amber-700 font-mono' : 'text-slate-400'}`}>
+              {corrections.length}
+            </span>
+          </button>
         </div>
       </div>
 
@@ -805,53 +849,207 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
         </div>
       )}
 
-      {/* Pending Correction & Excuse Requests */}
-      {corrections.length > 0 && (
-        <div className="bg-white border border-amber-200 rounded-3xl p-6 space-y-4 shadow-xs">
-          <div className="flex items-center gap-2">
-            <Clock className="w-5 h-5 text-amber-600" />
-            <h3 className="font-black text-base text-slate-900">
-              طلبات الأعذار والتصحيح المعلقة من أولياء الأمور ({corrections.length})
-            </h3>
+      {/* Pending Correction & Excuse Requests Section */}
+      <div id="school-excuses-section" className="bg-white border border-slate-200/90 rounded-3xl p-6 space-y-4 shadow-xs">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-black ${
+              corrections.length > 0 ? 'bg-amber-100 text-amber-800 border border-amber-200' : 'bg-slate-100 text-slate-600'
+            }`}>
+              <Clock className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-black text-base text-slate-900">
+                  طلبات الأعذار والتبرير من الطلاب وأولياء الأمور
+                </h3>
+                {corrections.length > 0 && (
+                  <span className="px-2.5 py-0.5 rounded-full bg-amber-500 text-white text-[11px] font-black animate-pulse">
+                    {corrections.length} بانتظار القرار
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-500">
+                مراجعة التقارير الطبية والمستندات، واعتماد أو رفض الأعذار مع توثيق السبب وإشعار الطالب وولي أمره آلياً
+              </p>
+            </div>
           </div>
 
-          <div className="space-y-2.5">
-            {corrections.map((req) => (
-              <div
-                key={req.id}
-                className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 text-xs"
-              >
-                <div>
-                  <div className="flex items-center gap-2">
-                    <strong className="text-slate-900 text-sm">{req.studentName}</strong>
-                    <span className="text-slate-500">({req.className} - فصل {req.sectionName})</span>
-                    <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 text-[10px] font-bold border border-amber-200">
-                      مقدم من: {req.requesterName} ({req.requestedByRole === 'parent' ? 'ولي أمر' : 'طالب'})
-                    </span>
-                  </div>
-                  <p className="text-slate-600 mt-1">السبب: {req.reason}</p>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => handleRejectCorrection(req)}
-                    className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold cursor-pointer"
-                  >
-                    رفض
-                  </button>
-                  <button
-                    onClick={() => handleApproveCorrection(req)}
-                    className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center gap-1 cursor-pointer shadow-xs"
-                  >
-                    <Check className="w-3.5 h-3.5" />
-                    <span>قبول واعتماد العذر</span>
-                  </button>
-                </div>
-              </div>
-            ))}
+          {/* Filter Tabs: Pending vs Resolved */}
+          <div className="flex items-center p-1 bg-slate-100 rounded-xl text-xs font-bold">
+            <button
+              type="button"
+              onClick={() => setExcuseFilterTab('pending')}
+              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                excuseFilterTab === 'pending'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <span>المعلقة</span>
+              <span className={`px-1.5 py-0.2 rounded-md text-[10px] font-mono ${
+                corrections.length > 0 ? 'bg-amber-100 text-amber-800 font-bold' : 'bg-slate-200 text-slate-600'
+              }`}>
+                {corrections.length}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setExcuseFilterTab('resolved')}
+              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                excuseFilterTab === 'resolved'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <span>سجل المعالجة والأرشيف</span>
+              <span className="px-1.5 py-0.2 rounded-md bg-slate-200 text-slate-600 text-[10px] font-mono">
+                {allSchoolCorrections.filter((c) => c.status !== 'pending').length}
+              </span>
+            </button>
           </div>
         </div>
-      )}
+
+        {/* Tab Content: Pending */}
+        {excuseFilterTab === 'pending' && (
+          <div>
+            {corrections.length === 0 ? (
+              <div className="text-center py-8 text-slate-400 space-y-2 bg-slate-50/60 rounded-2xl border border-dashed border-slate-200">
+                <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto" />
+                <p className="text-xs font-bold text-slate-700">لا توجد طلبات أعذار معلقة حالياً</p>
+                <p className="text-[11px] text-slate-500">
+                  جميع الأعذار المرفوعة من الطلاب وأولياء الأمور تمت مراجعتها واعتمادها أو رفضها.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {corrections.map((req) => (
+                  <div
+                    key={req.id}
+                    className="bg-slate-50/80 border border-slate-200 hover:border-amber-300 rounded-2xl p-4 transition-all space-y-3"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <strong className="text-slate-900 text-sm font-black">{req.studentName}</strong>
+                          <span className="text-slate-500 text-xs">({req.className} - فصل {req.sectionName})</span>
+                          <span className="px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-800 text-[10px] font-bold">
+                            📅 تاريخ الغياب: {req.date}
+                          </span>
+                          <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 text-[10px] font-bold border border-amber-200">
+                            مقدم من: {req.requesterName} ({req.requestedByRole === 'parent' ? 'ولي أمر 👨‍👦' : 'الطالب 🎓'})
+                          </span>
+                          <span className="px-2 py-0.5 rounded-md bg-purple-50 border border-purple-200 text-purple-800 text-[10px] font-bold">
+                            نوع العذر: {req.excuseType === 'medical' ? 'طبي 🩺' : req.excuseType === 'official' ? 'رسمي 🏛️' : req.excuseType === 'emergency' ? 'طارئ 🚨' : 'عائلي / آخر'}
+                          </span>
+                        </div>
+
+                        <div className="mt-2 text-xs text-slate-700 bg-white border border-slate-200/70 rounded-xl p-3 space-y-1">
+                          <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                            <FileText className="w-3.5 h-3.5 text-slate-500" />
+                            <span>نص ومبرر العذر المكتوب:</span>
+                          </div>
+                          <p className="text-slate-600 leading-relaxed pr-5 font-medium">{req.reason}</p>
+                        </div>
+                      </div>
+
+                      {/* Right Action buttons */}
+                      <div className="flex flex-wrap items-center gap-2 self-center sm:self-start">
+                        {req.attachmentUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setPreviewAttachment({ url: req.attachmentUrl!, title: `مرفق عذر الطالب: ${req.studentName} ليوم ${req.date}` })}
+                            className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-xs flex items-center gap-1 cursor-pointer transition-all"
+                          >
+                            <Paperclip className="w-3.5 h-3.5 text-indigo-600" />
+                            <span>معاينة المستند / التقرير 📎</span>
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => handleOpenRejectModal(req)}
+                          className="px-3.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs flex items-center gap-1 cursor-pointer transition-all"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          <span>رفض مع ذكر السبب ✕</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleApproveCorrection(req)}
+                          className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          <span>قبول واعتماد العذر ✓</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tab Content: Resolved History */}
+        {excuseFilterTab === 'resolved' && (
+          <div className="space-y-3">
+            {allSchoolCorrections.filter((c) => c.status !== 'pending').length === 0 ? (
+              <div className="text-center py-6 text-slate-400 text-xs bg-slate-50/50 rounded-2xl">
+                لا توجد أعذار مؤرشفة بعد.
+              </div>
+            ) : (
+              allSchoolCorrections
+                .filter((c) => c.status !== 'pending')
+                .map((req) => (
+                  <div
+                    key={req.id}
+                    className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 text-xs flex flex-wrap items-center justify-between gap-3"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <strong className="text-slate-900 text-sm font-bold">{req.studentName}</strong>
+                        <span className="text-slate-500">({req.className} - فصل {req.sectionName})</span>
+                        <span className="text-slate-400 font-mono">📅 {req.date}</span>
+                        <span
+                          className={`px-2 py-0.5 rounded-md font-bold text-[10px] border ${
+                            req.status === 'approved'
+                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                              : 'bg-rose-50 text-rose-800 border-rose-200'
+                          }`}
+                        >
+                          {req.status === 'approved' ? '✓ تم القبول والاعتماد' : '✕ تم الرفض'}
+                        </span>
+                      </div>
+                      <p className="text-slate-600">
+                        <strong>المبرر المرفوع:</strong> {req.reason}
+                      </p>
+                      {req.adminDecisionNotes && (
+                        <p className={`text-[11px] font-semibold ${req.status === 'approved' ? 'text-emerald-800' : 'text-rose-800'}`}>
+                          <strong>قرار وملاحظة الإدارة:</strong> {req.adminDecisionNotes}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {req.attachmentUrl && (
+                        <button
+                          type="button"
+                          onClick={() => setPreviewAttachment({ url: req.attachmentUrl!, title: `مرفق عذر الطالب: ${req.studentName} ليوم ${req.date}` })}
+                          className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-[11px] flex items-center gap-1 cursor-pointer"
+                        >
+                          <Paperclip className="w-3 h-3" />
+                          <span>المرفق</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Today's Live Attendance Table */}
       <div className="bg-white border border-slate-200/90 rounded-3xl p-6 space-y-4 shadow-xs">
@@ -1088,6 +1286,151 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
           setAttendances(getAttendances().filter((a) => a.schoolCode === currentSchool.code && a.date === today));
         }}
       />
+
+      {/* Reject Excuse Reason Modal */}
+      {rejectingRequest && (
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) setRejectingRequest(null); }}
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn"
+          dir="rtl"
+        >
+          <div className="bg-white border border-rose-200 rounded-3xl max-w-lg w-full p-6 text-right space-y-4 shadow-2xl text-slate-800">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center font-bold">
+                  <X className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">رفض عذر الغياب مع ذكر السبب</h3>
+                  <p className="text-xs text-slate-500">
+                    الطالب: <span className="font-bold text-slate-800">{rejectingRequest.studentName}</span> | تاريخ الغياب: <span className="font-mono text-slate-800">{rejectingRequest.date}</span>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRejectingRequest(null)}
+                className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center cursor-pointer transition-all"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="bg-rose-50/70 border border-rose-100 rounded-xl p-3 text-xs text-rose-950 space-y-1">
+              <p className="font-bold">نص العذر المرفوع من الطالب / ولي أمره:</p>
+              <p className="text-slate-700 bg-white/80 p-2 rounded-lg border border-rose-100/60 font-medium">
+                "{rejectingRequest.reason}"
+              </p>
+            </div>
+
+            {/* Quick Reason Presets */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-700 block">
+                اختر سبباً سريعاً أو اكتب سبباً مخصصاً:
+              </label>
+              <div className="grid grid-cols-1 gap-1.5 max-h-40 overflow-y-auto pr-1">
+                {[
+                  'التقرير الطبي غير مختوم أو غير صادر من جهة معتمدة (منصة صحتي).',
+                  'تجاوز المهلة النظامية لتقديم العذر (أكثر من 5 أيام من تاريخ الغياب).',
+                  'المستند المرفق غير واضح أو غير مقروء ويتعذر التحقق منه.',
+                  'الغياب تزامن مع اختبارات تحريرية أو تقييمات فصلية دون عذر قهري مسوّغ.',
+                  'عدم تطابق تاريخ التقرير الطبي مع تاريخ يوم الغياب الفعلي للطالب.'
+                ].map((preset, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setRejectReason(preset)}
+                    className={`text-right p-2 rounded-xl text-xs transition-all cursor-pointer border ${
+                      rejectReason === preset
+                        ? 'bg-rose-100 border-rose-300 text-rose-950 font-bold'
+                        : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700'
+                    }`}
+                  >
+                    • {preset}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-700 block">
+                سبب الرفض الموجه للطالب وولي أمره:
+              </label>
+              <textarea
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                rows={3}
+                placeholder="اكتب سبب الرفض بالتفصيل هنا..."
+                className="w-full text-xs p-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-rose-500 bg-slate-50/50"
+              />
+              <p className="text-[11px] text-slate-400">
+                💡 سيصل هذا السبب فوراً إلى حساب الطالب وحساب ولي أمره في قائمة الإشعارات وسجل الأعذار.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setRejectingRequest(null)}
+                className="py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
+              >
+                تراجع وإلغاء
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmReject}
+                className="py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs cursor-pointer shadow-md shadow-rose-600/20 flex items-center justify-center gap-1.5"
+              >
+                <X className="w-4 h-4" />
+                <span>تأكيد الرفض وإشعار ولي الأمر</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Attachment Preview Modal */}
+      {previewAttachment && (
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) setPreviewAttachment(null); }}
+          className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn"
+          dir="rtl"
+        >
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 text-right space-y-4 shadow-2xl text-slate-800">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <Paperclip className="w-5 h-5 text-indigo-600" />
+                <h3 className="text-base font-black text-slate-900">{previewAttachment.title}</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewAttachment(null)}
+                className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="max-h-[65vh] overflow-auto flex items-center justify-center bg-slate-50 rounded-2xl p-3 border border-slate-200">
+              <img
+                src={previewAttachment.url}
+                alt="مرفق العذر الطبي"
+                className="max-h-[60vh] max-w-full rounded-xl object-contain shadow-sm"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setPreviewAttachment(null)}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
+              >
+                إغلاق
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Clean Production Reset Confirmation Modal */}
       {isResetConfirmOpen && (

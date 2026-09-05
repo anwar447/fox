@@ -1,0 +1,27 @@
+{
+  "schools": [],
+  "users": [
+    {
+      "id": "usr-admin-1",
+      "nationalId": "1000000000",
+      "name": "المهندس أنور (المالك والمطور)",
+      "mobile": "0500000000",
+      "password": "admin",
+      "role": "superadmin",
+      "schoolCode": "SUPERADMIN"
+    }
+  ],
+  "attendances": [],
+  "permissions": [],
+  "behavior_logs": [],
+  "absence_actions": [],
+  "corrections": [],
+  "payments": [],
+  "notifications": [],
+  "deleted_schools": [
+    "RAYA-1448",
+    "SCH-RAYA-1",
+    "QURAN-100",
+    "SCH-QURAN-1"
+  ]
+}

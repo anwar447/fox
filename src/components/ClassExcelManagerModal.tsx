@@ -1,10 +1,12 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { School, User, SchoolClassSection } from '../types';
 import { getUsers, saveUsers, updateSchool } from '../utils/storage';
 import { parseNoorExcelFile, ParsedStudentRow } from '../utils/excelParser';
+import { getSchoolClasses, getDefaultClassesForSchoolType } from '../utils/schoolClasses';
 import { 
   FileSpreadsheet, Upload, Plus, Trash2, Check, 
-  X, AlertCircle, Sparkles, Users, Layers, UserPlus 
+  X, AlertCircle, Sparkles, Users, Layers, UserPlus,
+  RotateCcw, Building2
 } from 'lucide-react';
 
 interface ClassExcelManagerModalProps {
@@ -31,20 +33,38 @@ export const ClassExcelManagerModal: React.FC<ClassExcelManagerModalProps> = ({
   const [studentMobile, setStudentMobile] = useState('');
   const [parentMobile, setParentMobile] = useState('');
 
-  // Class / Sections management
-  const [classesList, setClassesList] = useState<SchoolClassSection[]>(
-    school.customClasses && school.customClasses.length > 0
-      ? school.customClasses
-      : [
-          { id: 'c-1', className: 'الأول المتوسط', sections: ['1', '2', '3'] },
-          { id: 'c-2', className: 'الثاني المتوسط', sections: ['1', '2'] },
-        ]
-  );
+  // Class / Sections management (strictly scoped to this school)
+  const [classesList, setClassesList] = useState<SchoolClassSection[]>(() => getSchoolClasses(school));
   const [newClassName, setNewClassName] = useState('');
   const [newClassSections, setNewClassSections] = useState('1, 2, 3');
 
-  const [selectedClass, setSelectedClass] = useState(classesList[0]?.className || 'الأول المتوسط');
+  const [selectedClass, setSelectedClass] = useState(classesList[0]?.className || '');
   const [selectedSection, setSelectedSection] = useState(classesList[0]?.sections[0] || '1');
+
+  // Count registered students in this specific school by class
+  const enrolledStudentsCount = useMemo(() => {
+    const schoolStudents = getUsers().filter((u) => u.schoolCode === school.code && u.role === 'student');
+    const counts: Record<string, number> = {};
+    schoolStudents.forEach((st) => {
+      const c = (st.className || '').trim();
+      if (c) counts[c] = (counts[c] || 0) + 1;
+    });
+    return counts;
+  }, [school.code, classesList]);
+
+  // Synchronize and reset state cleanly whenever modal is opened or school is changed
+  useEffect(() => {
+    if (isOpen && school) {
+      const freshClasses = getSchoolClasses(school);
+      setClassesList(freshClasses);
+      if (freshClasses.length > 0) {
+        setSelectedClass(freshClasses[0].className);
+        setSelectedSection(freshClasses[0].sections[0] || '1');
+      }
+      setParsedRows([]);
+      setMsg('');
+    }
+  }, [isOpen, school.code]);
 
   const currentAvailableSections = useMemo(() => {
     const matched = classesList.find((c) => c.className === selectedClass);
@@ -88,7 +108,7 @@ export const ClassExcelManagerModal: React.FC<ClassExcelManagerModalProps> = ({
         name: row.name.trim(),
         mobile: row.studentMobile,
         parentMobile: row.parentMobile,
-        password: cleanNid.slice(-4) || '1234',
+        password: cleanNid.slice(-4) || '123456',
         role: 'student',
         schoolCode: school.code,
         className: row.className,
@@ -101,10 +121,38 @@ export const ClassExcelManagerModal: React.FC<ClassExcelManagerModalProps> = ({
         updatedUsers.push(studentUser);
         addedCount++;
       }
+
+      // Auto-provision parent account if parent mobile exists
+      if (row.parentMobile && row.parentMobile.trim()) {
+        const cleanParentMob = row.parentMobile.trim().replace(/\D/g, '');
+        if (cleanParentMob.length >= 9) {
+          const pIdx = updatedUsers.findIndex(
+            (u) => u.role === 'parent' && (u.mobile === cleanParentMob || u.nationalId === cleanParentMob)
+          );
+          if (pIdx >= 0) {
+            const existingKids = updatedUsers[pIdx].childrenNationalIds || [];
+            updatedUsers[pIdx] = {
+              ...updatedUsers[pIdx],
+              childrenNationalIds: Array.from(new Set([...existingKids, cleanNid])),
+            };
+          } else {
+            updatedUsers.push({
+              id: `usr-p-${cleanParentMob}`,
+              nationalId: cleanParentMob,
+              name: `ولي أمر الطالب (${row.name.trim()})`,
+              mobile: cleanParentMob,
+              password: cleanParentMob.slice(-4) || '123456',
+              role: 'parent',
+              schoolCode: school.code,
+              childrenNationalIds: [cleanNid],
+            });
+          }
+        }
+      }
     });
 
     saveUsers(updatedUsers);
-    setMsg(`✅ تم استيراد وتسكين (${parsedRows.length}) طالب بنجاح في المنظومة.`);
+    setMsg(`✅ تم استيراد وتسكين (${parsedRows.length}) طالب بنجاح! 🔑 كلمات المرور الافتراضية للطلاب وأولياء الأمور هي آخر 4 أرقام أو (123456).`);
     setParsedRows([]);
     onUpdated();
   };
@@ -133,7 +181,7 @@ export const ClassExcelManagerModal: React.FC<ClassExcelManagerModalProps> = ({
       name: studentName.trim(),
       mobile: studentMobile.trim() || undefined,
       parentMobile: parentMobile.trim() || undefined,
-      password: cleanNid.slice(-4) || '1234',
+      password: cleanNid.slice(-4) || '123456',
       role: 'student',
       schoolCode: school.code,
       className: selectedClass,
@@ -147,8 +195,35 @@ export const ClassExcelManagerModal: React.FC<ClassExcelManagerModalProps> = ({
       updatedUsers.push(newStudent);
     }
 
+    // Auto-create / link parent account if parent mobile is provided
+    const cleanParentMob = parentMobile.trim().replace(/\D/g, '');
+    if (cleanParentMob.length >= 9) {
+      const pIdx = updatedUsers.findIndex(
+        (u) => u.role === 'parent' && (u.mobile === cleanParentMob || u.nationalId === cleanParentMob)
+      );
+      if (pIdx >= 0) {
+        const existingKids = updatedUsers[pIdx].childrenNationalIds || [];
+        updatedUsers[pIdx] = {
+          ...updatedUsers[pIdx],
+          childrenNationalIds: Array.from(new Set([...existingKids, cleanNid])),
+        };
+      } else {
+        updatedUsers.push({
+          id: `usr-p-${cleanParentMob}`,
+          nationalId: cleanParentMob,
+          name: `ولي أمر الطالب (${studentName.trim()})`,
+          mobile: cleanParentMob,
+          password: cleanParentMob.slice(-4) || '123456',
+          role: 'parent',
+          schoolCode: school.code,
+          childrenNationalIds: [cleanNid],
+        });
+      }
+    }
+
     saveUsers(updatedUsers);
-    setMsg(`✅ تم إضافة وتسكين الطالب (${studentName}) في فصل (${selectedClass} - ${selectedSection}) بنجاح!`);
+    const parentPassInfo = cleanParentMob ? ` | ولي الأمر: بالجوال (${cleanParentMob}) وكلمة المرور (${cleanParentMob.slice(-4)} أو 123456)` : '';
+    setMsg(`✅ تم إضافة الطالب (${studentName}) بنجاح! 🔑 دخول الطالب: بالهوية (${cleanNid}) وكلمة المرور (${cleanNid.slice(-4)} أو 123456 أو رقم الهوية)${parentPassInfo}`);
     
     // Reset form
     setStudentName('');
@@ -179,7 +254,45 @@ export const ClassExcelManagerModal: React.FC<ClassExcelManagerModalProps> = ({
   };
 
   const handleRemoveClass = (id: string) => {
-    setClassesList(classesList.filter((c) => c.id !== id));
+    const target = classesList.find((c) => c.id === id);
+    if (!target) return;
+    const enrolled = enrolledStudentsCount[target.className] || 0;
+    if (enrolled > 0) {
+      const confirmDelete = window.confirm(
+        `تنبيه: يوجد (${enrolled}) طالب مسجلين في هذا الصف (${target.className}) بمدرسة (${school.name})!\n\nهل أنت متأكد من حذفه من قائمة صفوف هذه المدرسة؟ (لن يتم حذف الطلاب ولكن ستُزال الشعبة من القائمة المتاحة)`
+      );
+      if (!confirmDelete) return;
+    }
+    const updated = classesList.filter((c) => c.id !== id);
+    setClassesList(updated);
+    if (selectedClass === target.className && updated.length > 0) {
+      setSelectedClass(updated[0].className);
+      setSelectedSection(updated[0].sections[0] || '1');
+    }
+  };
+
+  const handleRestoreDefaults = () => {
+    const defaultClasses = getDefaultClassesForSchoolType(school.type, school.isQuranSchool);
+    const stageName =
+      school.type === 'elementary'
+        ? 'المرحلة الابتدائية (من الأول إلى السادس)'
+        : school.type === 'secondary'
+        ? 'المرحلة الثانوية (من الأول إلى الثالث)'
+        : school.type === 'quran' || school.isQuranSchool
+        ? 'مدارس وحلقات القرآن الكريم'
+        : 'المرحلة المتوسطة (من الأول إلى الثالث)';
+
+    const confirmRestore = window.confirm(
+      `هل ترغب في استعادة الصفوف والشعب النموذجية المعتمدة لـ (${stageName}) لمدرسة (${school.name})؟`
+    );
+    if (!confirmRestore) return;
+
+    setClassesList(defaultClasses);
+    if (defaultClasses.length > 0) {
+      setSelectedClass(defaultClasses[0].className);
+      setSelectedSection(defaultClasses[0].sections[0] || '1');
+    }
+    setMsg(`🔄 تم استعادة الصفوف والشعب المعتمدة لـ (${stageName}). انقر على "حفظ التعديلات في المدرسة" لتثبيتها.`);
   };
 
   const handleSaveClasses = () => {
@@ -188,9 +301,18 @@ export const ClassExcelManagerModal: React.FC<ClassExcelManagerModalProps> = ({
       customClasses: classesList,
     };
     updateSchool(updatedSchool);
-    setMsg('✅ تم حفظ تعديل الصفوف والشعب بنجاح.');
+    setMsg(`✅ تم حفظ الصفوف والشعب بنجاح لمدرسة (${school.name}).`);
     onUpdated();
   };
+
+  const stageLabel =
+    school.type === 'elementary'
+      ? 'المرحلة الابتدائية'
+      : school.type === 'secondary'
+      ? 'المرحلة الثانوية'
+      : school.type === 'quran' || school.isQuranSchool
+      ? 'مدارس وحلقات القرآن'
+      : 'المرحلة المتوسطة';
 
   return (
     <div 
@@ -200,15 +322,23 @@ export const ClassExcelManagerModal: React.FC<ClassExcelManagerModalProps> = ({
     >
       <div className="bg-white border border-slate-200 rounded-3xl max-w-2xl w-full p-6 text-right space-y-5 shadow-2xl text-slate-800 my-auto">
         
-        {/* Header */}
+        {/* Header with clear School Stage context */}
         <div className="flex items-center justify-between border-b border-slate-200 pb-3">
           <div className="flex items-center gap-2">
             <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center">
-              <FileSpreadsheet className="w-5 h-5" />
+              <Building2 className="w-5 h-5" />
             </div>
             <div>
               <h3 className="text-base font-black text-slate-900">إدارة كشوفات الطلاب ونظام نور والفصول</h3>
-              <p className="text-xs text-slate-500 font-medium">مدرسة: {school.name} (كود: {school.code})</p>
+              <div className="flex flex-wrap items-center gap-2 text-xs pt-0.5">
+                <span className="text-emerald-800 font-bold">مدرسة: {school.name}</span>
+                <span className="text-slate-300">|</span>
+                <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-md font-bold text-[11px] border border-emerald-200">
+                  {stageLabel}
+                </span>
+                <span className="text-slate-300">|</span>
+                <span className="text-slate-500 font-mono">كود: {school.code}</span>
+              </div>
             </div>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer">
@@ -462,22 +592,63 @@ export const ClassExcelManagerModal: React.FC<ClassExcelManagerModalProps> = ({
 
             {/* List of current classes */}
             <div className="space-y-2">
-              <span className="font-bold text-slate-900 block">الصفوف والشعب الحالية بالمدرسة:</span>
-              <div className="space-y-2 max-h-48 overflow-y-auto">
-                {classesList.map((c) => (
-                  <div key={c.id} className="bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between shadow-2xs">
-                    <div>
-                      <strong className="text-slate-900 block font-bold">{c.className}</strong>
-                      <span className="text-[11px] text-slate-500">الشعب المتاحة: {c.sections.join(' ، ')}</span>
-                    </div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-bold text-slate-900 block">الصفوف والشعب الحالية لمدرسة ({school.name}):</span>
+                <button
+                  type="button"
+                  onClick={handleRestoreDefaults}
+                  className="px-2.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors border border-emerald-200 shadow-2xs"
+                  title="استعادة صفوف المرحلة حسب نوع المدرسة المعتمد"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>استعادة صفوف ({stageLabel}) النموذجية</span>
+                </button>
+              </div>
+
+              <div className="space-y-2 max-h-52 overflow-y-auto">
+                {classesList.length === 0 ? (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-center text-amber-800">
+                    <p className="font-bold mb-1">لا توجد صفوف محددة حالياً لهذه المدرسة</p>
+                    <p className="text-[11px] text-amber-700 mb-2">يمكنك النقر على الزر أعلاه لاستعادة الصفوف النموذجية فوراً أو إضافة صف يدوي.</p>
                     <button
-                      onClick={() => handleRemoveClass(c.id)}
-                      className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
+                      type="button"
+                      onClick={handleRestoreDefaults}
+                      className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs inline-flex items-center gap-1 shadow-xs cursor-pointer"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>توليد صفوف {stageLabel} الآن</span>
                     </button>
                   </div>
-                ))}
+                ) : (
+                  classesList.map((c) => {
+                    const enrolled = enrolledStudentsCount[c.className] || 0;
+                    return (
+                      <div key={c.id} className="bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between shadow-2xs hover:border-emerald-200 transition-colors">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <strong className="text-slate-900 block font-bold text-xs">{c.className}</strong>
+                            {enrolled > 0 ? (
+                              <span className="bg-blue-50 text-blue-700 border border-blue-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                                {enrolled} طالب مسجل
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 text-[10px]">بدون طلاب حالياً</span>
+                            )}
+                          </div>
+                          <span className="text-[11px] text-slate-500 mt-0.5 block">الشعب المتاحة: {c.sections.join(' ، ')}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveClass(c.id)}
+                          className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer transition-colors"
+                          title="حذف هذا الصف من المدرسة"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
               </div>
             </div>
 

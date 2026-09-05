@@ -1,9 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { User, School, SchoolClassSection, StaffTitle } from '../types';
 import { getUsers, saveUsers } from '../utils/storage';
+import { getSchoolClasses } from '../utils/schoolClasses';
 import { 
   Users, UserCheck, X, Check, BookOpen, 
-  ShieldCheck, AlertCircle, Plus, Trash2, Key, Phone
+  ShieldCheck, AlertCircle, Plus, Trash2, Key, Phone, Building2
 } from 'lucide-react';
 
 interface StaffSelfRegistrationModalProps {
@@ -40,42 +41,27 @@ export const StaffSelfRegistrationModal: React.FC<StaffSelfRegistrationModalProp
   const [staffTitle, setStaffTitle] = useState<StaffTitle>('teacher');
 
   const currentSchool = useMemo(() => {
-    return schools.find((s) => s.code === selectedSchoolCode) || schools[0];
-  }, [schools, selectedSchoolCode]);
+    return schools.find((s) => s.code?.toUpperCase() === selectedSchoolCode?.toUpperCase()) || (initialSchoolCode ? null : schools[0]);
+  }, [schools, selectedSchoolCode, initialSchoolCode]);
+
+  const isLockedSchool = Boolean(initialSchoolCode && currentSchool);
 
   const availableClasses: SchoolClassSection[] = useMemo(() => {
     if (!currentSchool) return [];
-    if (currentSchool.customClasses && currentSchool.customClasses.length > 0) {
-      return currentSchool.customClasses;
-    }
-    if (currentSchool.type === 'elementary') {
-      return [
-        { id: 'c-1', className: 'الأول الابتدائي', sections: ['1', '2', '3', 'أ', 'ب'] },
-        { id: 'c-2', className: 'الثاني الابتدائي', sections: ['1', '2', '3', 'أ', 'ب'] },
-        { id: 'c-3', className: 'الثالث الابتدائي', sections: ['1', '2', '3', 'أ', 'ب'] },
-        { id: 'c-4', className: 'الرابع الابتدائي', sections: ['1', '2', '3', 'أ', 'ب'] },
-        { id: 'c-5', className: 'الخامس الابتدائي', sections: ['1', '2', '3', 'أ', 'ب'] },
-        { id: 'c-6', className: 'السادس الابتدائي', sections: ['1', '2', '3', 'أ', 'ب'] },
-      ];
-    }
-    if (currentSchool.type === 'secondary') {
-      return [
-        { id: 'c-1', className: 'الأول الثانوي (مسارات)', sections: ['1', '2', '3', '4', 'أ', 'ب'] },
-        { id: 'c-2', className: 'الثاني الثانوي', sections: ['1', '2', '3', '4', 'أ', 'ب'] },
-        { id: 'c-3', className: 'الثالث الثانوي', sections: ['1', '2', '3', '4', 'أ', 'ب'] },
-      ];
-    }
-    return [
-      { id: 'c-1', className: 'الأول المتوسط', sections: ['1', '2', '3', 'أ', 'ب'] },
-      { id: 'c-2', className: 'الثاني المتوسط', sections: ['1', '2', '3', 'أ', 'ب'] },
-      { id: 'c-3', className: 'الثالث المتوسط', sections: ['1', '2', '3', 'أ', 'ب'] },
-    ];
+    return getSchoolClasses(currentSchool);
   }, [currentSchool]);
 
   // Selected classes for teachers
   const [selectedClasses, setSelectedClasses] = useState<{ className: string; sectionName: string }[]>([]);
-  const [tempClassName, setTempClassName] = useState(availableClasses[0]?.className || 'الأول المتوسط');
+  const [tempClassName, setTempClassName] = useState(availableClasses[0]?.className || '');
   const [tempSectionName, setTempSectionName] = useState(availableClasses[0]?.sections[0] || '1');
+
+  useEffect(() => {
+    if (availableClasses.length > 0) {
+      setTempClassName(availableClasses[0].className);
+      setTempSectionName(availableClasses[0].sections[0] || '1');
+    }
+  }, [availableClasses]);
 
   const [errorMsg, setErrorMsg] = useState('');
   const [isSuccess, setIsSuccess] = useState(false);
@@ -251,20 +237,46 @@ export const StaffSelfRegistrationModal: React.FC<StaffSelfRegistrationModalProp
             )}
 
             {/* School selection */}
-            <div>
-              <label className="block text-slate-700 font-bold mb-1">المدرسة التابع لها *</label>
-              <select
-                value={selectedSchoolCode}
-                onChange={(e) => setSelectedSchoolCode(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-slate-900 font-bold focus:outline-emerald-500"
-              >
-                {schools.map((s) => (
-                  <option key={s.id} value={s.code}>
-                    {s.name} ({s.code}) - {s.city}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {isLockedSchool && currentSchool ? (
+              <div className="bg-emerald-50/90 border border-emerald-300/80 rounded-2xl p-4 flex items-center justify-between gap-3 shadow-xs">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-11 h-11 rounded-2xl bg-emerald-600 text-white flex items-center justify-center font-black shrink-0 shadow-sm">
+                    <Building2 className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="text-sm font-black text-emerald-950 truncate">{currentSchool.name}</h4>
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-200/70 text-emerald-900 text-[11px] font-mono font-bold">
+                        كود: {currentSchool.code}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-emerald-700 font-medium mt-0.5">
+                      {currentSchool.city ? `المدينة: ${currentSchool.city} • ` : ''}
+                      رابط انضمام وتسجيل الكادر والمعلمين المعتمد لهذه المدرسة
+                    </p>
+                  </div>
+                </div>
+                <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-bold shrink-0 shadow-xs">
+                  <Check className="w-4 h-4" />
+                  <span>مدرسة معتمدة</span>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">المدرسة التابع لها *</label>
+                <select
+                  value={selectedSchoolCode}
+                  onChange={(e) => setSelectedSchoolCode(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-slate-900 font-bold focus:outline-emerald-500"
+                >
+                  {schools.map((s) => (
+                    <option key={s.id} value={s.code}>
+                      {s.name} ({s.code}) - {s.city}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>

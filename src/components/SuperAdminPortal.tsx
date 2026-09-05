@@ -120,7 +120,7 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
   };
 
   const handleDeleteSchool = (school: School) => {
-    deleteSchool(school.id || school.code);
+    deleteSchool(school.id || school.code, school.code);
     onRefresh();
     setSchoolToDelete(null);
     setStatusMsg({
