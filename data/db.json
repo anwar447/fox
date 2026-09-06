@@ -9,9 +9,176 @@
       "password": "admin",
       "role": "superadmin",
       "schoolCode": "SUPERADMIN"
+    },
+    {
+      "id": "usr-emp-1",
+      "nationalId": "1010101010",
+      "name": "أ. عبدالله ناصر القحطاني (مدير المدرسة)",
+      "mobile": "0551122334",
+      "password": "123",
+      "role": "employee",
+      "staffTitle": "principal",
+      "schoolCode": "RAYA-1448"
+    },
+    {
+      "id": "usr-emp-2",
+      "nationalId": "1015151515",
+      "name": "أ. مساعد سعد الشهري (وكيل شؤون الطلاب)",
+      "mobile": "0559988776",
+      "password": "123",
+      "role": "employee",
+      "staffTitle": "vice_principal",
+      "schoolCode": "RAYA-1448"
+    },
+    {
+      "id": "usr-tch-1",
+      "nationalId": "1020202020",
+      "name": "أ. فيصل خالد العتيبي",
+      "mobile": "0544332211",
+      "password": "123",
+      "role": "teacher",
+      "staffTitle": "teacher",
+      "schoolCode": "RAYA-1448",
+      "assignedClasses": [
+        {
+          "className": "الأول المتوسط",
+          "sectionName": "1"
+        },
+        {
+          "className": "الأول المتوسط",
+          "sectionName": "2"
+        }
+      ]
+    },
+    {
+      "id": "usr-tch-2",
+      "nationalId": "1025252525",
+      "name": "أ. تركي محمد الحربي (معلم لغتي والعلوم)",
+      "mobile": "0547788990",
+      "password": "123",
+      "role": "teacher",
+      "staffTitle": "teacher",
+      "schoolCode": "RAYA-1448",
+      "assignedClasses": [
+        {
+          "className": "الثاني المتوسط",
+          "sectionName": "1"
+        },
+        {
+          "className": "الثالث المتوسط",
+          "sectionName": "1"
+        }
+      ]
+    },
+    {
+      "id": "usr-prn-1",
+      "nationalId": "1030303030",
+      "name": "محمد إبراهيم الزهراني (أب)",
+      "mobile": "0566778899",
+      "password": "123",
+      "role": "parent",
+      "schoolCode": "RAYA-1448",
+      "childrenNationalIds": [
+        "1100110011",
+        "1100220022"
+      ]
+    },
+    {
+      "id": "usr-std-1",
+      "nationalId": "1100110011",
+      "name": "عبدالرحمن محمد إبراهيم الزهراني",
+      "mobile": "0599112233",
+      "parentMobile": "0566778899",
+      "password": "123",
+      "role": "student",
+      "schoolCode": "RAYA-1448",
+      "className": "الأول المتوسط",
+      "sectionName": "1"
+    },
+    {
+      "id": "usr-std-2",
+      "nationalId": "1100220022",
+      "name": "عمر محمد إبراهيم الزهراني",
+      "mobile": "0599445566",
+      "parentMobile": "0566778899",
+      "password": "123",
+      "role": "student",
+      "schoolCode": "RAYA-1448",
+      "className": "الأول المتوسط",
+      "sectionName": "2"
+    },
+    {
+      "id": "usr-std-3",
+      "nationalId": "1100330033",
+      "name": "سلطان فهد الدوسري",
+      "mobile": "0588223344",
+      "parentMobile": "0555443322",
+      "password": "123",
+      "role": "student",
+      "schoolCode": "RAYA-1448",
+      "className": "الأول المتوسط",
+      "sectionName": "1"
+    },
+    {
+      "id": "usr-std-q1",
+      "nationalId": "1100440044",
+      "name": "عبدالله صالح الغامدي (طالب تحفيظ)",
+      "mobile": "0577112233",
+      "parentMobile": "0555555555",
+      "password": "123",
+      "role": "student",
+      "schoolCode": "QURAN-100",
+      "className": "حلقة الإتقان",
+      "sectionName": "1"
     }
   ],
-  "attendances": [],
+  "attendances": [
+    {
+      "id": "att-usr-std-1-2026-09-02",
+      "studentId": "usr-std-1",
+      "studentName": "عبدالرحمن محمد إبراهيم الزهراني",
+      "nationalId": "1100110011",
+      "schoolCode": "RAYA-1448",
+      "className": "الأول المتوسط",
+      "sectionName": "1",
+      "date": "2026-09-02",
+      "selfCheckTime": "06:45",
+      "teacherMark": "present",
+      "finalStatus": "present",
+      "isTruant": false,
+      "parentMobile": "0566778899"
+    },
+    {
+      "id": "att-usr-std-2-2026-09-02",
+      "studentId": "usr-std-2",
+      "studentName": "عمر محمد إبراهيم الزهراني",
+      "nationalId": "1100220022",
+      "schoolCode": "RAYA-1448",
+      "className": "الأول المتوسط",
+      "sectionName": "2",
+      "date": "2026-09-02",
+      "selfCheckTime": null,
+      "teacherMark": "absent",
+      "finalStatus": "absent",
+      "isTruant": false,
+      "parentMobile": "0566778899"
+    },
+    {
+      "id": "att-usr-std-3-2026-09-02",
+      "studentId": "usr-std-3",
+      "studentName": "سلطان فهد الدوسري",
+      "nationalId": "1100330033",
+      "schoolCode": "RAYA-1448",
+      "className": "الأول المتوسط",
+      "sectionName": "1",
+      "date": "2026-09-02",
+      "selfCheckTime": "06:50",
+      "teacherMark": "absent",
+      "finalStatus": "absent",
+      "isTruant": true,
+      "parentMobile": "0555443322"
+    }
+  ],
   "permissions": [],
   "behavior_logs": [],
   "absence_actions": [],
