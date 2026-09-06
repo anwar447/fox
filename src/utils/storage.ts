@@ -36,19 +36,18 @@ async function apiPost(endpoint: string, body: any): Promise<any> {
 }
 
 const DELETED_SCHOOLS_KEY = 'hodoorak_deleted_schools_registry';
-export const DEFAULT_PURGED_DEMO_SCHOOLS = ['RAYA-1448', 'SCH-RAYA-1', 'QURAN-100', 'SCH-QURAN-1'];
+export const DEFAULT_PURGED_DEMO_SCHOOLS: string[] = [];
 
 export function getDeletedSchools(): string[] {
   try {
     const raw = localStorage.getItem(DELETED_SCHOOLS_KEY);
     const parsed: string[] = raw ? JSON.parse(raw) : [];
     const set = new Set<string>([
-      ...DEFAULT_PURGED_DEMO_SCHOOLS.map((s) => s.toUpperCase()),
       ...parsed.map((s) => String(s).toUpperCase()),
     ]);
     return Array.from(set);
   } catch {
-    return [...DEFAULT_PURGED_DEMO_SCHOOLS];
+    return [];
   }
 }
 
@@ -1123,6 +1122,7 @@ export function saveCurrentUserSession(user: User | null): void {
 
 export const getCurrentUser = getCurrentUserSession;
 export const setCurrentUser = saveCurrentUserSession;
+export const setUserState = saveCurrentUserSession;
 
 // 8. Clean Production Reset
 export function cleanResetToEmptyProductionData(): void {

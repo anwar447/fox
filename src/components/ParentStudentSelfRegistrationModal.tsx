@@ -3,13 +3,13 @@ import {
   User, School, SchoolClassSection, Attendance 
 } from '../types';
 import { 
-  getUsers, saveUsers, getAttendances, saveAttendances 
+  getUsers, saveUsers, getAttendances, saveAttendances, addUser, setUserState 
 } from '../utils/storage';
 import { getSchoolClasses } from '../utils/schoolClasses';
 import { getTodayDateString } from '../utils/academic';
 import { 
   Building2, UserCheck, X, Check, 
-  GraduationCap, Plus, Trash2, AlertCircle
+  GraduationCap, Plus, Trash2, AlertCircle, ArrowLeft, ArrowRight
 } from 'lucide-react';
 
 interface StudentFormItem {
@@ -49,7 +49,17 @@ export const ParentStudentSelfRegistrationModal: React.FC<ParentStudentSelfRegis
   }, [initialSchoolCode, schools]);
 
   const currentSchool = useMemo(() => {
-    return schools.find((s) => s.code?.toUpperCase() === selectedSchoolCode?.toUpperCase()) || (initialSchoolCode ? null : schools[0]);
+    const code = (selectedSchoolCode || initialSchoolCode || '').trim();
+    if (!code && schools.length > 0) return schools[0];
+    const found = schools.find((s) => 
+      s.code?.toUpperCase() === code.toUpperCase() ||
+      s.id === code ||
+      s.name === code ||
+      s.name?.includes(code) ||
+      code.includes(s.name)
+    );
+    if (found) return found;
+    return schools[0] || null;
   }, [schools, selectedSchoolCode, initialSchoolCode]);
 
   const isLockedSchool = Boolean(initialSchoolCode && currentSchool);
@@ -61,11 +71,19 @@ export const ParentStudentSelfRegistrationModal: React.FC<ParentStudentSelfRegis
   const [parentPassword, setParentPassword] = useState('');
 
   const availableClasses: SchoolClassSection[] = useMemo(() => {
-    if (!currentSchool) return [];
-    return getSchoolClasses(currentSchool);
+    const classes = currentSchool ? getSchoolClasses(currentSchool) : [];
+    if (classes.length > 0) return classes;
+    return [
+      { id: 'def-1', className: 'الأول الثانوي', sections: ['1', '2', '3', '4'] },
+      { id: 'def-2', className: 'الثاني الثانوي', sections: ['1', '2', '3', '4'] },
+      { id: 'def-3', className: 'الثالث الثانوي', sections: ['1', '2', '3', '4'] },
+      { id: 'def-4', className: 'الأول المتوسط', sections: ['1', '2'] },
+      { id: 'def-5', className: 'الثاني المتوسط', sections: ['1', '2'] },
+      { id: 'def-6', className: 'الثالث المتوسط', sections: ['1', '2'] },
+    ];
   }, [currentSchool]);
 
-  const defaultClass = availableClasses[0]?.className || '';
+  const defaultClass = availableClasses[0]?.className || 'الأول الثانوي';
   const defaultSection = availableClasses[0]?.sections[0] || '1';
 
   const [students, setStudents] = useState<StudentFormItem[]>([
@@ -184,11 +202,14 @@ export const ParentStudentSelfRegistrationModal: React.FC<ParentStudentSelfRegis
       role: 'parent',
       schoolCode: currentSchool.code,
       childrenNationalIds: studentNids,
+      managedSchoolCodes: [currentSchool.code],
     };
 
     // 2. Create Student Users with auto-placement
     const newStudentUsers: User[] = students.map((st) => {
       const cleanSNid = st.nationalId.trim().replace(/\D/g, '');
+      const assignedClass = st.className || defaultClass || 'الأول الثانوي';
+      const assignedSection = st.sectionName || '1';
       return {
         id: `usr-s-${cleanSNid}`,
         nationalId: cleanSNid,
@@ -198,8 +219,9 @@ export const ParentStudentSelfRegistrationModal: React.FC<ParentStudentSelfRegis
         password: cleanSNid.slice(-4) || '123456',
         role: 'student' as const,
         schoolCode: currentSchool.code,
-        className: st.className,
-        sectionName: st.sectionName || '1',
+        className: assignedClass,
+        sectionName: assignedSection,
+        managedSchoolCodes: [currentSchool.code],
       };
     });
 
@@ -230,6 +252,8 @@ export const ParentStudentSelfRegistrationModal: React.FC<ParentStudentSelfRegis
     });
 
     saveUsers(updatedUsersList);
+    addUser(parentUser);
+    newStudentUsers.forEach((st) => addUser(st));
 
     // Auto-create initial today's attendance record
     const today = getTodayDateString();
@@ -245,7 +269,7 @@ export const ParentStudentSelfRegistrationModal: React.FC<ParentStudentSelfRegis
           studentName: st.name,
           nationalId: st.nationalId,
           schoolCode: currentSchool.code,
-          className: st.className || 'عام',
+          className: st.className || 'الأول الثانوي',
           sectionName: st.sectionName || '1',
           date: today,
           selfCheckTime: null,
@@ -355,23 +379,54 @@ export const ParentStudentSelfRegistrationModal: React.FC<ParentStudentSelfRegis
               </div>
 
               {/* Action Buttons */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+              <div className="space-y-3 pt-2">
                 <button
                   type="button"
-                  onClick={onClose}
-                  className="py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer"
+                  onClick={() => {
+                    if (createdParent) {
+                      setUserState(createdParent);
+                      onRegistrationSuccess(createdParent, createdStudents);
+                    }
+                    onClose();
+                  }}
+                  className="w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer hover:scale-[1.01]"
                 >
-                  <UserCheck className="w-4 h-4" />
-                  <span>الدخول لبوابة ولي الأمر الآن ↵</span>
+                  <UserCheck className="w-5 h-5" />
+                  <span>الدخول لبوابة ولي الأمر الآن ({createdParent?.name}) ↵</span>
                 </button>
+
+                {createdStudents.length > 0 && (
+                  <div className="p-3 bg-indigo-50/70 rounded-2xl border border-indigo-200/80 space-y-2">
+                    <p className="text-[11px] font-bold text-indigo-900">
+                      أو يمكن للطلاب الدخول مباشرة لبوابتهم من هنا:
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {createdStudents.map((st) => (
+                        <button
+                          key={st.id}
+                          type="button"
+                          onClick={() => {
+                            setUserState(st);
+                            onRegistrationSuccess(st, createdStudents);
+                            onClose();
+                          }}
+                          className="py-2.5 px-3 rounded-xl bg-white hover:bg-indigo-100/80 text-indigo-950 border border-indigo-200 font-black text-xs flex items-center justify-between gap-1.5 transition-all cursor-pointer shadow-2xs"
+                        >
+                          <span className="truncate">دخول الطالب: {st.name}</span>
+                          <ArrowLeft className="w-4 h-4 text-indigo-600 shrink-0" />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <button
                   type="button"
                   onClick={onClose}
-                  className="py-3 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-black text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+                  className="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                 >
-                  <Check className="w-4 h-4 text-emerald-400" />
-                  <span>إتمام والخروج</span>
+                  <Check className="w-4 h-4 text-slate-500" />
+                  <span>إتمام وإغلاق النافذة</span>
                 </button>
               </div>
 

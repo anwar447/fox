@@ -14,6 +14,8 @@ export function isStaffOrEmployeeRole(role?: string, staffTitle?: string): boole
   if (!role) return false;
   const r = role.toLowerCase();
   const t = (staffTitle || '').toLowerCase();
+  if (t === 'teacher' || r === 'teacher') return false;
+  if (r === 'student' || r === 'parent' || r === 'guest') return false;
   return (
     r === 'employee' ||
     r === 'admin_assistant' ||

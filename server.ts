@@ -26,7 +26,7 @@ interface DatabaseSchema {
   deleted_schools: string[];
 }
 
-const KNOWN_PURGED_SCHOOLS = ['RAYA-1448', 'SCH-RAYA-1', 'QURAN-100', 'SCH-QURAN-1'];
+const KNOWN_PURGED_SCHOOLS: string[] = [];
 
 const DEFAULT_SUPERADMIN = {
   id: 'usr-admin-1',
@@ -49,7 +49,7 @@ function getInitialDB(): DatabaseSchema {
     corrections: [],
     payments: [],
     notifications: [],
-    deleted_schools: [...KNOWN_PURGED_SCHOOLS],
+    deleted_schools: [],
   };
 }
 
@@ -66,12 +66,13 @@ function loadDatabase(): DatabaseSchema {
     const content = fs.readFileSync(DB_FILE, 'utf-8');
     const data = JSON.parse(content);
 
-    // Merge deleted_schools registry
+    // Explicitly deleted schools only (never hardcode real schools)
     const rawDeleted: string[] = Array.isArray(data.deleted_schools) ? data.deleted_schools : [];
-    const deletedSet = new Set<string>([
-      ...KNOWN_PURGED_SCHOOLS.map((k) => k.toUpperCase()),
-      ...rawDeleted.map((k: string) => String(k).toUpperCase()),
-    ]);
+    const deletedSet = new Set<string>(
+      rawDeleted
+        .map((k: string) => String(k).toUpperCase())
+        .filter((k) => k !== 'RAYA-1448' && k !== 'QURAN-100' && !k.includes('SAQR') && !k.includes('صقر'))
+    );
     const deleted_schools = Array.from(deletedSet);
 
     // Filter out any schools that match deleted registry
@@ -214,15 +215,36 @@ app.post('/api/sync', (req, res) => {
             u.schoolCode,
           ])).filter(Boolean);
 
+          // Preserve role: teacher stays teacher, student stays student, parent stays parent
+          let resolvedRole = u.role || prev.role;
+          let resolvedTitle = u.staffTitle || prev.staffTitle;
+          if (resolvedTitle === 'teacher' || u.role === 'teacher' || prev.role === 'teacher') {
+            resolvedRole = 'teacher';
+            resolvedTitle = 'teacher';
+          } else if (u.role === 'student' || prev.role === 'student') {
+            resolvedRole = 'student';
+          } else if (u.role === 'parent' || prev.role === 'parent') {
+            resolvedRole = 'parent';
+          } else if (u.role === 'employee' || prev.role === 'employee') {
+            resolvedRole = 'employee';
+          }
+
           userMap.set(key, {
             ...prev,
             ...u,
             id: prev.id || u.id,
             nationalId: cleanNid || prev.nationalId,
             managedSchoolCodes: unifiedSchools,
-            schoolCode: prev.schoolCode || u.schoolCode,
-            role: (u.role === 'employee' || prev.role === 'employee') ? 'employee' : (u.role || prev.role),
-            staffTitle: u.staffTitle || prev.staffTitle,
+            schoolCode: u.schoolCode || prev.schoolCode,
+            role: resolvedRole,
+            staffTitle: resolvedTitle,
+            assignedClasses: u.assignedClasses || prev.assignedClasses,
+            className: u.className || prev.className,
+            sectionName: u.sectionName || prev.sectionName,
+            childrenNationalIds: Array.from(new Set([
+              ...(Array.isArray(prev.childrenNationalIds) ? prev.childrenNationalIds : []),
+              ...(Array.isArray(u.childrenNationalIds) ? u.childrenNationalIds : []),
+            ])).filter(Boolean),
           });
         } else {
           const initialSchools = Array.from(new Set([
@@ -231,7 +253,7 @@ app.post('/api/sync', (req, res) => {
           ])).filter(Boolean);
           userMap.set(key, {
             ...u,
-            managedSchoolCodes: initialSchools.length > 0 ? initialSchools : u.managedSchoolCodes,
+            managedSchoolCodes: initialSchools.length > 0 ? initialSchools : [u.schoolCode].filter(Boolean),
           });
         }
       };

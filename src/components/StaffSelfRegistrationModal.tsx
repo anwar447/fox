@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { User, School, SchoolClassSection, StaffTitle } from '../types';
-import { getUsers, saveUsers } from '../utils/storage';
+import { getUsers, saveUsers, addUser, setUserState } from '../utils/storage';
 import { getSchoolClasses } from '../utils/schoolClasses';
 import { 
   Users, UserCheck, X, Check, BookOpen, 
@@ -117,22 +117,17 @@ export const StaffSelfRegistrationModal: React.FC<StaffSelfRegistrationModalProp
       staffTitle: staffTitle,
       schoolCode: selectedSchoolCode,
       assignedClasses: staffTitle === 'teacher' ? selectedClasses : undefined,
+      managedSchoolCodes: [selectedSchoolCode],
     };
 
-    let updatedUsers = [...existingUsers];
-    if (existingIndex >= 0) {
-      updatedUsers[existingIndex] = { ...updatedUsers[existingIndex], ...newStaffUser };
-    } else {
-      updatedUsers.push(newStaffUser);
-    }
-
-    saveUsers(updatedUsers);
+    addUser(newStaffUser);
     setCreatedStaff(newStaffUser);
     setIsSuccess(true);
   };
 
   const handleEnterDashboard = () => {
     if (createdStaff) {
+      setUserState(createdStaff);
       onRegistrationSuccess(createdStaff);
     }
     onClose();

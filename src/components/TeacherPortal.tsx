@@ -8,7 +8,7 @@ import {
   Shield, CheckCircle, XCircle, Clock, 
   AlertTriangle, Save, Users, Sparkles, Filter, 
   Activity, ArrowUpRight, ShieldAlert, LogOut, Check, Star, ThumbsUp, ThumbsDown,
-  UserCheck, UserX, CheckCheck, RefreshCw
+  UserCheck, UserX, CheckCheck, RefreshCw, UserPlus, X
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { StudentPermissionModal } from './StudentPermissionModal';
@@ -16,6 +16,7 @@ import { BehaviorRecordModal } from './BehaviorRecordModal';
 import { LiveClockHeader } from './LiveClockHeader';
 import { BroadcastAlertBanner } from './BroadcastAlertBanner';
 import { Building2 } from 'lucide-react';
+import { saveUsers } from '../utils/storage';
 
 interface TeacherPortalProps {
   currentUser: User;
@@ -47,23 +48,76 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
   const [selectedStudentForBehavior, setSelectedStudentForBehavior] = useState<User | null>(null);
   const [isBehaviorModalOpen, setIsBehaviorModalOpen] = useState(false);
 
-  // Find classes assigned to teacher or all students in school
+  // Find students in current school (case-insensitive and tolerant of code/id/name)
   const schoolStudents = allUsers.filter(
-    (u) => u.role === 'student' && u.schoolCode === currentSchool.code
+    (u) =>
+      u.role === 'student' &&
+      (
+        u.schoolCode?.toUpperCase() === currentSchool.code?.toUpperCase() ||
+        u.schoolCode === currentSchool.id ||
+        u.schoolCode === currentSchool.name ||
+        (currentUser.managedSchoolCodes?.includes(u.schoolCode))
+      )
   );
 
-  // Group classes
-  const classes = Array.from(new Set(schoolStudents.map((s) => s.className || 'الأول المتوسط')));
-  const [selectedClass, setSelectedClass] = useState<string>(classes[0] || 'الأول المتوسط');
+  // Collect classes from:
+  // 1. Teacher assignedClasses
+  const teacherClasses = currentUser.assignedClasses?.map((c) => c.className).filter(Boolean) as string[] || [];
+  // 2. School configured classes
+  const schoolConfigClasses = currentSchool.customClasses?.map((c) => c.className).filter(Boolean) as string[] || [];
+  // 3. Enrolled students
+  const studentClasses = schoolStudents.map((s) => s.className).filter(Boolean) as string[];
+
+  const classes = Array.from(
+    new Set([
+      ...teacherClasses,
+      ...schoolConfigClasses,
+      ...studentClasses,
+    ])
+  ).filter(Boolean);
+
+  if (classes.length === 0) {
+    classes.push(currentSchool.type === 'secondary' ? 'الأول الثانوي' : currentSchool.type === 'middle' ? 'الأول المتوسط' : 'الأول الابتدائي');
+  }
+
+  const initialClass = teacherClasses[0] || classes[0] || 'الأول الثانوي';
+  const [selectedClass, setSelectedClass] = useState<string>(initialClass);
+
+  // Group sections for selectedClass
+  const teacherSections = currentUser.assignedClasses
+    ?.filter((c) => c.className === selectedClass)
+    .map((c) => c.sectionName)
+    .filter(Boolean) as string[] || [];
+
+  const schoolConfigSections = currentSchool.customClasses
+    ?.find((c) => c.className === selectedClass)
+    ?.sections || [];
+
+  const studentSections = schoolStudents
+    .filter((s) => s.className === selectedClass)
+    .map((s) => s.sectionName || '1')
+    .filter(Boolean) as string[];
 
   const sections = Array.from(
-    new Set(
-      schoolStudents
-        .filter((s) => s.className === selectedClass)
-        .map((s) => s.sectionName || '1')
-    )
-  );
-  const [selectedSection, setSelectedSection] = useState<string>(sections[0] || '1');
+    new Set([
+      ...teacherSections,
+      ...schoolConfigSections,
+      ...studentSections,
+    ])
+  ).filter(Boolean);
+
+  if (sections.length === 0) {
+    sections.push('1');
+  }
+
+  const initialSection = teacherSections[0] || sections[0] || '1';
+  const [selectedSection, setSelectedSection] = useState<string>(initialSection);
+
+  // Quick Student Add State for teacher
+  const [isQuickAddStudentOpen, setIsQuickAddStudentOpen] = useState(false);
+  const [quickStudentName, setQuickStudentName] = useState('');
+  const [quickStudentNid, setQuickStudentNid] = useState('');
+  const [quickStudentMobile, setQuickStudentMobile] = useState('');
 
   // Filter students for chosen class & section
   const currentStudents = schoolStudents.filter(
@@ -196,6 +250,70 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
   const openPermissionModal = (student: User) => {
     setSelectedStudentForPerm(student);
     setIsPermModalOpen(true);
+  };
+
+  const handleQuickAddStudent = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickStudentName.trim() || !quickStudentNid.trim()) {
+      alert('يرجى كتابة اسم الطالب ورقم الهوية');
+      return;
+    }
+
+    const cleanNid = quickStudentNid.trim().replace(/\D/g, '');
+    const cleanName = quickStudentName.trim();
+    const cleanMobile = quickStudentMobile.trim();
+
+    const existingUsers = getUsers();
+    const newStudent: User = {
+      id: `usr-s-${cleanNid}`,
+      nationalId: cleanNid,
+      name: cleanName,
+      mobile: cleanMobile || undefined,
+      password: cleanNid.slice(-4) || '123',
+      role: 'student',
+      schoolCode: currentSchool.code,
+      className: selectedClass,
+      sectionName: selectedSection,
+      managedSchoolCodes: [currentSchool.code],
+    };
+
+    const sIdx = existingUsers.findIndex((u) => u.nationalId === cleanNid);
+    let updatedUsers = [...existingUsers];
+    if (sIdx >= 0) {
+      updatedUsers[sIdx] = { ...updatedUsers[sIdx], ...newStudent };
+    } else {
+      updatedUsers.push(newStudent);
+    }
+
+    saveUsers(updatedUsers);
+
+    // Add initial attendance for today
+    const currentAtts = getAttendances();
+    if (!currentAtts.some((a) => a.studentId === newStudent.id && a.date === today)) {
+      currentAtts.push({
+        id: `att-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        studentId: newStudent.id,
+        studentName: newStudent.name,
+        nationalId: newStudent.nationalId,
+        schoolCode: currentSchool.code,
+        className: selectedClass,
+        sectionName: selectedSection,
+        date: today,
+        selfCheckTime: null,
+        teacherMark: 'present',
+        finalStatus: 'present',
+        isTruant: false,
+      });
+      saveAttendances(currentAtts);
+    }
+
+    setQuickStudentName('');
+    setQuickStudentNid('');
+    setQuickStudentMobile('');
+    setIsQuickAddStudentOpen(false);
+    soundManager.playSuccess();
+    setSavedMsg(`✅ تم إضافة الطالب ${cleanName} لفصل (${selectedClass} - فصل ${selectedSection}) ورصده كحاضر.`);
+    setTimeout(() => setSavedMsg(''), 4000);
   };
 
   return (
@@ -380,7 +498,32 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
         </div>
 
         <div className="space-y-2.5">
-          {currentStudents.map((st, idx) => {
+          {currentStudents.length === 0 ? (
+            <div className="text-center py-10 px-4 bg-slate-50 border border-dashed border-slate-300 rounded-3xl space-y-4">
+              <div className="w-14 h-14 rounded-2xl bg-indigo-50 text-indigo-600 border border-indigo-200 flex items-center justify-center mx-auto">
+                <Users className="w-7 h-7" />
+              </div>
+              <div className="max-w-md mx-auto space-y-1">
+                <h4 className="text-sm font-black text-slate-800">
+                  لا يوجد طلاب مسجلين حالياً في ({selectedClass} - فصل {selectedSection})
+                </h4>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  يمكن للطلاب أو أولياء الأمور التسجيل عبر رابط الانضمام للمدرسة، أو يمكنك كمعلم إضافة طلاب هذا الفصل سريعاً وتفعيل التحضير فوراً.
+                </p>
+              </div>
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setIsQuickAddStudentOpen(true)}
+                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs inline-flex items-center gap-2 cursor-pointer shadow-md transition-all hover:scale-105"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  <span>إضافة طالب سريع لهذا الفصل الآن ↵</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            currentStudents.map((st, idx) => {
             const att = allAttendances.find((a) => a.studentId === st.id && a.date === today);
             const currentMark = marks[st.id] || (att?.selfCheckTime ? 'present' : 'absent');
             const hasGateCheck = !!att?.selfCheckTime;
@@ -523,7 +666,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
                 </div>
               </div>
             );
-          })}
+          }))}
         </div>
       </div>
 
@@ -561,6 +704,91 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
             setBehaviorVersion((v) => v + 1);
           }}
         />
+      )}
+
+      {/* Quick Add Student Modal */}
+      {isQuickAddStudentOpen && (
+        <div
+          onClick={(e) => { if (e.target === e.currentTarget) setIsQuickAddStudentOpen(false); }}
+          className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn"
+          dir="rtl"
+        >
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200 text-right">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-700 flex items-center justify-center">
+                  <UserPlus className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">إضافة طالب لهذا الفصل</h3>
+                  <p className="text-[11px] text-slate-500">{selectedClass} - فصل {selectedSection}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsQuickAddStudentOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleQuickAddStudent} className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">اسم الطالب ثلاثي / رباعي *</label>
+                <input
+                  type="text"
+                  required
+                  value={quickStudentName}
+                  onChange={(e) => setQuickStudentName(e.target.value)}
+                  placeholder="مثال: خالد سعد الدوسري"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 font-bold focus:outline-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">رقم الهوية الوطنية أو الإقامة *</label>
+                <input
+                  type="text"
+                  required
+                  maxLength={10}
+                  value={quickStudentNid}
+                  onChange={(e) => setQuickStudentNid(e.target.value)}
+                  placeholder="10 أرقام (مثال: 1122334455)"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-mono text-slate-900 font-bold focus:outline-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">رقم جوال ولي الأمر (اختياري)</label>
+                <input
+                  type="tel"
+                  maxLength={10}
+                  value={quickStudentMobile}
+                  onChange={(e) => setQuickStudentMobile(e.target.value)}
+                  placeholder="05xxxxxxxx"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-mono text-slate-900 focus:outline-indigo-500"
+                />
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsQuickAddStudentOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md cursor-pointer transition-all hover:scale-105"
+                >
+                  حفظ وتسجيل الطالب ↵
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
     </div>

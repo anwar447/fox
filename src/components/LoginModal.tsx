@@ -107,11 +107,27 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         ...matchingRecords.flatMap((m) => m.managedSchoolCodes || []),
       ])).filter(Boolean) as string[];
 
-      // Choose primary record (prefer staff/employee/teacher, prefer cleaner name)
-      const primary = matchingRecords.find((m) => m.role === 'employee' || m.staffTitle) || matchingRecords[0];
+      // Choose primary record (respecting teacher, student, parent, or employee roles)
+      let primary: User;
+      if (asParentMode) {
+        primary = matchingRecords.find((m) => m.role === 'parent') || matchingRecords[0];
+      } else {
+        primary =
+          matchingRecords.find((m) => m.role === 'teacher' || m.staffTitle === 'teacher') ||
+          matchingRecords.find((m) => m.role === 'employee' || (m.staffTitle && m.staffTitle !== 'teacher')) ||
+          matchingRecords.find((m) => m.role === 'student') ||
+          matchingRecords.find((m) => m.role === 'parent') ||
+          matchingRecords[0];
+      }
+
+      let finalRole = primary.role;
+      if (primary.staffTitle === 'teacher' || primary.role === 'teacher') {
+        finalRole = 'teacher';
+      }
 
       matchedUser = {
         ...primary,
+        role: finalRole,
         managedSchoolCodes: allAssignedSchools,
       };
     }
@@ -130,9 +146,26 @@ export const LoginModal: React.FC<LoginModalProps> = ({
           ...mobileMatches.flatMap((m) => m.managedSchoolCodes || []),
         ])).filter(Boolean) as string[];
 
-        const primary = mobileMatches.find((m) => m.role === 'employee' || m.staffTitle) || mobileMatches[0];
+        let primary: User;
+        if (asParentMode) {
+          primary = mobileMatches.find((m) => m.role === 'parent') || mobileMatches[0];
+        } else {
+          primary =
+            mobileMatches.find((m) => m.role === 'teacher' || m.staffTitle === 'teacher') ||
+            mobileMatches.find((m) => m.role === 'employee' || (m.staffTitle && m.staffTitle !== 'teacher')) ||
+            mobileMatches.find((m) => m.role === 'student') ||
+            mobileMatches.find((m) => m.role === 'parent') ||
+            mobileMatches[0];
+        }
+
+        let finalRole = primary.role;
+        if (primary.staffTitle === 'teacher' || primary.role === 'teacher') {
+          finalRole = 'teacher';
+        }
+
         matchedUser = {
           ...primary,
+          role: finalRole,
           managedSchoolCodes: allAssignedSchools,
         };
       }

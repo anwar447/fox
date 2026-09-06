@@ -47,9 +47,13 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   // Active Tab: 'overview' | 'unexcused' | 'excuses' | 'behavior' | 'actions'
   const [activeTab, setActiveTab] = useState<'overview' | 'unexcused' | 'excuses' | 'behavior' | 'actions'>('overview');
 
-  const studentAttendances = attendances.filter((a) => a.studentId === currentUser.id);
+  const studentAttendances = attendances.filter(
+    (a) => a.studentId === currentUser.id || (currentUser.nationalId && a.nationalId === currentUser.nationalId)
+  );
   const todayRecord = studentAttendances.find((a) => a.date === today);
-  const studentExcuses = correctionRequests.filter((r) => r.studentId === currentUser.id);
+  const studentExcuses = correctionRequests.filter(
+    (r) => r.studentId === currentUser.id || (currentUser.nationalId && r.nationalId === currentUser.nationalId)
+  );
 
   // Dynamic Behavior Score
   const behaviorSummary = calculateStudentBehaviorScore(currentUser.id);

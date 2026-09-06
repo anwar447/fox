@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { User, School, Attendance, CorrectionRequest } from '../types';
-import { getAttendances, getUsers, getCorrectionRequests, saveAttendances, getSystemNotifications } from '../utils/storage';
+import { getAttendances, getUsers, getCorrectionRequests, saveAttendances, saveUsers, getSystemNotifications } from '../utils/storage';
 import { calculateStudentBehaviorScore } from '../utils/behavior';
 import { SubmitExcuseModal } from './SubmitExcuseModal';
 import { LiveClockHeader } from './LiveClockHeader';
@@ -29,16 +29,96 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
   const [attendances, setAttendances] = useState<Attendance[]>(getAttendances());
   const [correctionRequests, setCorrectionRequests] = useState<CorrectionRequest[]>(getCorrectionRequests());
 
-  // Find parent's children
-  const children = allUsers.filter(
-    (u) =>
-      u.role === 'student' &&
-      (currentUser.childrenNationalIds?.includes(u.nationalId) || u.parentMobile === currentUser.mobile)
-  );
+  // Find parent's children with robust ID and phone matching
+  const children = allUsers.filter((u) => {
+    if (u.role !== 'student') return false;
+    const cleanUNid = (u.nationalId || '').trim();
+    const isChildNid = currentUser.childrenNationalIds?.some((nid) => nid?.trim() === cleanUNid);
+    const cleanParentMob = (currentUser.mobile || '').trim().replace(/\D/g, '');
+    const cleanStudentParentMob = (u.parentMobile || '').trim().replace(/\D/g, '');
+    const isMobileMatch = Boolean(cleanParentMob && cleanStudentParentMob && (
+      cleanParentMob === cleanStudentParentMob ||
+      cleanParentMob.endsWith(cleanStudentParentMob) ||
+      cleanStudentParentMob.endsWith(cleanParentMob)
+    ));
+    return isChildNid || isMobileMatch;
+  });
 
   const [selectedStudentId, setSelectedStudentId] = useState<string>(
     children[0]?.id || ''
   );
+
+  // Link child state if no children found
+  const [linkChildNid, setLinkChildNid] = useState('');
+  const [linkChildName, setLinkChildName] = useState('');
+  const [linkChildClass, setLinkChildClass] = useState('الأول الثانوي');
+  const [linkChildSection, setLinkChildSection] = useState('1');
+  const [linkStatusMsg, setLinkStatusMsg] = useState('');
+
+  const handleLinkChild = (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanNid = linkChildNid.trim().replace(/\D/g, '');
+    if (!cleanNid) {
+      alert('يرجى إدخال رقم هوية الابن');
+      return;
+    }
+
+    const currentUsers = getUsers();
+    const existingChild = currentUsers.find((u) => u.nationalId === cleanNid && u.role === 'student');
+
+    let updatedChild: User;
+    if (existingChild) {
+      updatedChild = {
+        ...existingChild,
+        parentMobile: currentUser.mobile || existingChild.parentMobile,
+      };
+    } else {
+      updatedChild = {
+        id: `usr-s-${cleanNid}`,
+        nationalId: cleanNid,
+        name: linkChildName.trim() || `طالب (${cleanNid})`,
+        role: 'student',
+        password: cleanNid.slice(-4) || '123456',
+        schoolCode: currentSchool.code,
+        className: linkChildClass || 'الأول الثانوي',
+        sectionName: linkChildSection || '1',
+        parentMobile: currentUser.mobile,
+        managedSchoolCodes: [currentSchool.code],
+      };
+    }
+
+    const updatedChildrenNids = Array.from(new Set([
+      ...(currentUser.childrenNationalIds || []),
+      cleanNid,
+    ]));
+
+    const updatedParent: User = {
+      ...currentUser,
+      childrenNationalIds: updatedChildrenNids,
+    };
+
+    // Update users list
+    let nextUsers = currentUsers.map((u) => {
+      if (u.id === currentUser.id || u.nationalId === currentUser.nationalId) {
+        return updatedParent;
+      }
+      if (u.id === updatedChild.id || u.nationalId === updatedChild.nationalId) {
+        return updatedChild;
+      }
+      return u;
+    });
+
+    if (!nextUsers.some((u) => u.id === updatedChild.id)) {
+      nextUsers.push(updatedChild);
+    }
+
+    saveUsers(nextUsers);
+    setSelectedStudentId(updatedChild.id);
+    setLinkStatusMsg(`✅ تم ربط الابن ${updatedChild.name} بنجاح!`);
+    setTimeout(() => {
+      window.location.reload();
+    }, 1000);
+  };
 
   // Excuse Modal
   const [isExcuseModalOpen, setIsExcuseModalOpen] = useState(false);
@@ -126,7 +206,81 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
         </div>
       </div>
 
-      {currentChild && behaviorSummary && (
+      {!currentChild ? (
+        <div className="bg-white border border-slate-200 rounded-3xl p-8 text-center space-y-5 shadow-sm max-w-lg mx-auto">
+          <div className="w-16 h-16 rounded-2xl bg-teal-50 text-teal-600 border border-teal-200 flex items-center justify-center mx-auto shadow-inner">
+            <GraduationCap className="w-8 h-8" />
+          </div>
+          <div>
+            <h3 className="text-base font-black text-slate-900">ربط بيانات الطالب بحساب ولي الأمر</h3>
+            <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+              لم يتم العثور على طالب مسجل تلقائياً تحت رقم هويتك. يرجى إدخال رقم هوية الابن لربطه بحسابك فوراً ومتابعة حضوره وسلوكه.
+            </p>
+          </div>
+
+          {linkStatusMsg && (
+            <div className="p-3 bg-emerald-50 text-emerald-800 text-xs font-bold rounded-xl border border-emerald-200">
+              {linkStatusMsg}
+            </div>
+          )}
+
+          <form onSubmit={handleLinkChild} className="space-y-3 text-right">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">رقم هوية الطالب *</label>
+              <input
+                type="text"
+                required
+                maxLength={10}
+                value={linkChildNid}
+                onChange={(e) => setLinkChildNid(e.target.value)}
+                placeholder="10 أرقام (مثال: 1122334455)"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">اسم الطالب (إذا كان تسجيلاً جديداً)</label>
+              <input
+                type="text"
+                value={linkChildName}
+                onChange={(e) => setLinkChildName(e.target.value)}
+                placeholder="اسم الطالب كاملاً"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">الصف</label>
+                <input
+                  type="text"
+                  value={linkChildClass}
+                  onChange={(e) => setLinkChildClass(e.target.value)}
+                  placeholder="الأول الثانوي"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-bold"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">الفصل</label>
+                <input
+                  type="text"
+                  value={linkChildSection}
+                  onChange={(e) => setLinkChildSection(e.target.value)}
+                  placeholder="1"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-bold"
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              className="w-full py-3 px-4 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-black text-xs shadow-md transition-all cursor-pointer"
+            >
+              ربط الابن وتفعيل المتابعة ↵
+            </button>
+          </form>
+        </div>
+      ) : behaviorSummary ? (
         <>
           {/* 5-Day Absence Alert Banner if triggered */}
           {behaviorSummary.hasFiveDaysAbsenceAlert && (
@@ -576,7 +730,7 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
             </div>
           )}
         </>
-      )}
+      ) : null}
 
       {/* Submit Excuse Modal */}
       {isExcuseModalOpen && currentChild && (
