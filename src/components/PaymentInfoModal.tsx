@@ -10,7 +10,7 @@ import {
 interface PaymentInfoModalProps {
   isOpen: boolean;
   onClose: () => void;
-  plan: 'semester' | 'yearly';
+  plan?: 'yearly' | 'semester';
   school?: School;
   onSuccess: () => void;
 }
@@ -18,7 +18,7 @@ interface PaymentInfoModalProps {
 export const PaymentInfoModal: React.FC<PaymentInfoModalProps> = ({
   isOpen,
   onClose,
-  plan,
+  plan = 'yearly',
   school,
   onSuccess,
 }) => {
@@ -34,8 +34,9 @@ export const PaymentInfoModal: React.FC<PaymentInfoModalProps> = ({
 
   if (!isOpen) return null;
 
-  const price = plan === 'semester' ? 299 : 499;
-  const planLabel = plan === 'semester' ? 'اشتراك فصلي (فصل دراسي كامل)' : 'اشتراك سنوي (سنة دراسية كاملة)';
+  // Single annual subscription: 333 SAR for a full year
+  const price = 333;
+  const planLabel = 'اشتراك سنوي شامل (سنة دراسية كاملة - 12 شهراً)';
   
   // Real Al Rajhi account details from the owner
   const beneficiaryName = 'انور علي محمد الالمعي';

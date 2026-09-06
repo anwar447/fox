@@ -14,7 +14,7 @@ interface LandingPageProps {
   onOpenRegisterSchool: () => void;
   onOpenParentRegistration: () => void;
   onOpenStaffRegistration?: () => void;
-  onOpenPaymentModal: (plan: 'semester' | 'yearly' | 'free_forever') => void;
+  onOpenPaymentModal: (plan: 'yearly' | 'free_forever') => void;
   onOpenDonationModal?: () => void;
 }
 
@@ -126,77 +126,109 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           <p className="text-xs sm:text-sm text-slate-500">أسعار رمزية ومناسبة لدعم المدارس، ومجاناً مدى الحياة لمدارس وحلقات تحفيظ القرآن الكريم 🌟</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-right">
-          {/* Quran School Plan (FREE) */}
-          <div className="bg-amber-50/40 border-2 border-amber-300 rounded-3xl p-6 space-y-4 relative flex flex-col justify-between shadow-xs">
-            <div className="space-y-3">
-              <span className="px-3 py-1 rounded-full bg-amber-100 text-amber-900 text-xs font-black border border-amber-300 inline-block">
-                وقف تعليمي خيري 🌟
-              </span>
-              <h3 className="text-lg font-black text-slate-900">مدارس وحلقات القرآن الكريم</h3>
-              <div className="text-2xl font-black text-amber-700">
-                مجاناً مدى الحياة <span className="text-xs font-normal text-slate-600">(0 ريال)</span>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto text-right">
+          {/* Yearly Plan (Single Annual Subscription - 333 SAR for a Full Year) */}
+          <div className="bg-white border-2 border-emerald-500 rounded-3xl p-6 sm:p-7 space-y-5 relative flex flex-col justify-between shadow-lg ring-1 ring-emerald-500/20">
+            <div className="space-y-3.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="px-3.5 py-1 rounded-full bg-emerald-600 text-white text-xs font-black inline-flex items-center gap-1 shadow-xs">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>الخطة السنوية المعتمدة الشاملة 🔥</span>
+                </span>
+                <span className="text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                  سنة كاملة 12 شهر
+                </span>
               </div>
-              <ul className="text-xs text-slate-700 space-y-2">
-                <li className="flex items-center gap-2">✓ عدد غير محدود من الطلاب والحلقات</li>
-                <li className="flex items-center gap-2">✓ تحضير بالباركود والسياج الجغرافي</li>
-                <li className="flex items-center gap-2">✓ دعم فني كامل واحتساب الأجر</li>
-              </ul>
-            </div>
-            <button
-              onClick={() => onOpenPaymentModal('free_forever')}
-              className="w-full py-3 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-black text-xs transition-colors cursor-pointer shadow-sm flex items-center justify-center gap-1.5"
-            >
-              <span>تسجيل مدرسة قرآنية (مجاناً مدى الحياة) 🌟</span>
-            </button>
-          </div>
+              
+              <div>
+                <h3 className="text-xl font-black text-slate-900">اشتراك سنوي شامل لكامل المدرسة</h3>
+                <p className="text-xs text-slate-500 mt-1 font-medium">سنة دراسية كاملة دون أي رسوم إضافية أو قيود على عدد الطلاب</p>
+              </div>
 
-          {/* Semester Plan */}
-          <div className="bg-white border border-slate-200 rounded-3xl p-6 space-y-4 flex flex-col justify-between shadow-xs hover:shadow-md transition-shadow">
-            <div className="space-y-3">
-              <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 text-xs font-black border border-emerald-200 inline-block">
-                خطة فصل دراسي
-              </span>
-              <h3 className="text-lg font-black text-slate-900">اشتراك فصلي (فصل دراسي)</h3>
-              <div className="text-2xl font-black text-slate-900 font-mono">
-                299 <span className="text-xs font-normal text-slate-500">ريال / فصل دراسي واحد</span>
+              <div className="bg-emerald-50/70 border border-emerald-200/80 rounded-2xl p-3.5 flex items-baseline gap-2">
+                <span className="text-3xl sm:text-4xl font-black text-emerald-700 font-mono">333</span>
+                <span className="text-xs font-bold text-slate-700">ريال فقط / سنة كاملة (12 شهراً)</span>
               </div>
-              <ul className="text-xs text-slate-600 space-y-2">
-                <li className="flex items-center gap-2">✓ استيراد كشوفات نظام نور (Excel)</li>
-                <li className="flex items-center gap-2">✓ تقارير المدير اليومية الصباحية</li>
-                <li className="flex items-center gap-2">✓ إشعارات وبوابة أولياء الأمور</li>
-              </ul>
-            </div>
-            <button
-              onClick={() => onOpenPaymentModal('semester')}
-              className="w-full py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-black text-xs transition-colors cursor-pointer shadow-sm flex items-center justify-center gap-1.5"
-            >
-              <span>تسجيل المدرسة وبدء الخطة الفصلية (299 ريال) 🚀</span>
-            </button>
-          </div>
 
-          {/* Yearly Plan (Best Value - 2 Semesters) */}
-          <div className="bg-white border-2 border-emerald-500 rounded-3xl p-6 space-y-4 relative flex flex-col justify-between shadow-md">
-            <div className="space-y-3">
-              <span className="px-3 py-1 rounded-full bg-emerald-600 text-white text-xs font-black inline-block shadow-xs">
-                الأكثر طلباً وتوفيراً 🔥
-              </span>
-              <h3 className="text-lg font-black text-slate-900">اشتراك سنوي كامل (فصلين دراسيين)</h3>
-              <div className="text-2xl font-black text-emerald-700 font-mono">
-                499 <span className="text-xs font-normal text-slate-500">ريال / سنة دراسية كاملة</span>
-              </div>
-              <ul className="text-xs text-slate-600 space-y-2">
-                <li className="flex items-center gap-2">✓ تغطية شاملة للفصلين الدراسيين طوال العام</li>
-                <li className="flex items-center gap-2">✓ كافة ميزات النظام بدون أي قيود</li>
-                <li className="flex items-center gap-2">✓ روابط واتساب السريعة للمعلمين والأولياء</li>
-                <li className="flex items-center gap-2">✓ دعم فني وتحديثات مستمرة طوال العام</li>
+              <ul className="text-xs text-slate-700 space-y-2.5 pt-1 font-medium">
+                <li className="flex items-center gap-2">
+                  <span className="w-4 h-4 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-[10px]">✓</span>
+                  <span>تغطية شاملة للعام الدراسي كاملاً (12 شهراً متواصلة)</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="w-4 h-4 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-[10px]">✓</span>
+                  <span>استيراد وتسكين كشوفات نظام نور (Excel) لجميع الفصول بنقرة زر</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="w-4 h-4 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-[10px]">✓</span>
+                  <span>التحضير الذكي الثلاثي: باركود QR + سياج جغرافي + رصد يدوي</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="w-4 h-4 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-[10px]">✓</span>
+                  <span>بوابات خاصة للمدير، المعلمين، الإداريين، والطلاب وأولياء الأمور</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="w-4 h-4 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-[10px]">✓</span>
+                  <span>روابط واتساب فورية ودعم فني وتحديثات مستمرة طوال العام</span>
+                </li>
               </ul>
             </div>
+
             <button
               onClick={() => onOpenPaymentModal('yearly')}
-              className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow-md shadow-emerald-600/20 transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+              className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-sm shadow-md shadow-emerald-600/25 transition-all cursor-pointer flex items-center justify-center gap-2 mt-2"
             >
-              <span>تسجيل المدرسة وبدء الاشتراك السنوي (499 ريال) 🔥</span>
+              <span>تسجيل المدرسة وبدء الاشتراك السنوي (333 ريال فقط) 🔥</span>
+            </button>
+          </div>
+
+          {/* Quran School Plan (FREE FOREVER) */}
+          <div className="bg-gradient-to-b from-amber-50/70 to-white border-2 border-amber-300 rounded-3xl p-6 sm:p-7 space-y-5 relative flex flex-col justify-between shadow-sm">
+            <div className="space-y-3.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="px-3.5 py-1 rounded-full bg-amber-100 text-amber-900 text-xs font-black border border-amber-300 inline-block">
+                  وقف تعليمي خيري 🌟
+                </span>
+                <span className="text-[11px] font-bold text-amber-800 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
+                  دعم الحلقات والمجمعات
+                </span>
+              </div>
+
+              <div>
+                <h3 className="text-xl font-black text-slate-900">مدارس وحلقات تحفيظ القرآن الكريم</h3>
+                <p className="text-xs text-slate-500 mt-1 font-medium">مجمعات ومدارس ودور وحلقات القرآن الكريم بنين وبنات</p>
+              </div>
+
+              <div className="bg-amber-100/60 border border-amber-300/80 rounded-2xl p-3.5 flex items-baseline gap-2">
+                <span className="text-2xl sm:text-3xl font-black text-amber-800">مجاناً مدى الحياة</span>
+                <span className="text-xs font-bold text-slate-700">(0 ريال - دعم دائم)</span>
+              </div>
+
+              <ul className="text-xs text-slate-700 space-y-2.5 pt-1 font-medium">
+                <li className="flex items-center gap-2">
+                  <span className="w-4 h-4 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-[10px]">✓</span>
+                  <span>عدد غير محدود من الطلاب والطالبات والحلقات والفصول</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="w-4 h-4 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-[10px]">✓</span>
+                  <span>تحضير إلكتروني بالباركود الذكي والسياج الجغرافي للمسجد أو المجمع</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="w-4 h-4 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-[10px]">✓</span>
+                  <span>متابعة الغياب والأعذار وتتبع التسميع والحضور يومياً</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="w-4 h-4 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-[10px]">✓</span>
+                  <span>دعم فني كامل واحتساب الأجر صدقة جارية</span>
+                </li>
+              </ul>
+            </div>
+
+            <button
+              onClick={() => onOpenPaymentModal('free_forever')}
+              className="w-full py-3.5 rounded-2xl bg-amber-600 hover:bg-amber-500 text-white font-black text-sm transition-all cursor-pointer shadow-sm flex items-center justify-center gap-2 mt-2"
+            >
+              <span>تسجيل مجمع تحفيظ قرآن (مجاناً مدى الحياة) 🌟</span>
             </button>
           </div>
         </div>

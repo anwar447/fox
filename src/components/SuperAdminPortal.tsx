@@ -70,15 +70,13 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
     let endDate = school.subscriptionEndDate;
     if (plan === 'free_forever') {
       endDate = '2099-12-31';
-    } else if (plan === 'yearly') {
+    } else {
       endDate = calculateFutureDate(12);
-    } else if (plan === 'semester') {
-      endDate = calculateFutureDate(6);
     }
 
     const updated: School = {
       ...school,
-      subscriptionPlan: plan,
+      subscriptionPlan: plan === 'semester' ? 'yearly' : plan,
       subscriptionStatus: status,
       subscriptionEndDate: endDate,
       isQuranSchool: plan === 'free_forever',
@@ -88,8 +86,8 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
     onRefresh();
 
     const planLabel = 
-      plan === 'free_forever' ? 'اشتراك مجاني دائم' :
-      plan === 'yearly' ? 'اشتراك سنوي (1 سنة)' : 'اشتراك نصف سنوي (فصلي)';
+      plan === 'free_forever' ? 'اشتراك مجاني دائم (وقف تحفيظ القرآن الكريم)' :
+      'اشتراك سنوي شامل (333 ريال فقط / سنة كاملة)';
 
     setStatusMsg({
       type: 'success',
@@ -154,11 +152,11 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
 
     const school = schools.find((s) => s.code === req.schoolCode);
     if (school) {
-      const monthsToAdd = req.plan === 'yearly' ? 12 : 6;
+      const monthsToAdd = 12;
       const updatedSchool: School = {
         ...school,
         subscriptionStatus: 'active',
-        subscriptionPlan: req.plan,
+        subscriptionPlan: 'yearly',
         subscriptionEndDate: calculateFutureDate(monthsToAdd),
       };
       updateSchool(updatedSchool);
@@ -330,8 +328,8 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
                   <div className="flex items-center gap-2">
                     <strong className="text-slate-900 text-sm">{p.schoolName}</strong>
                     <span className="font-mono text-slate-500 text-[11px]">({p.schoolCode})</span>
-                    <span className="text-[10px] bg-amber-100 text-amber-900 px-2 py-0.5 rounded-md font-bold">
-                      {p.plan === 'yearly' ? 'اشتراك سنوي (12 شهر)' : 'اشتراك فصلي (6 أشهر)'}
+                    <span className="text-[10px] bg-emerald-100 text-emerald-900 px-2 py-0.5 rounded-md font-bold">
+                      {p.plan === 'yearly' ? 'اشتراك سنوي شامل (333 ريال / سنة كاملة)' : 'اشتراك سنوي (333 ريال)'}
                     </span>
                   </div>
                   <div className="text-[11px] text-slate-600 mt-1.5 flex flex-wrap gap-x-4 gap-y-1">
@@ -555,35 +553,22 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
                             ? 'bg-purple-700 text-white shadow-xs'
                             : 'bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-200'
                         }`}
-                        title="تحويل إلى اشتراك مجاني دائم"
+                        title="تحويل إلى وقف تحفيظ قرآن مجاني مدى الحياة (0 ريال)"
                       >
-                        🌟 مجاني
+                        🌟 تحفيظ قرآن (مجاني)
                       </button>
 
                       {/* 1 Year Plan Button */}
                       <button
                         onClick={() => handleUpdateSchoolSubscription(sch, 'yearly', 'active')}
                         className={`px-2.5 py-1.5 rounded-xl font-bold text-[11px] cursor-pointer transition-colors ${
-                          isYearly && !isSuspended
+                          !isFree && !isSuspended
                             ? 'bg-emerald-700 text-white shadow-xs'
                             : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200'
                         }`}
-                        title="تفعيل اشتراك لمدة سنة كاملة"
+                        title="تفعيل اشتراك سنوي شامل لمدة سنة كاملة (333 ريال)"
                       >
-                        👑 سنة
-                      </button>
-
-                      {/* 6 Months Plan Button */}
-                      <button
-                        onClick={() => handleUpdateSchoolSubscription(sch, 'semester', 'active')}
-                        className={`px-2.5 py-1.5 rounded-xl font-bold text-[11px] cursor-pointer transition-colors ${
-                          isSemester && !isSuspended
-                            ? 'bg-blue-700 text-white shadow-xs'
-                            : 'bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-200'
-                        }`}
-                        title="تفعيل اشتراك لمدة نصف سنة (فصلي)"
-                      >
-                        📅 نصف سنة
+                        👑 سنوي (333 ريال)
                       </button>
 
                       {/* Pause / Resume Button */}

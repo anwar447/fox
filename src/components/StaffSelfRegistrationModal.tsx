@@ -185,7 +185,7 @@ export const StaffSelfRegistrationModal: React.FC<StaffSelfRegistrationModalProp
                 أهلاً وسهلاً بك أستاذ {createdStaff.name} 🌟
               </h4>
               <p className="text-xs text-slate-600">
-                تم تسجيلك بنجاح ضمن كادر ({currentSchool.name}).
+                تم تسجيلك بنجاح ضمن كادر ({currentSchool?.name || createdStaff.schoolCode}).
               </p>
             </div>
 

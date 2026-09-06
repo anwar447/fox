@@ -43,7 +43,7 @@ interface EmployeeDashboardProps {
   onOpenDirectStudentRegistration: () => void;
   onOpenStudentDossier: (student: User) => void;
   onOpenCounselorApi?: () => void;
-  onOpenPaymentModal?: (plan: 'semester' | 'yearly') => void;
+  onOpenPaymentModal?: (plan?: 'yearly') => void;
 }
 
 export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
@@ -364,7 +364,7 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
               <div className="flex items-center gap-2">
                 {onOpenPaymentModal && (
                   <button
-                    onClick={() => onOpenPaymentModal(isYearly ? 'yearly' : 'semester')}
+                    onClick={() => onOpenPaymentModal('yearly')}
                     className="px-3.5 py-2 rounded-xl bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs cursor-pointer transition-all"
                   >
                     <span>عرض تفاصيل التحويل 💳</span>
@@ -396,22 +396,22 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
                         🎉 تم تجهيز المدرسة بنجاح! ({allSchoolStudents.length} طالب و {allSchoolTeachers.length} كادر تعليمي)
                       </h3>
                       <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">
-                        {isYearly ? 'الاشتراك السنوي (499 ريال)' : 'الاشتراك الفصلي (299 ريال)'}
+                        الاشتراك السنوي الشامل (333 ريال فقط / سنة كاملة)
                       </span>
                     </div>
                     <p className="text-xs text-slate-600 font-medium mt-1 leading-relaxed max-w-2xl">
-                      لقد أتممت إضافة طلابك وكادرك المدرسي بنجاح. يرجى استكمال التحويل البنكي وتأكيد السداد لتثبيت اشتراك المدرسة وضمان استمرارية التقارير الصباحية وإشعارات أولياء الأمور دون انقطاع.
+                      لقد أتممت إضافة طلابك وكادرك المدرسي بنجاح. يرجى استكمال التحويل البنكي وتأكيد السداد (333 ريال فقط) لتثبيت اشتراك المدرسة وضمان استمرارية التقارير الصباحية وإشعارات أولياء الأمور دون انقطاع.
                     </p>
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
                   {onOpenPaymentModal && (
                     <button
-                      onClick={() => onOpenPaymentModal(isYearly ? 'yearly' : 'semester')}
+                      onClick={() => onOpenPaymentModal('yearly')}
                       className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center gap-2 shadow-md shadow-emerald-600/20 cursor-pointer transition-all"
                     >
                       <CreditCard className="w-4 h-4" />
-                      <span>استكمال وتأكيد السداد البنكي 💳</span>
+                      <span>استكمال وتأكيد السداد البنكي (333 ريال) 💳</span>
                     </button>
                   )}
                   <a
@@ -433,7 +433,7 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="font-bold text-xs sm:text-sm text-slate-900">
-                        📋 مرحباً بك! خطتك المحددة: {isYearly ? 'اشتراك سنوي كامل (499 ريال)' : 'اشتراك فصلي (299 ريال)'}
+                        📋 مرحباً بك! خطتك المحددة: اشتراك سنوي شامل (333 ريال فقط / سنة كاملة)
                       </h3>
                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-200 text-slate-800 font-bold">
                         فترة إعداد وتجهيز مفعّلة
@@ -640,7 +640,7 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
               <div className="flex items-center gap-2">
                 <span className="text-[10px] text-slate-500 font-bold">نوع اشتراك المدرسة:</span>
                 <strong className="font-black text-xs">
-                  {isFree ? '🌟 اشتراك مجاني دائم' : isYearly ? '👑 اشتراك سنوي (سنة كاملة)' : isSemester ? '📅 اشتراك نصف سنوي (فصلي)' : 'اشتراك تجريبي'}
+                  {isFree ? '🌟 اشتراك مجاني دائم (تحفيظ قرآن)' : '👑 اشتراك سنوي شامل (333 ريال / سنة كاملة)'}
                 </strong>
               </div>
               <div className="text-[10px] text-slate-600 flex items-center gap-2 mt-0.5">
@@ -656,11 +656,11 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
             
             {onOpenPaymentModal && !isFree && isPrincipal && !approvedPayment && (
               <button
-                onClick={() => onOpenPaymentModal(isYearly ? 'yearly' : 'semester')}
+                onClick={() => onOpenPaymentModal('yearly')}
                 className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[11px] flex items-center gap-1 shadow-xs cursor-pointer transition-all mr-2"
               >
                 <CreditCard className="w-3.5 h-3.5" />
-                <span>{pendingPayment ? 'بيانات التحويل 💳' : 'استكمال السداد 💳'}</span>
+                <span>{pendingPayment ? 'بيانات التحويل 💳' : 'استكمال السداد (333 ريال) 💳'}</span>
               </button>
             )}
           </div>

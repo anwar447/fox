@@ -70,7 +70,7 @@ export function App() {
   
   // Payment Modal
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
-  const [selectedPlanForPayment, setSelectedPlanForPayment] = useState<'semester' | 'yearly'>('yearly');
+  const [selectedPlanForPayment, setSelectedPlanForPayment] = useState<'yearly'>('yearly');
 
   // Parent self registration & invitation
   const [isParentRegLinkOpen, setIsParentRegLinkOpen] = useState(false);
@@ -91,7 +91,7 @@ export function App() {
   const [isMapPickerOpen, setIsMapPickerOpen] = useState(false);
   // School Creation Wizard
   const [isSchoolWizardOpen, setIsSchoolWizardOpen] = useState(false);
-  const [wizardInitialPlan, setWizardInitialPlan] = useState<'trial' | 'semester' | 'yearly' | 'free_forever'>('yearly');
+  const [wizardInitialPlan, setWizardInitialPlan] = useState<'trial' | 'yearly' | 'free_forever'>('yearly');
 
   // Student Dossier & QR Card & Correction
   const [selectedStudentForDossier, setSelectedStudentForDossier] = useState<User | null>(null);
@@ -244,10 +244,10 @@ export function App() {
     refreshAll();
   };
 
-  const openPaymentWithPlan = (plan: 'semester' | 'yearly' | 'free_forever') => {
+  const openPaymentWithPlan = (plan: 'yearly' | 'free_forever') => {
     setWizardInitialPlan(plan);
     if (plan !== 'free_forever') {
-      setSelectedPlanForPayment(plan);
+      setSelectedPlanForPayment('yearly');
     }
     setIsSchoolWizardOpen(true);
   };
@@ -342,8 +342,8 @@ export function App() {
                 }}
                 onOpenStudentDossier={(student) => setSelectedStudentForDossier(student)}
                 onOpenCounselorApi={() => setSelectedSchoolForApi(impersonatedSchool)}
-                onOpenPaymentModal={(plan) => {
-                  setSelectedPlanForPayment(plan);
+                onOpenPaymentModal={() => {
+                  setSelectedPlanForPayment('yearly');
                   setIsPaymentOpen(true);
                 }}
               />
@@ -386,8 +386,8 @@ export function App() {
             }}
             onOpenStudentDossier={(student) => setSelectedStudentForDossier(student)}
             onOpenCounselorApi={() => setSelectedSchoolForApi(currentSchool)}
-            onOpenPaymentModal={(plan) => {
-              setSelectedPlanForPayment(plan);
+            onOpenPaymentModal={() => {
+              setSelectedPlanForPayment('yearly');
               setIsPaymentOpen(true);
             }}
           />
@@ -495,9 +495,9 @@ export function App() {
           isOpen={isSubscriptionExpiredOpen}
           school={currentSchool}
           onClose={() => setIsSubscriptionExpiredOpen(false)}
-          onOpenPaymentModal={(plan) => {
+          onOpenPaymentModal={() => {
             setIsSubscriptionExpiredOpen(false);
-            openPaymentWithPlan(plan);
+            openPaymentWithPlan('yearly');
           }}
         />
       )}

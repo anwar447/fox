@@ -55,6 +55,10 @@ export const ParentStudentSelfRegistrationModal: React.FC<ParentStudentSelfRegis
   const isLockedSchool = Boolean(initialSchoolCode && currentSchool);
 
   const [parentName, setParentName] = useState('');
+  const [relationship, setRelationship] = useState('أب');
+  const [parentNationalId, setParentNationalId] = useState('');
+  const [parentMobile, setParentMobile] = useState('');
+  const [parentPassword, setParentPassword] = useState('');
 
   const availableClasses: SchoolClassSection[] = useMemo(() => {
     if (!currentSchool) return [];
@@ -120,6 +124,11 @@ export const ParentStudentSelfRegistrationModal: React.FC<ParentStudentSelfRegis
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
+
+    if (!currentSchool) {
+      setErrorMsg('المدرسة المحددة غير موجودة أو لم يتم اختيار مدرسة');
+      return;
+    }
 
     const cleanParentName = parentName.trim();
     const cleanParentNid = parentNationalId.trim().replace(/\D/g, '');
