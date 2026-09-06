@@ -195,26 +195,56 @@ app.post('/api/sync', (req, res) => {
       db.schools = Array.from(schoolMap.values());
     }
 
-    // 2. Users: Union merge by ID or (nationalId + schoolCode)
+    // 2. Users: Smart unification by nationalId or ID with Set union of managedSchoolCodes
     if (Array.isArray(incoming.users) && incoming.users.length > 0) {
       const userMap = new Map<string, any>();
-      db.users.forEach((u) => {
-        if (u && (u.id || u.nationalId)) {
-          const key = u.id || `${u.nationalId}_${u.schoolCode || ''}`;
-          userMap.set(key, u);
+
+      const mergeOneUser = (u: any) => {
+        if (!u) return;
+        const cleanNid = u.nationalId ? String(u.nationalId).trim() : '';
+        // If user has a valid nationalId, key by nid so multiple records for the same person unify
+        const key = cleanNid ? `nid_${cleanNid}` : (u.id || `${cleanNid}_${u.schoolCode || ''}`);
+
+        if (userMap.has(key)) {
+          const prev = userMap.get(key);
+          const unifiedSchools = Array.from(new Set([
+            ...(Array.isArray(prev.managedSchoolCodes) ? prev.managedSchoolCodes : []),
+            prev.schoolCode,
+            ...(Array.isArray(u.managedSchoolCodes) ? u.managedSchoolCodes : []),
+            u.schoolCode,
+          ])).filter(Boolean);
+
+          userMap.set(key, {
+            ...prev,
+            ...u,
+            id: prev.id || u.id,
+            nationalId: cleanNid || prev.nationalId,
+            managedSchoolCodes: unifiedSchools,
+            schoolCode: prev.schoolCode || u.schoolCode,
+            role: (u.role === 'employee' || prev.role === 'employee') ? 'employee' : (u.role || prev.role),
+            staffTitle: u.staffTitle || prev.staffTitle,
+          });
+        } else {
+          const initialSchools = Array.from(new Set([
+            ...(Array.isArray(u.managedSchoolCodes) ? u.managedSchoolCodes : []),
+            u.schoolCode,
+          ])).filter(Boolean);
+          userMap.set(key, {
+            ...u,
+            managedSchoolCodes: initialSchools.length > 0 ? initialSchools : u.managedSchoolCodes,
+          });
         }
-      });
-      incoming.users.forEach((u) => {
-        if (u && (u.id || u.nationalId)) {
-          const key = u.id || `${u.nationalId}_${u.schoolCode || ''}`;
-          if (userMap.has(key)) {
-            userMap.set(key, { ...userMap.get(key), ...u });
-          } else {
-            userMap.set(key, u);
-          }
+      };
+
+      db.users.forEach(mergeOneUser);
+      incoming.users.forEach(mergeOneUser);
+
+      db.users = Array.from(userMap.values()).map((u) => {
+        if (u && (u.role === 'admin_assistant' || u.role === 'assistant' || u.role === 'staff')) {
+          return { ...u, role: 'employee', staffTitle: u.staffTitle || 'admin_assistant' };
         }
+        return u;
       });
-      db.users = Array.from(userMap.values());
     }
 
     // 3. Attendances: Union merge by ID or composite key
@@ -368,12 +398,25 @@ app.post('/api/users', (req, res) => {
     return res.status(400).json({ success: false, message: 'بيانات المستخدم غير مكتملة' });
   }
 
+  const cleanNid = String(newUser.nationalId).trim();
   const existingIdx = db.users.findIndex(
-    (u) => (u.nationalId === newUser.nationalId && u.schoolCode === newUser.schoolCode) || u.id === newUser.id
+    (u) => (cleanNid && u.nationalId && String(u.nationalId).trim() === cleanNid) || u.id === newUser.id
   );
 
   if (existingIdx >= 0) {
-    db.users[existingIdx] = { ...db.users[existingIdx], ...newUser };
+    const prev = db.users[existingIdx];
+    const unifiedSchools = Array.from(new Set([
+      ...(Array.isArray(prev.managedSchoolCodes) ? prev.managedSchoolCodes : []),
+      prev.schoolCode,
+      ...(Array.isArray(newUser.managedSchoolCodes) ? newUser.managedSchoolCodes : []),
+      newUser.schoolCode,
+    ])).filter(Boolean);
+
+    db.users[existingIdx] = {
+      ...prev,
+      ...newUser,
+      managedSchoolCodes: unifiedSchools,
+    };
   } else {
     db.users.push(newUser);
   }
@@ -386,11 +429,24 @@ app.post('/api/users/bulk', (req, res) => {
   const newUsers = req.body;
   if (Array.isArray(newUsers)) {
     for (const u of newUsers) {
+      if (!u) continue;
+      const cleanNid = u.nationalId ? String(u.nationalId).trim() : '';
       const idx = db.users.findIndex(
-        (existing) => (existing.nationalId === u.nationalId && existing.schoolCode === u.schoolCode) || existing.id === u.id
+        (existing) => (cleanNid && existing.nationalId && String(existing.nationalId).trim() === cleanNid) || existing.id === u.id
       );
       if (idx >= 0) {
-        db.users[idx] = { ...db.users[idx], ...u };
+        const prev = db.users[idx];
+        const unifiedSchools = Array.from(new Set([
+          ...(Array.isArray(prev.managedSchoolCodes) ? prev.managedSchoolCodes : []),
+          prev.schoolCode,
+          ...(Array.isArray(u.managedSchoolCodes) ? u.managedSchoolCodes : []),
+          u.schoolCode,
+        ])).filter(Boolean);
+        db.users[idx] = {
+          ...prev,
+          ...u,
+          managedSchoolCodes: unifiedSchools,
+        };
       } else {
         db.users.push(u);
       }

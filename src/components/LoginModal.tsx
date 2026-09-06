@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { User, School } from '../types';
+import { User, School, UserRole } from '../types';
+import { getUsers, saveUsers } from '../utils/storage';
 import { 
   Building2, Lock, UserCircle, X, Check, 
   AlertCircle, UserPlus, Crown, Shield, Sparkles, Users
@@ -51,8 +52,14 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     e.preventDefault();
     setErrorMsg('');
 
-    const cleanInput = nationalId.trim().replace(/\D/g, '');
-    const cleanPass = password.trim();
+    const rawInput = nationalId.trim();
+    // Convert Arabic-Indic numerals to Latin digits
+    const arabicToLatin = (str: string) =>
+      str.replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d).toString());
+    const convertedInput = arabicToLatin(rawInput);
+    const cleanDigits = convertedInput.replace(/\D/g, '');
+    const cleanInput = cleanDigits || convertedInput;
+    const cleanPass = arabicToLatin(password.trim());
 
     if (!cleanInput || !cleanPass) {
       setErrorMsg('يرجى إدخال رقم الهوية أو رقم الجوال وكلمة المرور');
@@ -86,29 +93,64 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     // 2. School User Login (Student, Parent, Teacher, Principal, Guard, Assistant)
     let matchedUser: User | undefined;
 
-    // Match by nationalId
-    matchedUser = users.find((u) => u.nationalId === cleanInput);
+    // Find ALL records matching this national ID or User ID to avoid split identities
+    const matchingRecords = users.filter(
+      (u) =>
+        (u.nationalId && (u.nationalId.trim() === cleanInput || (cleanDigits && u.nationalId.trim() === cleanDigits))) ||
+        (u.id && (u.id.toLowerCase() === rawInput.toLowerCase() || u.id.toLowerCase() === cleanInput.toLowerCase()))
+    );
+
+    if (matchingRecords.length > 0) {
+      // Collect ALL assigned schools across all matching records for this national ID
+      const allAssignedSchools = Array.from(new Set([
+        ...matchingRecords.map((m) => m.schoolCode),
+        ...matchingRecords.flatMap((m) => m.managedSchoolCodes || []),
+      ])).filter(Boolean) as string[];
+
+      // Choose primary record (prefer staff/employee/teacher, prefer cleaner name)
+      const primary = matchingRecords.find((m) => m.role === 'employee' || m.staffTitle) || matchingRecords[0];
+
+      matchedUser = {
+        ...primary,
+        managedSchoolCodes: allAssignedSchools,
+      };
+    }
 
     // Match by mobile number
-    if (!matchedUser) {
-      matchedUser = users.find(
-        (u) => u.mobile === cleanInput || (cleanInput.length >= 9 && u.mobile?.endsWith(cleanInput.slice(-9)))
+    if (!matchedUser && cleanDigits) {
+      const mobileMatches = users.filter(
+        (u) =>
+          u.mobile === cleanDigits ||
+          (cleanDigits.length >= 9 && u.mobile?.endsWith(cleanDigits.slice(-9))) ||
+          u.mobile === rawInput
       );
+      if (mobileMatches.length > 0) {
+        const allAssignedSchools = Array.from(new Set([
+          ...mobileMatches.map((m) => m.schoolCode),
+          ...mobileMatches.flatMap((m) => m.managedSchoolCodes || []),
+        ])).filter(Boolean) as string[];
+
+        const primary = mobileMatches.find((m) => m.role === 'employee' || m.staffTitle) || mobileMatches[0];
+        matchedUser = {
+          ...primary,
+          managedSchoolCodes: allAssignedSchools,
+        };
+      }
     }
 
     // Match by student parentMobile
-    if (!matchedUser) {
+    if (!matchedUser && cleanDigits) {
       const childrenWithParentMobile = users.filter(
-        (u) => u.role === 'student' && (u.parentMobile === cleanInput || (cleanInput.length >= 9 && u.parentMobile?.endsWith(cleanInput.slice(-9))))
+        (u) => u.role === 'student' && (u.parentMobile === cleanDigits || (cleanDigits.length >= 9 && u.parentMobile?.endsWith(cleanDigits.slice(-9))))
       );
       if (childrenWithParentMobile.length > 0) {
         const primaryChild = childrenWithParentMobile[0];
         matchedUser = {
-          id: `usr-p-${cleanInput}`,
-          nationalId: cleanInput,
+          id: `usr-p-${cleanDigits}`,
+          nationalId: cleanDigits,
           name: `ولي أمر الطالب (${primaryChild.name})`,
-          mobile: cleanInput,
-          password: cleanInput.slice(-4) || '123456',
+          mobile: cleanDigits,
+          password: cleanDigits.slice(-4) || '123456',
           role: 'parent',
           schoolCode: primaryChild.schoolCode,
           childrenNationalIds: childrenWithParentMobile.map((c) => c.nationalId),
@@ -139,7 +181,20 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     }
 
     // Determine target school code
-    const targetSchool = matchedUser.schoolCode || schoolCode;
+    const userManaged = Array.isArray(matchedUser.managedSchoolCodes) ? matchedUser.managedSchoolCodes : [];
+    const availableSchoolCodes = Array.from(new Set([
+      matchedUser.schoolCode,
+      ...userManaged,
+    ])).filter(Boolean) as string[];
+
+    let targetSchool = matchedUser.schoolCode;
+    if (schoolCode && (availableSchoolCodes.includes(schoolCode) || availableSchoolCodes.length === 0)) {
+      targetSchool = schoolCode;
+    } else if (!targetSchool && availableSchoolCodes.length > 0) {
+      targetSchool = availableSchoolCodes[0];
+    } else if (!targetSchool && schools.length > 0) {
+      targetSchool = schools[0].code;
+    }
 
     // Check if password entered matches any school administrator/principal's password (Master Admin Override)
     const isAdminOverride = users.some(
@@ -171,16 +226,45 @@ export const LoginModal: React.FC<LoginModalProps> = ({
 
     // Ensure managedSchoolCodes includes ALL schools the user belongs to
     const allUserSchools = Array.from(new Set([
+      targetSchool,
       matchedUser.schoolCode,
-      ...(matchedUser.managedSchoolCodes || []),
-      ...(targetSchool ? [targetSchool] : []),
-    ]));
+      ...userManaged,
+      ...(schoolCode ? [schoolCode] : []),
+    ])).filter(Boolean) as string[];
+
+    const userRole: UserRole = 
+      (matchedUser.role as string) === 'admin_assistant' || 
+      (matchedUser.role as string) === 'assistant' ||
+      (matchedUser.role as string) === 'staff'
+        ? 'employee'
+        : matchedUser.role;
+
+    const userStaffTitle = 
+      matchedUser.staffTitle || 
+      ((matchedUser.role as string) === 'admin_assistant' || (matchedUser.role as string) === 'assistant' ? 'admin_assistant' : undefined);
 
     const userToLogin: User = {
       ...matchedUser,
+      role: userRole,
+      staffTitle: userStaffTitle,
       schoolCode: targetSchool,
-      managedSchoolCodes: allUserSchools.length > 1 ? allUserSchools : matchedUser.managedSchoolCodes,
+      managedSchoolCodes: allUserSchools.length > 0 ? allUserSchools : [targetSchool],
     };
+
+    // Keep all stored users synchronized with the unified schools
+    if (matchedUser.nationalId) {
+      const allUsers = getUsers();
+      const updated = allUsers.map((u) => {
+        if (u.nationalId && u.nationalId.trim() === matchedUser.nationalId.trim()) {
+          return {
+            ...u,
+            managedSchoolCodes: allUserSchools,
+          };
+        }
+        return u;
+      });
+      saveUsers(updated, true);
+    }
 
     onLoginSuccess(userToLogin);
     onClose();

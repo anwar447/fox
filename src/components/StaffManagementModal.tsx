@@ -32,11 +32,13 @@ export const StaffManagementModal: React.FC<StaffManagementModalProps> = ({
   const [msg, setMsg] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // Multi-school assignment should ONLY be visible to superadmin
-  // For standard school principals or employees, they should strictly only manage staff for their own school!
+  // Multi-school assignment is visible to superadmin and to any principal managing multiple schools
   const isSuperAdmin = currentUser?.role === 'superadmin';
   const allSystemSchools = getSchools();
-  const otherSchools = isSuperAdmin ? allSystemSchools.filter((s) => s.code !== school.code) : [];
+  const userManaged = currentUser?.managedSchoolCodes || (currentUser?.schoolCode ? [currentUser.schoolCode] : []);
+  const otherSchools = isSuperAdmin
+    ? allSystemSchools.filter((s) => s.code !== school.code)
+    : allSystemSchools.filter((s) => s.code !== school.code && (userManaged.includes(s.code) || userManaged.includes(s.id)));
 
   // Editing state
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
@@ -137,7 +139,9 @@ export const StaffManagementModal: React.FC<StaffManagementModalProps> = ({
       return;
     }
 
-    const cleanNid = nationalId.trim();
+    const arabicToLatin = (str: string) =>
+      str.replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d).toString());
+    const cleanNid = arabicToLatin(nationalId.trim());
     const existingUsers = getUsers();
 
     // Check duplicate ID in current school
@@ -150,27 +154,30 @@ export const StaffManagementModal: React.FC<StaffManagementModalProps> = ({
     }
 
     const userRole: UserRole = staffTitle === 'teacher' ? 'teacher' : 'employee';
-    const fullAssignedSchools = Array.from(new Set([school.code, ...managedSchoolCodes]));
+    const fullAssignedSchools = Array.from(new Set([school.code, ...managedSchoolCodes])).filter(Boolean);
 
-    if (editingUserId) {
-      // Update existing
+    const existingWithSameNid = existingUsers.find((u) => u.nationalId && u.nationalId.trim() === cleanNid);
+
+    if (editingUserId || existingWithSameNid) {
+      // Update existing record(s) matching ID or nationalId
       const updated = existingUsers.map((u) => {
-        if (u.id === editingUserId || u.nationalId === cleanNid) {
+        if (u.id === editingUserId || (u.nationalId && u.nationalId.trim() === cleanNid)) {
           return {
             ...u,
             name: name.trim(),
             nationalId: cleanNid,
-            mobile: mobile.trim() || undefined,
-            password: password || '123',
+            mobile: mobile.trim() || u.mobile,
+            password: password || u.password || '123',
             role: userRole,
             staffTitle: staffTitle,
+            schoolCode: u.schoolCode || school.code,
             managedSchoolCodes: fullAssignedSchools,
-            assignedClasses: userRole === 'teacher' ? selectedClasses : undefined,
+            assignedClasses: userRole === 'teacher' ? selectedClasses : u.assignedClasses,
           };
         }
         return u;
       });
-      saveUsers(updated);
+      saveUsers(updated, true);
       setMsg('✅ تم تحديث بيانات المعلم/الموظف والمدارس المسندة بنجاح!');
     } else {
       // Create new
@@ -186,7 +193,7 @@ export const StaffManagementModal: React.FC<StaffManagementModalProps> = ({
         managedSchoolCodes: fullAssignedSchools,
         assignedClasses: userRole === 'teacher' ? selectedClasses : undefined,
       };
-      saveUsers([...existingUsers, newStaff]);
+      saveUsers([...existingUsers, newStaff], true);
       setMsg('✅ تم إضافة الكادر والمدارس المسندة بنجاح!');
     }
 
@@ -377,14 +384,22 @@ export const StaffManagementModal: React.FC<StaffManagementModalProps> = ({
                         <tr key={staff.id} className="hover:bg-slate-50/80 transition-colors">
                           <td className="p-3">
                             <strong className="text-slate-900 block font-bold">{staff.name}</strong>
-                            {staff.managedSchoolCodes && staff.managedSchoolCodes.length > 0 && (
-                              <div className="mt-1 flex items-center gap-1">
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 border border-amber-200 text-amber-900 text-[10px] font-bold">
-                                  <Building2 className="w-3 h-3 text-amber-600" />
-                                  <span>مسند لـ {staff.managedSchoolCodes.length + 1} مدارس</span>
-                                </span>
-                              </div>
-                            )}
+                            {(() => {
+                              const totalAssigned = Array.from(
+                                new Set([staff.schoolCode, ...(staff.managedSchoolCodes || [])])
+                              ).filter(Boolean).length;
+                              if (totalAssigned > 1) {
+                                return (
+                                  <div className="mt-1 flex items-center gap-1">
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 border border-amber-200 text-amber-900 text-[10px] font-bold">
+                                      <Building2 className="w-3 h-3 text-amber-600" />
+                                      <span>مسند لـ {totalAssigned} مدارس ({totalAssigned === 2 ? 'مدرستين' : `${totalAssigned}`})</span>
+                                    </span>
+                                  </div>
+                                );
+                              }
+                              return null;
+                            })()}
                           </td>
                           <td className="p-3 font-mono text-slate-600">{staff.nationalId}</td>
                           <td className="p-3">

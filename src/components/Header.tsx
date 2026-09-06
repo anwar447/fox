@@ -5,6 +5,7 @@ import {
   Sparkles, Heart, Bell, Smartphone, QrCode, ChevronDown
 } from 'lucide-react';
 import { LiveClockHeader } from './LiveClockHeader';
+import { getUserAssignedSchools } from '../utils/storage';
 
 interface HeaderProps {
   currentUser: User | null;
@@ -27,12 +28,27 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenRegisterSchool,
   onOpenDonationModal,
 }) => {
-  const getRoleBadge = (role: string) => {
+  const getRoleBadge = (role: string, staffTitle?: string) => {
     switch (role) {
       case 'superadmin':
         return { label: 'سوبر ادمن 👑', color: 'bg-amber-50 text-amber-800 border-amber-200' };
       case 'employee':
-        return { label: 'مدير المدرسة / وكيل', color: 'bg-emerald-50 text-emerald-800 border-emerald-200' };
+        if (staffTitle === 'admin_assistant') {
+          return { label: 'مساعد إداري 📋', color: 'bg-blue-50 text-blue-800 border-blue-200' };
+        }
+        if (staffTitle === 'vice_principal') {
+          return { label: 'وكيل المدرسة 👔', color: 'bg-indigo-50 text-indigo-800 border-indigo-200' };
+        }
+        if (staffTitle === 'student_advisor') {
+          return { label: 'موجه طلابي 🎓', color: 'bg-purple-50 text-purple-800 border-purple-200' };
+        }
+        if (staffTitle === 'gatekeeper') {
+          return { label: 'حارس أمن 🛡️', color: 'bg-amber-50 text-amber-800 border-amber-200' };
+        }
+        if (staffTitle === 'lab_technician') {
+          return { label: 'محضر مختبر 🔬', color: 'bg-cyan-50 text-cyan-800 border-cyan-200' };
+        }
+        return { label: 'مدير المدرسة / إدارة', color: 'bg-emerald-50 text-emerald-800 border-emerald-200' };
       case 'teacher':
         return { label: 'معلم مادة / رائد فصل', color: 'bg-indigo-50 text-indigo-800 border-indigo-200' };
       case 'parent':
@@ -40,19 +56,17 @@ export const Header: React.FC<HeaderProps> = ({
       case 'student':
         return { label: 'طالب', color: 'bg-blue-50 text-blue-800 border-blue-200' };
       default:
+        if (staffTitle === 'admin_assistant') {
+          return { label: 'مساعد إداري 📋', color: 'bg-blue-50 text-blue-800 border-blue-200' };
+        }
         return { label: 'زائر', color: 'bg-slate-100 text-slate-700 border-slate-200' };
     }
   };
 
-  const badge = currentUser ? getRoleBadge(currentUser.role) : null;
+  const badge = currentUser ? getRoleBadge(currentUser.role, currentUser.staffTitle) : null;
 
   // Managed schools for any user (Principal, Vice Principal, Teacher, Administrative Assistant, etc.)
-  const userAssignedSchools = currentUser && schools.length > 0
-    ? schools.filter((s) => 
-        currentUser.managedSchoolCodes?.includes(s.code) || 
-        s.code === currentUser.schoolCode
-      )
-    : [];
+  const userAssignedSchools = getUserAssignedSchools(currentUser, schools);
 
   return (
     <header className="bg-white/95 backdrop-blur-md border-b border-slate-200/80 sticky top-0 z-30 px-4 py-2.5 shadow-xs" dir="rtl">

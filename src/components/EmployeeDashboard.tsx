@@ -4,7 +4,7 @@ import {
   getAttendances, saveAttendances, getUsers, 
   getCorrectionRequests, saveCorrectionRequests, updateCorrectionRequest,
   getPermissions, addSystemNotification, cleanResetToEmptyProductionData,
-  getSystemNotifications, getPaymentRequests
+  getSystemNotifications, getPaymentRequests, getUserAssignedSchools
 } from '../utils/storage';
 import { getTodayDateString } from '../utils/academic';
 import { soundManager } from '../utils/audio';
@@ -105,11 +105,13 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
   const pendingPayment = schoolPayments.find((p) => p.status === 'pending');
   const approvedPayment = schoolPayments.find((p) => p.status === 'approved');
 
-  // Admin and staff assigned schools list
+  // Admin and staff assigned schools list (robust matching across codes, ids, and current active school)
+  const userAssignedList = getUserAssignedSchools(currentUser, schools);
   const adminManagedSchools = schools.filter(
     (s) =>
-      currentUser.managedSchoolCodes?.includes(s.code) ||
-      s.code === currentUser.schoolCode
+      s.code === currentSchool.code ||
+      s.id === currentSchool.id ||
+      userAssignedList.some((us) => us.code === s.code || us.id === s.id)
   );
 
   // Sync attendances and corrections whenever currentSchool changes

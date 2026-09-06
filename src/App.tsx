@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { User, School, Attendance } from './types';
+import React, { useState, useEffect, useMemo } from 'react';
+import { User, School, Attendance, isStaffOrEmployeeRole } from './types';
 import { 
   getCurrentUser, setCurrentUser, getSchools, saveSchools,
   getUsers, saveUsers, getAttendances, syncDataFromServer 
@@ -55,13 +55,66 @@ export function App() {
     return params.get('school') || params.get('code') || params.get('schoolCode') || params.get('joinSchool') || '';
   });
 
-  // Current active school (only resolved when a school user is logged in or superadmin is managing a school)
-  const currentSchool: School | null = 
-    currentUser?.role === 'superadmin' && impersonatedSchool
-      ? impersonatedSchool
-      : currentUser && currentUser.role !== 'superadmin' && currentUser.schoolCode
-      ? schools.find((s) => s.code?.toUpperCase() === currentUser.schoolCode?.toUpperCase()) || null
-      : null;
+  // Current active school (resiliently resolved across code, id, managed schools, and fallback)
+  const currentSchool: School | null = useMemo(() => {
+    if (!currentUser) return null;
+    if (currentUser.role === 'superadmin') {
+      return impersonatedSchool;
+    }
+
+    if (!schools || schools.length === 0) return null;
+
+    // 1. Direct match by schoolCode (checking code and id, trimmed and case-insensitive)
+    if (currentUser.schoolCode) {
+      const codeClean = currentUser.schoolCode.trim().toUpperCase();
+      const direct = schools.find(
+        (s) =>
+          s.code?.trim().toUpperCase() === codeClean ||
+          s.id?.trim().toUpperCase() === codeClean
+      );
+      if (direct) return direct;
+    }
+
+    // 2. Match from user's managedSchoolCodes (multi-school assignment)
+    if (Array.isArray(currentUser.managedSchoolCodes) && currentUser.managedSchoolCodes.length > 0) {
+      for (const mCode of currentUser.managedSchoolCodes) {
+        if (!mCode) continue;
+        const cleanM = mCode.trim().toUpperCase();
+        const managed = schools.find(
+          (s) =>
+            s.code?.trim().toUpperCase() === cleanM ||
+            s.id?.trim().toUpperCase() === cleanM
+        );
+        if (managed) return managed;
+      }
+    }
+
+    // 3. Fallback safely to first school for any logged-in school user
+    if (schools.length > 0) {
+      return schools[0];
+    }
+
+    return null;
+  }, [currentUser, impersonatedSchool, schools]);
+
+  // Synchronize schoolCode if currentUser was missing it or if it resolved to an existing school
+  useEffect(() => {
+    if (currentUser && currentSchool && currentUser.role !== 'superadmin') {
+      if (currentUser.schoolCode !== currentSchool.code) {
+        const allAssigned = Array.from(new Set([
+          currentSchool.code,
+          ...(currentUser.managedSchoolCodes || []),
+        ]));
+        const updated: User = {
+          ...currentUser,
+          schoolCode: currentSchool.code,
+          managedSchoolCodes: allAssigned,
+        };
+        setCurrentUser(updated);
+        setUserState(updated);
+      }
+    }
+  }, [currentUser, currentSchool]);
 
   // Modals state
   const [isLoginOpen, setIsLoginOpen] = useState(false);
@@ -108,6 +161,41 @@ export function App() {
           }
           if (Array.isArray(data.users) && data.users.length > 0) {
             setUsers(data.users);
+
+            // Re-sync active user session if assigned schools or roles were updated on the server
+            const stored = getCurrentUser();
+            if (stored && stored.role !== 'superadmin') {
+              const cleanNid = stored.nationalId ? stored.nationalId.trim() : '';
+              const matchingRecords = data.users.filter(
+                (u) =>
+                  (cleanNid && u.nationalId && u.nationalId.trim() === cleanNid) ||
+                  (stored.id && u.id === stored.id)
+              );
+              if (matchingRecords.length > 0) {
+                const allManagedCodes = Array.from(new Set([
+                  ...(stored.managedSchoolCodes || []),
+                  stored.schoolCode,
+                  ...matchingRecords.flatMap((m) => [m.schoolCode, ...(m.managedSchoolCodes || [])]),
+                ])).filter(Boolean) as string[];
+
+                const primary = matchingRecords.find((m) => m.role === 'employee' || m.staffTitle) || matchingRecords[0];
+
+                if (
+                  allManagedCodes.length > (stored.managedSchoolCodes?.length || 0) ||
+                  stored.role !== primary.role ||
+                  stored.staffTitle !== primary.staffTitle
+                ) {
+                  const refreshed: User = {
+                    ...stored,
+                    ...primary,
+                    schoolCode: stored.schoolCode || primary.schoolCode,
+                    managedSchoolCodes: allManagedCodes,
+                  };
+                  setCurrentUser(refreshed);
+                  setUserState(refreshed);
+                }
+              }
+            }
           }
           if (Array.isArray(data.attendances)) {
             setAttendances(data.attendances);
@@ -360,10 +448,23 @@ export function App() {
               onOpenApiIntegration={(sch) => setSelectedSchoolForApi(sch)}
             />
           )
-        ) : currentUser.role === 'employee' && currentSchool ? (
+        ) : isStaffOrEmployeeRole(currentUser.role, currentUser.staffTitle) && currentSchool ? (
           <EmployeeDashboard
             key={currentSchool.code}
-            currentUser={currentUser}
+            currentUser={{
+              ...currentUser,
+              role: 'employee',
+              staffTitle: currentUser.staffTitle || (
+                ((currentUser.role as string) === 'admin_assistant' || (currentUser.role as string) === 'assistant')
+                  ? 'admin_assistant'
+                  : 'principal'
+              ),
+              schoolCode: currentSchool.code,
+              managedSchoolCodes: Array.from(new Set([
+                currentSchool.code,
+                ...(currentUser.managedSchoolCodes || []),
+              ])),
+            }}
             currentSchool={currentSchool}
             schools={schools}
             onSwitchSchool={handleSwitchSchool}
@@ -413,6 +514,32 @@ export function App() {
             onOpenQrCard={() => setSelectedStudentForQr(currentUser)}
             onOpenCorrection={(att) => setSelectedAttendanceForCorrection(att)}
           />
+        ) : currentUser && (currentUser.role as string) !== 'guest' && !currentSchool ? (
+          <div className="max-w-2xl mx-auto my-12 p-8 bg-white rounded-3xl border border-slate-200 shadow-xl text-center space-y-4" dir="rtl">
+            <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto border border-emerald-200 shadow-inner">
+              <span className="text-2xl">🏢</span>
+            </div>
+            <h3 className="text-lg font-black text-slate-900">مرحباً بك {currentUser.name}</h3>
+            <p className="text-sm text-slate-600 font-medium leading-relaxed">
+              تم تسجيل دخولك بنجاح ({currentUser.staffTitle === 'admin_assistant' ? 'مساعد إداري' : 'كادر المدرسة'}). جاري ربط واستعراض بيانات مدرستك النشطة...
+            </p>
+            {schools.length > 0 && (
+              <div className="pt-2">
+                <label className="block text-xs font-bold text-slate-700 mb-2">اختر المدرسة لبدء العمل فوراً:</label>
+                <div className="flex flex-wrap gap-2 justify-center">
+                  {schools.map((s) => (
+                    <button
+                      key={s.id || s.code}
+                      onClick={() => handleSwitchSchool(s)}
+                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-sm cursor-pointer transition-all"
+                    >
+                      🏢 {s.name} ({s.code})
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         ) : (
           <LandingPage
             schools={schools}

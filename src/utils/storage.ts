@@ -1,5 +1,5 @@
 import { 
-  School, User, Attendance, CorrectionRequest, 
+  School, User, UserRole, Attendance, CorrectionRequest, 
   SubscriptionPaymentRequest, SystemNotification, 
   StudentPermission, StudentBehaviorLog, AdministrativeAbsenceAction 
 } from '../types';
@@ -171,23 +171,117 @@ export function mergeSchools(existing: School[], incoming: School[]): School[] {
 
 export function mergeUsers(existing: User[], incoming: User[]): User[] {
   const map = new Map<string, User>();
-  existing.forEach((u) => {
-    if (u) {
-      const key = u.id || `${u.nationalId}_${u.schoolCode || ''}`;
-      map.set(key, u);
+
+  const processUser = (u: User) => {
+    if (!u) return;
+    const cleanNid = u.nationalId ? u.nationalId.trim() : '';
+    // If user has a valid nationalId, key by nid so multiple records for the same person unify
+    const key = cleanNid ? `nid_${cleanNid}` : (u.id || `${cleanNid}_${u.schoolCode || ''}`);
+
+    if (map.has(key)) {
+      const prev = map.get(key)!;
+      // Merge managedSchoolCodes as a unified Set
+      const unifiedSchools = Array.from(new Set([
+        ...(prev.managedSchoolCodes || []),
+        prev.schoolCode,
+        ...(u.managedSchoolCodes || []),
+        u.schoolCode,
+      ])).filter(Boolean);
+
+      const name = u.name || prev.name;
+      const mobile = u.mobile || prev.mobile;
+      const password = u.password || prev.password;
+      const role = (u.role === 'employee' || prev.role === 'employee') ? 'employee' : (u.role || prev.role);
+      const staffTitle = u.staffTitle || prev.staffTitle;
+      const assignedClasses = (u.assignedClasses && u.assignedClasses.length > 0)
+        ? u.assignedClasses
+        : prev.assignedClasses;
+
+      map.set(key, {
+        ...prev,
+        ...u,
+        id: prev.id || u.id,
+        nationalId: cleanNid || prev.nationalId,
+        name,
+        mobile,
+        password,
+        role,
+        staffTitle,
+        schoolCode: prev.schoolCode || u.schoolCode,
+        managedSchoolCodes: unifiedSchools,
+        assignedClasses,
+      });
+    } else {
+      const initialSchools = Array.from(new Set([
+        ...(u.managedSchoolCodes || []),
+        u.schoolCode,
+      ])).filter(Boolean);
+      map.set(key, {
+        ...u,
+        managedSchoolCodes: initialSchools.length > 0 ? initialSchools : u.managedSchoolCodes,
+      });
     }
-  });
-  incoming.forEach((u) => {
-    if (u) {
-      const key = u.id || `${u.nationalId}_${u.schoolCode || ''}`;
-      if (map.has(key)) {
-        map.set(key, { ...map.get(key)!, ...u });
-      } else {
-        map.set(key, u);
-      }
-    }
-  });
+  };
+
+  existing.forEach(processUser);
+  incoming.forEach(processUser);
   return Array.from(map.values());
+}
+
+/**
+ * Universally returns all schools a user has access to, cross-referencing:
+ * 1. user.schoolCode
+ * 2. user.managedSchoolCodes
+ * 3. All matching records for this person across the system by nationalId or mobile
+ */
+export function getUserAssignedSchools(
+  user: User | null,
+  schools: School[],
+  allUsers?: User[]
+): School[] {
+  if (!user || !schools || schools.length === 0) return [];
+  if (user.role === 'superadmin') return schools;
+
+  const schoolSet = new Set<string>();
+
+  // 1. Direct schoolCode on user
+  if (user.schoolCode) {
+    schoolSet.add(user.schoolCode.trim().toUpperCase());
+  }
+
+  // 2. managedSchoolCodes on user
+  if (Array.isArray(user.managedSchoolCodes)) {
+    user.managedSchoolCodes.forEach((c) => {
+      if (c) schoolSet.add(c.trim().toUpperCase());
+    });
+  }
+
+  // 3. Cross-reference with allUsers by nationalId or mobile
+  const usersList = allUsers || getUsers();
+  const cleanNid = user.nationalId ? user.nationalId.trim() : '';
+  const cleanMobile = user.mobile ? user.mobile.trim() : '';
+
+  if (cleanNid || cleanMobile) {
+    usersList.forEach((u) => {
+      const match =
+        (cleanNid && u.nationalId && u.nationalId.trim() === cleanNid) ||
+        (cleanMobile && u.mobile && u.mobile.trim() === cleanMobile);
+      if (match) {
+        if (u.schoolCode) schoolSet.add(u.schoolCode.trim().toUpperCase());
+        if (Array.isArray(u.managedSchoolCodes)) {
+          u.managedSchoolCodes.forEach((c) => {
+            if (c) schoolSet.add(c.trim().toUpperCase());
+          });
+        }
+      }
+    });
+  }
+
+  return schools.filter((s) => {
+    const sCode = s.code?.trim().toUpperCase();
+    const sId = s.id?.trim().toUpperCase();
+    return schoolSet.has(sCode) || schoolSet.has(sId);
+  });
 }
 
 export function mergeAttendances(existing: Attendance[], incoming: Attendance[]): Attendance[] {
@@ -477,6 +571,46 @@ export async function generateSchoolApiToken(schoolCode: string): Promise<string
   return null;
 }
 
+// User Normalization & Self-Healing Helper
+export function normalizeUser(u: User, availableSchools?: School[]): User {
+  if (!u) return u;
+  let role = u.role as string;
+  let staffTitle = u.staffTitle;
+  
+  // Normalize staff/assistant roles
+  if (role === 'admin_assistant' || role === 'assistant' || role === 'staff') {
+    role = 'employee';
+    if (!staffTitle) staffTitle = 'admin_assistant';
+  } else if (staffTitle === 'admin_assistant' && role !== 'employee' && role !== 'superadmin') {
+    role = 'employee';
+  }
+
+  // Ensure schoolCode is set if user has managedSchoolCodes or schools exist
+  let schoolCode = u.schoolCode ? u.schoolCode.trim() : '';
+  const managedCodes = Array.isArray(u.managedSchoolCodes) 
+    ? Array.from(new Set(u.managedSchoolCodes.map((c) => (c || '').trim()).filter(Boolean)))
+    : [];
+  
+  if (!schoolCode && managedCodes.length > 0) {
+    schoolCode = managedCodes[0];
+  } else if (!schoolCode && availableSchools && availableSchools.length > 0 && role !== 'superadmin') {
+    schoolCode = availableSchools[0].code;
+  }
+
+  // Ensure schoolCode is included in managedSchoolCodes if user has managedSchoolCodes
+  if (schoolCode && managedCodes.length > 0 && !managedCodes.includes(schoolCode)) {
+    managedCodes.push(schoolCode);
+  }
+
+  return {
+    ...u,
+    role: role as UserRole,
+    staffTitle,
+    schoolCode: schoolCode || u.schoolCode,
+    managedSchoolCodes: managedCodes.length > 0 ? managedCodes : u.managedSchoolCodes,
+  };
+}
+
 // 2. Users
 export function getUsers(): User[] {
   try {
@@ -493,7 +627,9 @@ export function getUsers(): User[] {
       localStorage.setItem(USERS_KEY, JSON.stringify(current));
     }
 
-    return current.length > 0 ? current : INITIAL_USERS;
+    const rawList = current.length > 0 ? current : INITIAL_USERS;
+    const schools = getSchools();
+    return rawList.map((u) => normalizeUser(u, schools));
   } catch {
     return INITIAL_USERS;
   }
@@ -508,9 +644,23 @@ export function saveUsers(users: User[], syncServer: boolean = true): void {
 
 export function addUser(user: User): void {
   const list = getUsers();
-  const idx = list.findIndex((u) => u.nationalId === user.nationalId && u.schoolCode === user.schoolCode);
+  const cleanNid = user.nationalId ? user.nationalId.trim() : '';
+  const idx = list.findIndex(
+    (u) => (cleanNid && u.nationalId && u.nationalId.trim() === cleanNid) || u.id === user.id
+  );
   if (idx >= 0) {
-    list[idx] = { ...list[idx], ...user };
+    const prev = list[idx];
+    const unifiedSchools = Array.from(new Set([
+      ...(prev.managedSchoolCodes || []),
+      prev.schoolCode,
+      ...(user.managedSchoolCodes || []),
+      user.schoolCode,
+    ])).filter(Boolean);
+    list[idx] = {
+      ...prev,
+      ...user,
+      managedSchoolCodes: unifiedSchools,
+    };
   } else {
     list.push(user);
   }
@@ -520,13 +670,32 @@ export function addUser(user: User): void {
 
 export function updateUser(user: User): void {
   const list = getUsers();
-  const idx = list.findIndex((u) => u.id === user.id);
-  if (idx >= 0) {
-    list[idx] = { ...list[idx], ...user };
-  } else {
-    list.push(user);
+  const cleanNid = user.nationalId ? user.nationalId.trim() : '';
+  let updatedAny = false;
+  const updatedList = list.map((u) => {
+    const match = (cleanNid && u.nationalId && u.nationalId.trim() === cleanNid) || u.id === user.id;
+    if (match) {
+      updatedAny = true;
+      const unifiedSchools = Array.from(new Set([
+        ...(u.managedSchoolCodes || []),
+        u.schoolCode,
+        ...(user.managedSchoolCodes || []),
+        user.schoolCode,
+      ])).filter(Boolean);
+      return {
+        ...u,
+        ...user,
+        managedSchoolCodes: unifiedSchools,
+      };
+    }
+    return u;
+  });
+
+  if (!updatedAny) {
+    updatedList.push(user);
   }
-  saveUsers(list, true);
+
+  saveUsers(updatedList, true);
   apiPost('/api/users', user);
 }
 
@@ -905,7 +1074,40 @@ export function getAbsenceActionsForSchool(schoolCode: string): AdministrativeAb
 export function getCurrentUserSession(): User | null {
   try {
     const raw = localStorage.getItem(CURRENT_USER_KEY);
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed) return null;
+    const schools = getSchools();
+    const allUsers = getUsers();
+
+    let activeUser = parsed;
+    const cleanNid = parsed.nationalId ? parsed.nationalId.trim() : '';
+    if (cleanNid || parsed.id) {
+      const matching = allUsers.filter(
+        (u) =>
+          (cleanNid && u.nationalId && u.nationalId.trim() === cleanNid) ||
+          (parsed.id && u.id === parsed.id)
+      );
+      if (matching.length > 0) {
+        const allManaged = Array.from(new Set([
+          ...(parsed.managedSchoolCodes || []),
+          parsed.schoolCode,
+          ...matching.flatMap((m) => [m.schoolCode, ...(m.managedSchoolCodes || [])]),
+        ])).filter(Boolean) as string[];
+
+        const staffTitle = parsed.staffTitle || matching.find((m) => m.staffTitle)?.staffTitle;
+        const name = parsed.name || matching.find((m) => m.name)?.name || parsed.name;
+
+        activeUser = {
+          ...parsed,
+          name,
+          staffTitle,
+          managedSchoolCodes: allManaged,
+        };
+      }
+    }
+
+    return normalizeUser(activeUser, schools);
   } catch {
     return null;
   }

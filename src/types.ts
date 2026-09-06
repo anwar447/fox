@@ -10,6 +10,22 @@ export type StaffTitle =
   | 'lab_technician' 
   | 'other';
 
+export function isStaffOrEmployeeRole(role?: string, staffTitle?: string): boolean {
+  if (!role) return false;
+  const r = role.toLowerCase();
+  const t = (staffTitle || '').toLowerCase();
+  return (
+    r === 'employee' ||
+    r === 'admin_assistant' ||
+    r === 'assistant' ||
+    r === 'staff' ||
+    r === 'principal' ||
+    r === 'vice_principal' ||
+    r === 'gatekeeper' ||
+    (t !== '' && t !== 'teacher')
+  );
+}
+
 export interface SchoolClassSection {
   id: string;
   className: string;
