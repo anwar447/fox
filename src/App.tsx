@@ -39,6 +39,7 @@ import { AdminArchiveReportModal } from './components/AdminArchiveReportModal';
 import { InteractiveMapPicker } from './components/InteractiveMapPicker';
 import { SchoolCreationWizard } from './components/SchoolCreationWizard';
 import { CounselorApiIntegrationModal } from './components/CounselorApiIntegrationModal';
+import { DirectLinksModal } from './components/DirectLinksModal';
 
 export function App() {
   const [currentUser, setUserState] = useState<User | null>(() => getCurrentUser());
@@ -150,6 +151,7 @@ export function App() {
   const [selectedStudentForDossier, setSelectedStudentForDossier] = useState<User | null>(null);
   const [selectedStudentForQr, setSelectedStudentForQr] = useState<User | null>(null);
   const [selectedAttendanceForCorrection, setSelectedAttendanceForCorrection] = useState<Attendance | null>(null);
+  const [isDirectLinksOpen, setIsDirectLinksOpen] = useState(false);
 
   // Initial & periodic server sync
   useEffect(() => {
@@ -166,10 +168,11 @@ export function App() {
             const stored = getCurrentUser();
             if (stored && stored.role !== 'superadmin') {
               const cleanNid = stored.nationalId ? stored.nationalId.trim() : '';
+              // Match strictly by identity AND same role to prevent cross-role school contamination
               const matchingRecords = data.users.filter(
                 (u) =>
-                  (cleanNid && u.nationalId && u.nationalId.trim() === cleanNid) ||
-                  (stored.id && u.id === stored.id)
+                  ((cleanNid && u.nationalId && u.nationalId.trim() === cleanNid) || (stored.id && u.id === stored.id)) &&
+                  u.role === stored.role
               );
               if (matchingRecords.length > 0) {
                 const allManagedCodes = Array.from(new Set([
@@ -178,7 +181,7 @@ export function App() {
                   ...matchingRecords.flatMap((m) => [m.schoolCode, ...(m.managedSchoolCodes || [])]),
                 ])).filter(Boolean) as string[];
 
-                const primary = matchingRecords.find((m) => m.role === 'employee' || m.staffTitle) || matchingRecords[0];
+                const primary = matchingRecords[0];
 
                 if (
                   allManagedCodes.length > (stored.managedSchoolCodes?.length || 0) ||
@@ -213,7 +216,19 @@ export function App() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     
-    // Direct Magic Token auto-login
+    // Direct portal / links query params
+    const portalParam = params.get('portal');
+    const linksParam = params.get('links');
+    if (linksParam) {
+      setIsDirectLinksOpen(true);
+    }
+    if (portalParam) {
+      const schCode = params.get('school') || params.get('code') || params.get('schoolCode');
+      if (schCode) {
+        setUrlSchoolCode(schCode.toUpperCase());
+      }
+      setIsLoginOpen(true);
+    }
     const magicToken = params.get('token');
     if (magicToken) {
       const parsedPayload = parseMagicToken(magicToken);
@@ -351,11 +366,16 @@ export function App() {
         currentUser={currentUser}
         currentSchool={currentSchool}
         schools={schools}
+        allUsers={users}
         onSwitchSchool={handleSwitchSchool}
+        onSwitchUser={(user) => {
+          handleLoginSuccess(user);
+        }}
         onLogout={handleLogout}
         onOpenLogin={() => setIsLoginOpen(true)}
         onOpenRegisterSchool={() => setIsSchoolWizardOpen(true)}
         onOpenDonationModal={() => setIsDonationOpen(true)}
+        onOpenDirectLinks={() => setIsDirectLinksOpen(true)}
       />
 
       {/* Official Academic Calendar Banner */}
@@ -548,6 +568,7 @@ export function App() {
             onOpenParentRegistration={() => setIsSelfRegOpen(true)}
             onOpenStaffRegistration={() => setIsStaffSelfRegOpen(true)}
             onOpenPaymentModal={openPaymentWithPlan}
+            onOpenDirectLinks={() => setIsDirectLinksOpen(true)}
           />
         )}
       </main>
@@ -599,6 +620,10 @@ export function App() {
         users={users}
         initialSchoolCode={currentSchool?.code || urlSchoolCode || selfRegSchoolCode || staffRegSchoolCode || undefined}
         onLoginSuccess={handleLoginSuccess}
+        onOpenDirectLinks={() => {
+          setIsLoginOpen(false);
+          setIsDirectLinksOpen(true);
+        }}
         onOpenRegisterSchool={() => {
           setIsLoginOpen(false);
           setIsSchoolWizardOpen(true);
@@ -752,6 +777,9 @@ export function App() {
           onOpenQrCard={() => {
             setSelectedStudentForQr(selectedStudentForDossier);
           }}
+          onAttendanceUpdated={() => {
+            refreshAll();
+          }}
         />
       )}
 
@@ -827,6 +855,17 @@ export function App() {
           onSchoolUpdated={() => refreshAll()}
         />
       )}
+
+      {/* 19. Direct Links & Sharing Modal */}
+      <DirectLinksModal
+        isOpen={isDirectLinksOpen}
+        onClose={() => setIsDirectLinksOpen(false)}
+        schools={schools}
+        currentSchool={currentSchool}
+        onSelectSchool={(s) => {
+          if (currentUser) handleSwitchSchool(s);
+        }}
+      />
     </div>
   );
 }

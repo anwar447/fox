@@ -24,6 +24,8 @@ interface DatabaseSchema {
   payments: any[];
   notifications: any[];
   deleted_schools: string[];
+  deleted_attendance_ids: string[];
+  deleted_notification_ids?: string[];
 }
 
 const KNOWN_PURGED_SCHOOLS: string[] = [];
@@ -50,6 +52,8 @@ function getInitialDB(): DatabaseSchema {
     payments: [],
     notifications: [],
     deleted_schools: [],
+    deleted_attendance_ids: [],
+    deleted_notification_ids: [],
   };
 }
 
@@ -75,6 +79,16 @@ function loadDatabase(): DatabaseSchema {
     );
     const deleted_schools = Array.from(deletedSet);
 
+    // Track deleted attendances
+    const rawDeletedAtt: string[] = Array.isArray(data.deleted_attendance_ids) ? data.deleted_attendance_ids : [];
+    const deletedAttSet = new Set<string>(rawDeletedAtt.map(String));
+    const deleted_attendance_ids = Array.from(deletedAttSet);
+
+    // Track deleted notifications
+    const rawDeletedNotifs: string[] = Array.isArray(data.deleted_notification_ids) ? data.deleted_notification_ids : [];
+    const deletedNotifSet = new Set<string>(rawDeletedNotifs.map(String));
+    const deleted_notification_ids = Array.from(deletedNotifSet);
+
     // Filter out any schools that match deleted registry
     const rawSchools: any[] = Array.isArray(data.schools) ? data.schools : [];
     const schools = rawSchools.filter((s) => {
@@ -91,11 +105,22 @@ function loadDatabase(): DatabaseSchema {
       return !deletedSet.has(sCode);
     });
 
-    // Filter attendances belonging to deleted schools
+    // Filter attendances belonging to deleted schools or deleted attendance IDs
     const rawAtt: any[] = Array.isArray(data.attendances) ? data.attendances : [];
     const attendances = rawAtt.filter((a) => {
       const sCode = String(a.schoolCode || '').toUpperCase();
-      return !deletedSet.has(sCode);
+      if (deletedSet.has(sCode)) return false;
+      const aId = String(a.id || '');
+      const compositeKey = `${a.studentId}_${a.date}`;
+      if (deletedAttSet.has(aId) || deletedAttSet.has(compositeKey)) return false;
+      return true;
+    });
+
+    // Filter notifications belonging to deleted notifications registry
+    const rawNotifs: any[] = Array.isArray(data.notifications) ? data.notifications : [];
+    const notifications = rawNotifs.filter((n) => {
+      const nId = String(n?.id || '');
+      return !deletedNotifSet.has(nId);
     });
 
     const sanitized: DatabaseSchema = {
@@ -107,8 +132,10 @@ function loadDatabase(): DatabaseSchema {
       absence_actions: Array.isArray(data.absence_actions) ? data.absence_actions : [],
       corrections: Array.isArray(data.corrections) ? data.corrections : [],
       payments: Array.isArray(data.payments) ? data.payments : [],
-      notifications: Array.isArray(data.notifications) ? data.notifications : [],
+      notifications,
       deleted_schools,
+      deleted_attendance_ids,
+      deleted_notification_ids,
     };
 
     // Save back sanitized database immediately
@@ -167,6 +194,21 @@ app.post('/api/sync', (req, res) => {
       });
     }
 
+    // Track explicitly deleted attendance IDs
+    if (!Array.isArray(db.deleted_attendance_ids)) db.deleted_attendance_ids = [];
+    if (Array.isArray(incoming.deleted_attendance_ids) && incoming.deleted_attendance_ids.length > 0) {
+      incoming.deleted_attendance_ids.forEach((id: string) => {
+        const str = String(id || '');
+        if (str && !db.deleted_attendance_ids.includes(str)) {
+          db.deleted_attendance_ids.push(str);
+        }
+      });
+    }
+    const deletedAttSet = new Set(db.deleted_attendance_ids.map(String));
+    db.attendances = (db.attendances || []).filter(
+      (a) => !deletedAttSet.has(String(a.id)) && !deletedAttSet.has(`${a.studentId}_${a.date}`)
+    );
+
     // 1. Schools: Union merge by code or ID (ignoring any deleted school)
     if (Array.isArray(incoming.schools) && incoming.schools.length > 0) {
       const deletedSet = new Set((db.deleted_schools || []).map((x: string) => String(x).toUpperCase()));
@@ -196,15 +238,16 @@ app.post('/api/sync', (req, res) => {
       db.schools = Array.from(schoolMap.values());
     }
 
-    // 2. Users: Smart unification by nationalId or ID with Set union of managedSchoolCodes
+    // 2. Users: Smart role-aware unification by ID or (nationalId + role)
     if (Array.isArray(incoming.users) && incoming.users.length > 0) {
       const userMap = new Map<string, any>();
 
       const mergeOneUser = (u: any) => {
         if (!u) return;
         const cleanNid = u.nationalId ? String(u.nationalId).trim() : '';
-        // If user has a valid nationalId, key by nid so multiple records for the same person unify
-        const key = cleanNid ? `nid_${cleanNid}` : (u.id || `${cleanNid}_${u.schoolCode || ''}`);
+        const roleKey = (u.staffTitle === 'teacher' || u.role === 'teacher') ? 'teacher' : (u.role || 'user');
+        // Distinct key by ID or (nationalId + role): Keeps teacher account and parent account separate!
+        const key = u.id || (cleanNid ? `nid_${cleanNid}_${roleKey}` : `${cleanNid}_${u.schoolCode || ''}`);
 
         if (userMap.has(key)) {
           const prev = userMap.get(key);
@@ -215,20 +258,6 @@ app.post('/api/sync', (req, res) => {
             u.schoolCode,
           ])).filter(Boolean);
 
-          // Preserve role: teacher stays teacher, student stays student, parent stays parent
-          let resolvedRole = u.role || prev.role;
-          let resolvedTitle = u.staffTitle || prev.staffTitle;
-          if (resolvedTitle === 'teacher' || u.role === 'teacher' || prev.role === 'teacher') {
-            resolvedRole = 'teacher';
-            resolvedTitle = 'teacher';
-          } else if (u.role === 'student' || prev.role === 'student') {
-            resolvedRole = 'student';
-          } else if (u.role === 'parent' || prev.role === 'parent') {
-            resolvedRole = 'parent';
-          } else if (u.role === 'employee' || prev.role === 'employee') {
-            resolvedRole = 'employee';
-          }
-
           userMap.set(key, {
             ...prev,
             ...u,
@@ -236,8 +265,8 @@ app.post('/api/sync', (req, res) => {
             nationalId: cleanNid || prev.nationalId,
             managedSchoolCodes: unifiedSchools,
             schoolCode: u.schoolCode || prev.schoolCode,
-            role: resolvedRole,
-            staffTitle: resolvedTitle,
+            role: u.role || prev.role,
+            staffTitle: u.staffTitle || prev.staffTitle,
             assignedClasses: u.assignedClasses || prev.assignedClasses,
             className: u.className || prev.className,
             sectionName: u.sectionName || prev.sectionName,
@@ -269,16 +298,20 @@ app.post('/api/sync', (req, res) => {
       });
     }
 
-    // 3. Attendances: Union merge by ID or composite key
+    // 3. Attendances: Union merge by ID or composite key (respecting deleted attendances)
     if (Array.isArray(incoming.attendances) && incoming.attendances.length > 0) {
       const attMap = new Map<string, any>();
       db.attendances.forEach((a) => {
-        if (a && a.id) attMap.set(a.id, a);
-        else if (a) attMap.set(`${a.studentId}_${a.date}`, a);
+        if (a) {
+          const key = a.id || `${a.studentId}_${a.date}`;
+          if (!deletedAttSet.has(String(a.id)) && !deletedAttSet.has(`${a.studentId}_${a.date}`)) {
+            attMap.set(key, a);
+          }
+        }
       });
       incoming.attendances.forEach((a) => {
         const key = a?.id || (a ? `${a.studentId}_${a.date}` : null);
-        if (key) {
+        if (key && !deletedAttSet.has(String(a.id)) && !deletedAttSet.has(`${a.studentId}_${a.date}`)) {
           if (attMap.has(key)) {
             attMap.set(key, { ...attMap.get(key), ...a });
           } else {
@@ -329,17 +362,60 @@ app.post('/api/sync', (req, res) => {
       db.payments = Array.from(payMap.values());
     }
 
-    // 9. Notifications
-    if (Array.isArray(incoming.notifications) && incoming.notifications.length > 0) {
+    // 9. Deleted Notifications Registry Sync
+    if (Array.isArray(incoming.deleted_notification_ids) && incoming.deleted_notification_ids.length > 0) {
+      if (!db.deleted_notification_ids) db.deleted_notification_ids = [];
+      const notifDelSet = new Set([...db.deleted_notification_ids, ...incoming.deleted_notification_ids.map(String)]);
+      db.deleted_notification_ids = Array.from(notifDelSet);
+    }
+    const currentDeletedNotifSet = new Set((db.deleted_notification_ids || []).map(String));
+
+    // 10. Notifications
+    if (Array.isArray(incoming.notifications)) {
       const notifMap = new Map<string, any>();
-      db.notifications.forEach((n) => n?.id && notifMap.set(n.id, n));
-      incoming.notifications.forEach((n) => n?.id && notifMap.set(n.id, { ...notifMap.get(n.id), ...n }));
+      db.notifications.forEach((n) => n?.id && !currentDeletedNotifSet.has(String(n.id)) && notifMap.set(n.id, n));
+      incoming.notifications.forEach((n) => n?.id && !currentDeletedNotifSet.has(String(n.id)) && notifMap.set(n.id, { ...notifMap.get(n.id), ...n }));
       db.notifications = Array.from(notifMap.values());
+    } else {
+      db.notifications = (db.notifications || []).filter((n) => !currentDeletedNotifSet.has(String(n?.id || '')));
     }
 
     saveDatabase(db);
   }
   res.json({ success: true, data: db });
+});
+
+// Notifications Endpoints (Retraction & Deletion)
+app.get('/api/notifications', (req, res) => {
+  const deletedSet = new Set<string>((db.deleted_notification_ids || []).map(String));
+  const active = (db.notifications || []).filter((n) => !deletedSet.has(String(n?.id || '')));
+  res.json({ success: true, notifications: active, deleted_notification_ids: db.deleted_notification_ids || [] });
+});
+
+app.delete('/api/notifications/:id', (req, res) => {
+  const notifId = req.params.id;
+  if (!db.deleted_notification_ids) db.deleted_notification_ids = [];
+  if (!db.deleted_notification_ids.includes(notifId)) {
+    db.deleted_notification_ids.push(notifId);
+  }
+  db.notifications = (db.notifications || []).filter((n) => String(n?.id) !== String(notifId));
+  saveDatabase(db);
+  res.json({ success: true, message: 'Notification deleted successfully' });
+});
+
+app.post('/api/notifications/:id/retract', (req, res) => {
+  const notifId = req.params.id;
+  const { reason, retractedByName } = req.body || {};
+  const notif = (db.notifications || []).find((n) => String(n?.id) === String(notifId));
+  if (!notif) {
+    return res.status(404).json({ success: false, error: 'Notification not found' });
+  }
+  notif.retracted = true;
+  notif.retractedAt = new Date().toISOString();
+  notif.retractionReason = reason || 'تم التراجع عن التعميم بناءً على التوجيهات الرسمية ونفي الشائعة';
+  if (retractedByName) notif.retractedByName = retractedByName;
+  saveDatabase(db);
+  res.json({ success: true, notification: notif });
 });
 
 // 2. Schools endpoints
@@ -421,8 +497,15 @@ app.post('/api/users', (req, res) => {
   }
 
   const cleanNid = String(newUser.nationalId).trim();
+  const newRole = newUser.role || (newUser.staffTitle === 'teacher' ? 'teacher' : 'employee');
   const existingIdx = db.users.findIndex(
-    (u) => (cleanNid && u.nationalId && String(u.nationalId).trim() === cleanNid) || u.id === newUser.id
+    (u) =>
+      u.id === newUser.id ||
+      (cleanNid &&
+        u.nationalId &&
+        String(u.nationalId).trim() === cleanNid &&
+        u.role === newRole &&
+        (newRole !== 'teacher' || u.schoolCode === newUser.schoolCode))
   );
 
   if (existingIdx >= 0) {
@@ -453,8 +536,15 @@ app.post('/api/users/bulk', (req, res) => {
     for (const u of newUsers) {
       if (!u) continue;
       const cleanNid = u.nationalId ? String(u.nationalId).trim() : '';
+      const uRole = u.role || (u.staffTitle === 'teacher' ? 'teacher' : 'employee');
       const idx = db.users.findIndex(
-        (existing) => (cleanNid && existing.nationalId && String(existing.nationalId).trim() === cleanNid) || existing.id === u.id
+        (existing) =>
+          existing.id === u.id ||
+          (cleanNid &&
+            existing.nationalId &&
+            String(existing.nationalId).trim() === cleanNid &&
+            existing.role === uRole &&
+            (uRole !== 'teacher' || existing.schoolCode === u.schoolCode))
       );
       if (idx >= 0) {
         const prev = db.users[idx];
@@ -511,6 +601,47 @@ app.post('/api/attendances', (req, res) => {
   }
   saveDatabase(db);
   res.json({ success: true, attendances: db.attendances });
+});
+
+app.put('/api/attendances/:id', (req, res) => {
+  const id = req.params.id;
+  const updates = req.body;
+  const idx = db.attendances.findIndex((a) => a.id === id);
+  if (idx >= 0) {
+    db.attendances[idx] = { ...db.attendances[idx], ...updates };
+    saveDatabase(db);
+    res.json({ success: true, attendance: db.attendances[idx], attendances: db.attendances });
+  } else {
+    res.status(404).json({ success: false, message: 'Attendance record not found' });
+  }
+});
+
+app.delete('/api/attendances/:id', (req, res) => {
+  const id = req.params.id;
+  if (!Array.isArray(db.deleted_attendance_ids)) db.deleted_attendance_ids = [];
+  if (id && !db.deleted_attendance_ids.includes(id)) {
+    db.deleted_attendance_ids.push(id);
+  }
+  db.attendances = db.attendances.filter((a) => a.id !== id);
+  saveDatabase(db);
+  res.json({ success: true, attendances: db.attendances, deleted_attendance_ids: db.deleted_attendance_ids });
+});
+
+app.post('/api/attendances/delete-batch', (req, res) => {
+  const { ids } = req.body;
+  if (!Array.isArray(db.deleted_attendance_ids)) db.deleted_attendance_ids = [];
+  if (Array.isArray(ids) && ids.length > 0) {
+    ids.forEach((id: string) => {
+      const str = String(id || '');
+      if (str && !db.deleted_attendance_ids.includes(str)) {
+        db.deleted_attendance_ids.push(str);
+      }
+    });
+    const set = new Set(db.deleted_attendance_ids);
+    db.attendances = db.attendances.filter((a) => !set.has(String(a.id)) && !set.has(`${a.studentId}_${a.date}`));
+    saveDatabase(db);
+  }
+  res.json({ success: true, attendances: db.attendances, deleted_attendance_ids: db.deleted_attendance_ids });
 });
 
 // 5. Permissions endpoints

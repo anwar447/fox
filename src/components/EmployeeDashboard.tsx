@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { School, User, Attendance, CorrectionRequest } from '../types';
 import { 
-  getAttendances, saveAttendances, getUsers, 
+  getAttendances, saveAttendances, getUsers, saveUsers,
   getCorrectionRequests, saveCorrectionRequests, updateCorrectionRequest,
   getPermissions, addSystemNotification, cleanResetToEmptyProductionData,
-  getSystemNotifications, getPaymentRequests, getUserAssignedSchools
+  getSystemNotifications, getPaymentRequests, getUserAssignedSchools,
+  deleteAttendance, deleteAttendances, bulkConvertAttendanceRecordsToPresent
 } from '../utils/storage';
 import { getTodayDateString } from '../utils/academic';
 import { soundManager } from '../utils/audio';
@@ -16,6 +17,8 @@ import { EmergencyBroadcastModal } from './EmergencyBroadcastModal';
 import { StudentPromotionModal } from './StudentPromotionModal';
 import { DataBackupAndStorageModal } from './DataBackupAndStorageModal';
 import { AdminStudentExitModal } from './AdminStudentExitModal';
+import { StudentAbsenceDirectoryModal } from './StudentAbsenceDirectoryModal';
+import { AttendanceEditModal } from './AttendanceEditModal';
 import { 
   Building2, Users, FileText, ScanLine, 
   MapPin, Share2, Upload, Archive, AlertTriangle, 
@@ -23,7 +26,8 @@ import {
   Sparkles, ShieldCheck, UserPlus, FileSpreadsheet, Plus, GraduationCap,
   Activity, ShieldAlert, LogOut, Trash2, RefreshCw, User as UserIcon,
   Crown, CreditCard, Megaphone, HardDrive, Database, ArrowLeftRight,
-  FileCheck, Code2, Paperclip, Eye, ExternalLink, FileCheck2, HelpCircle, CheckCircle2
+  FileCheck, Code2, Paperclip, Eye, ExternalLink, FileCheck2, HelpCircle, CheckCircle2,
+  Wrench, Edit3, Zap, CheckSquare, Square
 } from 'lucide-react';
 
 interface EmployeeDashboardProps {
@@ -82,6 +86,9 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'present' | 'absent' | 'late' | 'truant'>('all');
   const [actionModalStudent, setActionModalStudent] = useState<User | null>(null);
+  const [isAbsenceDirectoryOpen, setIsAbsenceDirectoryOpen] = useState(false);
+  const [editAttendanceItem, setEditAttendanceItem] = useState<{ attendance: Attendance; studentName: string } | null>(null);
+  const [attendanceItemToDelete, setAttendanceItemToDelete] = useState<Attendance | null>(null);
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
   const [isBroadcastOpen, setIsBroadcastOpen] = useState(false);
   const [isPromotionOpen, setIsPromotionOpen] = useState(false);
@@ -243,6 +250,100 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
     return a.finalStatus === statusFilter;
   });
 
+  // Multi-student selection state for Today's Live Attendance Table
+  const [selectedLiveAttendanceIds, setSelectedLiveAttendanceIds] = useState<Set<string>>(new Set());
+  const [liveBulkAction, setLiveBulkAction] = useState<'convert_to_present' | 'delete_absences' | null>(null);
+  const [liveBulkReason, setLiveBulkReason] = useState<string>('تصحيح إداري بسبب عطل تقني في النظام وإعادة بدء الحساب');
+
+  const toggleSelectLiveAttendance = (id: string) => {
+    setSelectedLiveAttendanceIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleSelectAllLiveVisible = () => {
+    const next = new Set<string>();
+    filteredAttendances.forEach((a) => next.add(a.id));
+    setSelectedLiveAttendanceIds(next);
+  };
+
+  const handleSelectAllLiveAbsents = () => {
+    const next = new Set<string>();
+    filteredAttendances
+      .filter((a) => a.finalStatus === 'absent')
+      .forEach((a) => next.add(a.id));
+    setSelectedLiveAttendanceIds(next);
+  };
+
+  const handleClearLiveSelection = () => {
+    setSelectedLiveAttendanceIds(new Set());
+  };
+
+  const isAllLiveVisibleSelected =
+    filteredAttendances.length > 0 &&
+    filteredAttendances.every((a) => selectedLiveAttendanceIds.has(a.id));
+
+  const selectedLiveAttsList = attendances.filter((a) => selectedLiveAttendanceIds.has(a.id));
+  const selectedLiveAbsentsCount = selectedLiveAttsList.filter((a) => a.finalStatus === 'absent').length;
+
+  const handleExecuteLiveBulkAction = () => {
+    if (!liveBulkAction || selectedLiveAttendanceIds.size === 0) return;
+
+    const attIds = Array.from(selectedLiveAttendanceIds);
+    const studentIds = Array.from(new Set(selectedLiveAttsList.map((a) => a.studentId)));
+
+    if (liveBulkAction === 'convert_to_present') {
+      const result = bulkConvertAttendanceRecordsToPresent(
+        attIds,
+        liveBulkReason.trim() || 'تصحيح إداري بسبب عطل تقني في النظام وإعادة بدء الحساب',
+        currentUser.name
+      );
+
+      addSystemNotification({
+        id: `notif-live-bulk-conv-${Date.now()}`,
+        schoolCode: currentSchool.code,
+        title: '✅ تحويل جماعي لحاضر وبدء الحساب من جديد',
+        message: `تم تحويل (${result.affectedRecordsCount}) سجل حضور لـ (${result.affectedStudentsCount}) طالب إلى "حاضر"، وتصفير عدادات الغياب والانضباط لتبدأ الدورة من جديد.`,
+        type: 'info',
+        createdAt: new Date().toISOString(),
+      });
+    } else if (liveBulkAction === 'delete_absences') {
+      deleteAttendances(attIds);
+
+      // Restart calculation & cycle for these students
+      const todayStr = getTodayDateString();
+      const users = getUsers();
+      let usersChanged = false;
+      users.forEach((u) => {
+        if (studentIds.includes(u.id)) {
+          u.lastAbsenceResetDate = todayStr;
+          usersChanged = true;
+        }
+      });
+      if (usersChanged) {
+        saveUsers(users, true);
+      }
+
+      addSystemNotification({
+        id: `notif-live-bulk-del-${Date.now()}`,
+        schoolCode: currentSchool.code,
+        title: '🗑️ حذف جماعي لسجلات الغياب وبدء الحساب من جديد',
+        message: `تم شطب وحذف (${attIds.length}) سجل غياب نهائياً من قاعدة البيانات، وتصفير عداد الغياب للطلاب المشمولين ليبدأ الحساب من جديد.`,
+        type: 'info',
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    soundManager.playSuccess();
+    setLiveBulkAction(null);
+    setSelectedLiveAttendanceIds(new Set());
+    setRefreshKey((k) => k + 1);
+    setAttendances(getAttendances().filter((a) => a.schoolCode === currentSchool.code && a.date === today));
+  };
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto py-6 px-4 text-slate-800" dir="rtl">
       
@@ -254,6 +355,9 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
         notifications={getSystemNotifications().filter(
           (n) => n.schoolCode === currentSchool.code || !n.schoolCode
         )}
+        canManage={true}
+        currentUserName={currentUser.name}
+        onNotificationsChanged={() => setRefreshKey((k) => k + 1)}
       />
 
       {/* 3. Multi-School Management Bar for Administrators and Staff */}
@@ -1085,6 +1189,15 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
             </select>
 
             <button
+              onClick={() => setIsAbsenceDirectoryOpen(true)}
+              className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+              title="إدارة وتعديل وحذف غيابات الطلاب والأعطال التقنية"
+            >
+              <Wrench className="w-3.5 h-3.5" />
+              <span>إدارة غيابات الأعطال 🛠️</span>
+            </button>
+
+            <button
               onClick={onOpenDirectStudentRegistration}
               className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center gap-1 cursor-pointer shadow-xs"
             >
@@ -1094,11 +1207,113 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
           </div>
         </div>
 
+        {/* Live Multi-Selection Controls Toolbar */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 text-xs">
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={isAllLiveVisibleSelected ? handleClearLiveSelection : handleSelectAllLiveVisible}
+              className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
+            >
+              {isAllLiveVisibleSelected ? (
+                <CheckSquare className="w-4 h-4 text-indigo-600" />
+              ) : (
+                <Square className="w-4 h-4 text-slate-400" />
+              )}
+              <span>تحديد كل المعروضين ({filteredAttendances.length})</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleSelectAllLiveAbsents}
+              className="px-2.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 font-bold flex items-center gap-1 cursor-pointer transition-colors"
+            >
+              <span>تحديد الغائبين فقط 🚫</span>
+            </button>
+
+            {selectedLiveAttendanceIds.size > 0 && (
+              <button
+                type="button"
+                onClick={handleClearLiveSelection}
+                className="px-2.5 py-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 font-bold cursor-pointer transition-colors"
+              >
+                إلغاء التحديد ✕
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className={`text-xs font-bold px-2.5 py-1 rounded-lg ${
+              selectedLiveAttendanceIds.size > 0 
+                ? 'bg-indigo-100 text-indigo-900 border border-indigo-300' 
+                : 'bg-slate-100 text-slate-500'
+            }`}>
+              تم تحديد: {selectedLiveAttendanceIds.size} سجل
+            </span>
+          </div>
+        </div>
+
+        {/* Live Attendance Sticky Bulk Action Bar */}
+        {selectedLiveAttendanceIds.size > 0 && (
+          <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 shadow-md animate-fadeIn">
+            <div className="flex items-center gap-2.5">
+              <span className="w-7 h-7 rounded-lg bg-white/20 flex items-center justify-center font-black text-sm">
+                {selectedLiveAttendanceIds.size}
+              </span>
+              <div>
+                <strong className="block text-xs font-black">
+                  تم تحديد {selectedLiveAttendanceIds.size} طالب (منهم {selectedLiveAbsentsCount} غياب)
+                </strong>
+                <span className="text-[10px] text-slate-300">
+                  اختر الإجراء لتطبيقه وإعادة بدء الحساب من جديد
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setLiveBulkAction('convert_to_present')}
+                className="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition-all hover:scale-[1.02]"
+              >
+                <Zap className="w-4 h-4 text-emerald-950" />
+                <span>تحويل المحددين إلى حاضر (يبدأ الحساب من جديد) ⚡</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setLiveBulkAction('delete_absences')}
+                className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition-all hover:scale-[1.02]"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>حذف غياب المحددين نهائياً (يبدأ الحساب من جديد) 🗑️</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleClearLiveSelection}
+                className="px-2.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 font-bold text-xs cursor-pointer"
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Table */}
         <div className="border border-slate-200 rounded-2xl overflow-hidden max-h-96 overflow-y-auto text-xs">
           <table className="w-full text-right">
             <thead className="bg-slate-50 text-slate-700 sticky top-0 border-b border-slate-200">
               <tr>
+                <th className="p-3 w-10 text-center">
+                  <input
+                    type="checkbox"
+                    checked={isAllLiveVisibleSelected}
+                    onChange={isAllLiveVisibleSelected ? handleClearLiveSelection : handleSelectAllLiveVisible}
+                    className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                    title="تحديد الكل"
+                  />
+                </th>
                 <th className="p-3 font-bold">الطالب</th>
                 <th className="p-3 font-bold">الصف والفصل</th>
                 <th className="p-3 font-bold">مسح البوابة</th>
@@ -1111,7 +1326,7 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
             <tbody className="divide-y divide-slate-100 text-slate-700">
               {filteredAttendances.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="p-6 text-center text-slate-400">
+                  <td colSpan={8} className="p-6 text-center text-slate-400">
                     {attendances.length === 0 
                       ? 'لا توجد سجلات حضور مسجلة لهذا اليوم حتى الآن. يمكنك استيراد كشف نور أو تسجيل الطلاب ذاتياً.'
                       : 'لا توجد سجلات مطابقة للبحث أو التصفية'}
@@ -1121,9 +1336,25 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
                 filteredAttendances.map((a) => {
                   const studentUser = allSchoolStudents.find((u) => u.id === a.studentId || u.nationalId === a.nationalId);
                   const pCount = studentPermCounts[a.studentId]?.count || 0;
+                  const isSelected = selectedLiveAttendanceIds.has(a.id);
 
                   return (
-                    <tr key={a.id} className="hover:bg-slate-50/80">
+                    <tr 
+                      key={a.id} 
+                      className={`transition-colors ${
+                        isSelected 
+                          ? 'bg-indigo-50/70 border-y border-indigo-200' 
+                          : 'hover:bg-slate-50/80'
+                      }`}
+                    >
+                      <td className="p-3 text-center">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelectLiveAttendance(a.id)}
+                          className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                        />
+                      </td>
                       <td className="p-3">
                         <div className="flex items-center gap-2.5">
                           <div className="w-8 h-8 rounded-lg bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center text-slate-400 shrink-0">
@@ -1197,6 +1428,32 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
                               الملف الشامل
                             </button>
                           )}
+
+                          {/* Quick Edit and Delete for absent records */}
+                          {a.finalStatus === 'absent' && (
+                            <>
+                              <button
+                                onClick={() =>
+                                  setEditAttendanceItem({
+                                    attendance: a,
+                                    studentName: studentUser?.name || a.studentName || 'الطالب',
+                                  })
+                                }
+                                className="p-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 cursor-pointer"
+                                title="تعديل هذا الرصد (تصحيح عطل تقني)"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => setAttendanceItemToDelete(a)}
+                                className="p-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 cursor-pointer"
+                                title="حذف هذا الغياب نهائياً"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          )}
+
                           {studentUser && (
                             <button
                               onClick={() => {
@@ -1428,6 +1685,189 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
                 className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
               >
                 إغلاق
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Student Absence Directory Modal for Admin */}
+      {isAbsenceDirectoryOpen && (
+        <StudentAbsenceDirectoryModal
+          isOpen={isAbsenceDirectoryOpen}
+          onClose={() => setIsAbsenceDirectoryOpen(false)}
+          currentSchool={currentSchool}
+          currentUser={currentUser}
+          onSelectStudentForDossier={(student) => {
+            setIsAbsenceDirectoryOpen(false);
+            onOpenStudentDossier(student);
+          }}
+          onDataChanged={() => {
+            setRefreshKey((k) => k + 1);
+            setAttendances(getAttendances().filter((a) => a.schoolCode === currentSchool.code && a.date === today));
+          }}
+        />
+      )}
+
+      {/* Attendance Edit Modal */}
+      {editAttendanceItem && (
+        <AttendanceEditModal
+          isOpen={!!editAttendanceItem}
+          onClose={() => setEditAttendanceItem(null)}
+          attendance={editAttendanceItem.attendance}
+          studentName={editAttendanceItem.studentName}
+          currentUser={currentUser}
+          onSaved={() => {
+            setEditAttendanceItem(null);
+            setRefreshKey((k) => k + 1);
+            setAttendances(getAttendances().filter((a) => a.schoolCode === currentSchool.code && a.date === today));
+          }}
+        />
+      )}
+
+      {/* Single Attendance Delete Confirmation Modal */}
+      {attendanceItemToDelete && (
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) setAttendanceItemToDelete(null); }}
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn"
+          dir="rtl"
+        >
+          <div className="bg-white border border-rose-200 rounded-3xl max-w-md w-full p-6 text-right space-y-4 shadow-2xl text-slate-800">
+            <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center mx-auto">
+              <Trash2 className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-1.5">
+              <h3 className="text-base font-black text-slate-900">
+                حذف سجل الغياب نهائياً
+              </h3>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                هل أنت متأكد من حذف غياب يوم ({attendanceItemToDelete.date}) للطالب ({attendanceItemToDelete.studentName || 'الطالب'}) نهائياً؟
+              </p>
+            </div>
+
+            <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-[11px] text-rose-900 space-y-1">
+              <strong>تنبيه الإدارة:</strong> سيتم شطب هذا الغياب تماماً من السيرفر وقاعدة البيانات لإصلاح العطل، ولن يُحتسب في سجل الطالب أو يظهر لولي الأمر.
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 pt-2">
+              <button
+                onClick={() => setAttendanceItemToDelete(null)}
+                className="py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
+              >
+                إلغاء
+              </button>
+              <button
+                onClick={() => {
+                  deleteAttendance(attendanceItemToDelete.id);
+                  addSystemNotification({
+                    id: `notif-att-del-admin-${Date.now()}`,
+                    schoolCode: currentSchool.code,
+                    title: '🗑️ حذف غياب مسجل بالخطأ (إدارة المدرسة)',
+                    message: `تم إلغاء وحذف غياب يوم (${attendanceItemToDelete.date}) للطالب (${attendanceItemToDelete.studentName || 'الطالب'}) نهائياً لتدارك عطل في المنظومة.`,
+                    type: 'info',
+                    createdAt: new Date().toISOString(),
+                  });
+                  soundManager.playSuccess();
+                  setAttendanceItemToDelete(null);
+                  setRefreshKey((k) => k + 1);
+                  setAttendances(getAttendances().filter((a) => a.schoolCode === currentSchool.code && a.date === today));
+                }}
+                className="py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs cursor-pointer shadow-md shadow-rose-600/20"
+              >
+                تأكيد الحذف النهائي 🗑️
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Live Table Bulk Action Confirmation Modal */}
+      {liveBulkAction && (
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) setLiveBulkAction(null); }}
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn"
+          dir="rtl"
+        >
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-lg w-full p-6 text-right space-y-4 shadow-2xl text-slate-800">
+            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mx-auto shadow-xs ${
+              liveBulkAction === 'convert_to_present' 
+                ? 'bg-emerald-100 text-emerald-700' 
+                : 'bg-rose-100 text-rose-700'
+            }`}>
+              {liveBulkAction === 'convert_to_present' ? (
+                <Zap className="w-6 h-6" />
+              ) : (
+                <Trash2 className="w-6 h-6" />
+              )}
+            </div>
+
+            <div className="text-center space-y-1.5">
+              <h3 className="text-base font-black text-slate-900">
+                {liveBulkAction === 'convert_to_present'
+                  ? `تحويل (${selectedLiveAttendanceIds.size}) طالب إلى حاضر وبدء الحساب من جديد ⚡`
+                  : `حذف غياب (${selectedLiveAttendanceIds.size}) طالب نهائياً وبدء الحساب من جديد 🗑️`}
+              </h3>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                {liveBulkAction === 'convert_to_present'
+                  ? `سيتم تحويل حالة الطلاب المحددين اليوم إلى "حاضر"، وتصفير عداد إنذارات الغياب ليعود إلى الصفر ويبدأ الحساب من جديد ابتداءً من تاريخ اليوم.`
+                  : `سيتم شطب وحذف سجلات الغياب المحددة نهائياً من قاعدة البيانات، وتصفير عداد الغياب ليبدأ الحساب من جديد.`}
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-[11px] font-bold text-slate-700">
+                سبب التعديل والتوثيق الإداري:
+              </label>
+              <input
+                type="text"
+                value={liveBulkReason}
+                onChange={(e) => setLiveBulkReason(e.target.value)}
+                placeholder="سبب التصحيح الإداري..."
+                className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 focus:outline-indigo-500"
+              />
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-[11px] text-slate-700 space-y-1 max-h-28 overflow-y-auto">
+              <strong className="block text-slate-900 font-bold">الطلاب المشمولون بالإجراء ({selectedLiveAttsList.length}):</strong>
+              <div className="flex flex-wrap gap-1 pt-1">
+                {selectedLiveAttsList.map((a) => (
+                  <span 
+                    key={a.id}
+                    className="px-2 py-0.5 rounded-md bg-white border border-slate-200 font-bold text-[10px]"
+                  >
+                    {a.studentName} ({a.finalStatus === 'absent' ? 'غائب' : a.finalStatus === 'present' ? 'حاضر' : a.finalStatus})
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 pt-2">
+              <button
+                onClick={() => setLiveBulkAction(null)}
+                className="py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
+              >
+                إلغاء
+              </button>
+              <button
+                onClick={handleExecuteLiveBulkAction}
+                className={`py-2.5 rounded-xl text-white font-black text-xs cursor-pointer shadow-md flex items-center justify-center gap-1.5 ${
+                  liveBulkAction === 'convert_to_present'
+                    ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20'
+                    : 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/20'
+                }`}
+              >
+                {liveBulkAction === 'convert_to_present' ? (
+                  <>
+                    <Zap className="w-4 h-4" />
+                    <span>تأكيد التحويل وبدء الحساب ⚡</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    <span>تأكيد الحذف وبدء الحساب 🗑️</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

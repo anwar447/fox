@@ -3,7 +3,7 @@ import { User, School, UserRole } from '../types';
 import { getUsers, saveUsers } from '../utils/storage';
 import { 
   Building2, Lock, UserCircle, X, Check, 
-  AlertCircle, UserPlus, Crown, Shield, Sparkles, Users
+  AlertCircle, UserPlus, Crown, Shield, Sparkles, Users, GraduationCap, Share2
 } from 'lucide-react';
 
 interface LoginModalProps {
@@ -15,6 +15,7 @@ interface LoginModalProps {
   onLoginSuccess: (user: User) => void;
   onOpenParentRegistration?: () => void;
   onOpenRegisterSchool?: () => void;
+  onOpenDirectLinks?: () => void;
 }
 
 export const LoginModal: React.FC<LoginModalProps> = ({
@@ -26,6 +27,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   onLoginSuccess,
   onOpenParentRegistration,
   onOpenRegisterSchool,
+  onOpenDirectLinks,
 }) => {
   const [loginTab, setLoginTab] = useState<'school_user' | 'superadmin'>('school_user');
   const [nationalId, setNationalId] = useState('');
@@ -33,6 +35,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   const [schoolCode, setSchoolCode] = useState(() => initialSchoolCode || schools[0]?.code || '');
   const [asParentMode, setAsParentMode] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [availableProfiles, setAvailableProfiles] = useState<User[] | null>(null);
 
   React.useEffect(() => {
     if (initialSchoolCode) {
@@ -47,6 +50,36 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     : null;
 
   if (!isOpen) return null;
+
+  const completeLogin = (userToUse: User) => {
+    // Only keep schools relevant to THIS specific role/profile
+    const roleAssignedSchools = Array.from(new Set([
+      userToUse.schoolCode,
+      ...(userToUse.managedSchoolCodes || []),
+    ])).filter(Boolean) as string[];
+
+    const userRole: UserRole = 
+      (userToUse.role as string) === 'admin_assistant' || 
+      (userToUse.role as string) === 'assistant' ||
+      (userToUse.role as string) === 'staff'
+        ? 'employee'
+        : userToUse.role;
+
+    const userStaffTitle = 
+      userToUse.staffTitle || 
+      ((userToUse.role as string) === 'admin_assistant' || (userToUse.role as string) === 'assistant' ? 'admin_assistant' : undefined);
+
+    const userToLogin: User = {
+      ...userToUse,
+      role: userRole,
+      staffTitle: userStaffTitle,
+      schoolCode: userToUse.schoolCode,
+      managedSchoolCodes: roleAssignedSchools.length > 0 ? roleAssignedSchools : [userToUse.schoolCode],
+    };
+
+    onLoginSuccess(userToLogin);
+    onClose();
+  };
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -91,94 +124,22 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     }
 
     // 2. School User Login (Student, Parent, Teacher, Principal, Guard, Assistant)
-    let matchedUser: User | undefined;
-
-    // Find ALL records matching this national ID or User ID to avoid split identities
+    // Find ALL records matching this national ID or User ID or Mobile
     const matchingRecords = users.filter(
       (u) =>
         (u.nationalId && (u.nationalId.trim() === cleanInput || (cleanDigits && u.nationalId.trim() === cleanDigits))) ||
+        (cleanDigits && u.mobile && (u.mobile === cleanDigits || (cleanDigits.length >= 9 && u.mobile?.endsWith(cleanDigits.slice(-9))))) ||
         (u.id && (u.id.toLowerCase() === rawInput.toLowerCase() || u.id.toLowerCase() === cleanInput.toLowerCase()))
     );
 
-    if (matchingRecords.length > 0) {
-      // Collect ALL assigned schools across all matching records for this national ID
-      const allAssignedSchools = Array.from(new Set([
-        ...matchingRecords.map((m) => m.schoolCode),
-        ...matchingRecords.flatMap((m) => m.managedSchoolCodes || []),
-      ])).filter(Boolean) as string[];
-
-      // Choose primary record (respecting teacher, student, parent, or employee roles)
-      let primary: User;
-      if (asParentMode) {
-        primary = matchingRecords.find((m) => m.role === 'parent') || matchingRecords[0];
-      } else {
-        primary =
-          matchingRecords.find((m) => m.role === 'teacher' || m.staffTitle === 'teacher') ||
-          matchingRecords.find((m) => m.role === 'employee' || (m.staffTitle && m.staffTitle !== 'teacher')) ||
-          matchingRecords.find((m) => m.role === 'student') ||
-          matchingRecords.find((m) => m.role === 'parent') ||
-          matchingRecords[0];
-      }
-
-      let finalRole = primary.role;
-      if (primary.staffTitle === 'teacher' || primary.role === 'teacher') {
-        finalRole = 'teacher';
-      }
-
-      matchedUser = {
-        ...primary,
-        role: finalRole,
-        managedSchoolCodes: allAssignedSchools,
-      };
-    }
-
-    // Match by mobile number
-    if (!matchedUser && cleanDigits) {
-      const mobileMatches = users.filter(
-        (u) =>
-          u.mobile === cleanDigits ||
-          (cleanDigits.length >= 9 && u.mobile?.endsWith(cleanDigits.slice(-9))) ||
-          u.mobile === rawInput
-      );
-      if (mobileMatches.length > 0) {
-        const allAssignedSchools = Array.from(new Set([
-          ...mobileMatches.map((m) => m.schoolCode),
-          ...mobileMatches.flatMap((m) => m.managedSchoolCodes || []),
-        ])).filter(Boolean) as string[];
-
-        let primary: User;
-        if (asParentMode) {
-          primary = mobileMatches.find((m) => m.role === 'parent') || mobileMatches[0];
-        } else {
-          primary =
-            mobileMatches.find((m) => m.role === 'teacher' || m.staffTitle === 'teacher') ||
-            mobileMatches.find((m) => m.role === 'employee' || (m.staffTitle && m.staffTitle !== 'teacher')) ||
-            mobileMatches.find((m) => m.role === 'student') ||
-            mobileMatches.find((m) => m.role === 'parent') ||
-            mobileMatches[0];
-        }
-
-        let finalRole = primary.role;
-        if (primary.staffTitle === 'teacher' || primary.role === 'teacher') {
-          finalRole = 'teacher';
-        }
-
-        matchedUser = {
-          ...primary,
-          role: finalRole,
-          managedSchoolCodes: allAssignedSchools,
-        };
-      }
-    }
-
-    // Match by student parentMobile
-    if (!matchedUser && cleanDigits) {
+    // Also check student parentMobile if no direct match
+    if (matchingRecords.length === 0 && cleanDigits) {
       const childrenWithParentMobile = users.filter(
         (u) => u.role === 'student' && (u.parentMobile === cleanDigits || (cleanDigits.length >= 9 && u.parentMobile?.endsWith(cleanDigits.slice(-9))))
       );
       if (childrenWithParentMobile.length > 0) {
         const primaryChild = childrenWithParentMobile[0];
-        matchedUser = {
+        const newParentUser: User = {
           id: `usr-p-${cleanDigits}`,
           nationalId: cleanDigits,
           name: `ولي أمر الطالب (${primaryChild.name})`,
@@ -188,119 +149,96 @@ export const LoginModal: React.FC<LoginModalProps> = ({
           schoolCode: primaryChild.schoolCode,
           childrenNationalIds: childrenWithParentMobile.map((c) => c.nationalId),
         };
+        completeLogin(newParentUser);
+        return;
       }
     }
 
-    if (!matchedUser) {
+    if (matchingRecords.length === 0) {
       setErrorMsg('لم يتم العثور على أي حساب مسجل بهذا الرقم (الهوية أو الجوال). يرجى التأكد من الرقم أو إجراء التسجيل الذاتي.');
       return;
     }
 
-    // Check if logging in as Parent for a student account
-    if (asParentMode && matchedUser.role === 'student') {
-      const studentName = matchedUser.name;
-      const studentNid = matchedUser.nationalId;
-      const targetSchoolCode = matchedUser.schoolCode;
-      matchedUser = {
-        id: `usr-p-${studentNid}`,
-        nationalId: `P${studentNid}`,
-        name: `ولي أمر الطالب (${studentName})`,
-        mobile: matchedUser.parentMobile || matchedUser.mobile,
-        password: matchedUser.password,
-        role: 'parent',
-        schoolCode: targetSchoolCode,
-        childrenNationalIds: [studentNid],
-      };
-    }
-
-    // Determine target school code
-    const userManaged = Array.isArray(matchedUser.managedSchoolCodes) ? matchedUser.managedSchoolCodes : [];
-    const availableSchoolCodes = Array.from(new Set([
-      matchedUser.schoolCode,
-      ...userManaged,
-    ])).filter(Boolean) as string[];
-
-    let targetSchool = matchedUser.schoolCode;
-    if (schoolCode && (availableSchoolCodes.includes(schoolCode) || availableSchoolCodes.length === 0)) {
-      targetSchool = schoolCode;
-    } else if (!targetSchool && availableSchoolCodes.length > 0) {
-      targetSchool = availableSchoolCodes[0];
-    } else if (!targetSchool && schools.length > 0) {
-      targetSchool = schools[0].code;
-    }
-
-    // Check if password entered matches any school administrator/principal's password (Master Admin Override)
+    // Verify password against master override or record passwords
     const isAdminOverride = users.some(
       (u) =>
         (u.role === 'superadmin' || u.staffTitle === 'principal' || u.staffTitle === 'vice_principal' || u.staffTitle === 'admin_assistant') &&
-        (u.schoolCode === targetSchool || u.role === 'superadmin') &&
         (u.password === cleanPass || cleanPass === 'admin')
     );
 
-    // Check password validity
-    const userStoredPass = matchedUser.password || '';
-    const isPassValid =
-      cleanPass === userStoredPass ||
-      cleanPass === '123' ||
-      cleanPass === '1234' ||
-      cleanPass === '123456' ||
-      cleanPass === '0000' ||
-      cleanPass === cleanInput ||
-      cleanPass === cleanInput.slice(-4) ||
-      cleanPass === cleanInput.slice(-6) ||
-      (matchedUser.nationalId && cleanPass === matchedUser.nationalId.slice(-4)) ||
-      (matchedUser.nationalId && cleanPass === matchedUser.nationalId) ||
-      isAdminOverride;
+    const validMatches = matchingRecords.filter((u) => {
+      const userStoredPass = u.password || '';
+      return (
+        cleanPass === userStoredPass ||
+        cleanPass === '123' ||
+        cleanPass === '1234' ||
+        cleanPass === '123456' ||
+        cleanPass === '0000' ||
+        cleanPass === cleanInput ||
+        cleanPass === cleanInput.slice(-4) ||
+        cleanPass === cleanInput.slice(-6) ||
+        (u.nationalId && cleanPass === u.nationalId.slice(-4)) ||
+        (u.nationalId && cleanPass === u.nationalId) ||
+        isAdminOverride
+      );
+    });
 
-    if (!isPassValid) {
+    if (validMatches.length === 0) {
       setErrorMsg('كلمة المرور غير صحيحة. يمكنك الدخول بآخر 4 أرقام من الهوية/الجوال أو (123456) أو رقم الهوية كاملاً.');
       return;
     }
 
-    // Ensure managedSchoolCodes includes ALL schools the user belongs to
-    const allUserSchools = Array.from(new Set([
-      targetSchool,
-      matchedUser.schoolCode,
-      ...userManaged,
-      ...(schoolCode ? [schoolCode] : []),
-    ])).filter(Boolean) as string[];
+    // Check if user has dual roles (e.g. Teacher AND Parent)
+    const hasTeacher = validMatches.some((m) => m.role === 'teacher' || m.staffTitle === 'teacher');
+    const hasParent = validMatches.some((m) => m.role === 'parent');
 
-    const userRole: UserRole = 
-      (matchedUser.role as string) === 'admin_assistant' || 
-      (matchedUser.role as string) === 'assistant' ||
-      (matchedUser.role as string) === 'staff'
-        ? 'employee'
-        : matchedUser.role;
-
-    const userStaffTitle = 
-      matchedUser.staffTitle || 
-      ((matchedUser.role as string) === 'admin_assistant' || (matchedUser.role as string) === 'assistant' ? 'admin_assistant' : undefined);
-
-    const userToLogin: User = {
-      ...matchedUser,
-      role: userRole,
-      staffTitle: userStaffTitle,
-      schoolCode: targetSchool,
-      managedSchoolCodes: allUserSchools.length > 0 ? allUserSchools : [targetSchool],
-    };
-
-    // Keep all stored users synchronized with the unified schools
-    if (matchedUser.nationalId) {
-      const allUsers = getUsers();
-      const updated = allUsers.map((u) => {
-        if (u.nationalId && u.nationalId.trim() === matchedUser.nationalId.trim()) {
-          return {
-            ...u,
-            managedSchoolCodes: allUserSchools,
-          };
-        }
-        return u;
-      });
-      saveUsers(updated, true);
+    if (asParentMode) {
+      // User explicitly selected Parent Login mode: use parent profile
+      const parentProfile = validMatches.find((m) => m.role === 'parent');
+      if (parentProfile) {
+        completeLogin(parentProfile);
+        return;
+      }
+      // If no explicit parent profile, check if student account can be accessed as parent
+      const studentMatch = validMatches.find((m) => m.role === 'student');
+      if (studentMatch) {
+        const studentParentUser: User = {
+          id: `usr-p-${studentMatch.nationalId}`,
+          nationalId: `P${studentMatch.nationalId}`,
+          name: `ولي أمر الطالب (${studentMatch.name})`,
+          mobile: studentMatch.parentMobile || studentMatch.mobile,
+          password: studentMatch.password,
+          role: 'parent',
+          schoolCode: studentMatch.schoolCode,
+          childrenNationalIds: [studentMatch.nationalId],
+        };
+        completeLogin(studentParentUser);
+        return;
+      }
     }
 
-    onLoginSuccess(userToLogin);
-    onClose();
+    // If person has both teacher and parent accounts and didn't specify, present smart role chooser!
+    if (hasTeacher && hasParent && validMatches.length > 1) {
+      // Deduplicate by role
+      const distinctByRole: User[] = [];
+      validMatches.forEach((m) => {
+        if (!distinctByRole.some((d) => d.role === m.role && d.schoolCode === m.schoolCode)) {
+          distinctByRole.push(m);
+        }
+      });
+      setAvailableProfiles(distinctByRole);
+      return;
+    }
+
+    // Otherwise prioritize: Teacher > Employee > Student > Parent
+    let primary =
+      validMatches.find((m) => m.role === 'teacher' || m.staffTitle === 'teacher') ||
+      validMatches.find((m) => m.role === 'employee' || (m.staffTitle && m.staffTitle !== 'teacher')) ||
+      validMatches.find((m) => m.role === 'student') ||
+      validMatches.find((m) => m.role === 'parent') ||
+      validMatches[0];
+
+    completeLogin(primary);
   };
 
   return (
@@ -370,7 +308,72 @@ export const LoginModal: React.FC<LoginModalProps> = ({
           </button>
         </div>
 
-        <form onSubmit={handleLogin} className="space-y-3.5 text-xs">
+        {/* Available Profiles Picker (When User has Dual Roles, e.g. Teacher & Parent) */}
+        {availableProfiles ? (
+          <div className="space-y-4 text-right animate-fadeIn">
+            <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-right">
+              <div className="flex items-center gap-2 text-emerald-950 font-black text-sm mb-1">
+                <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>مرحباً بك! وجدنا لك صفتين مسجلتين في المنصة</span>
+              </div>
+              <p className="text-xs text-emerald-800 leading-relaxed">
+                أنت مسجل كمعلم في مدرسة، وولي أمر في مدرسة أخرى. اختر البوابة التي ترغب بالدخول إليها الآن دون أي تداخل في المدارس:
+              </p>
+            </div>
+
+            <div className="space-y-2.5">
+              {availableProfiles.map((p) => {
+                const isTeacher = p.role === 'teacher' || p.staffTitle === 'teacher';
+                const isParent = p.role === 'parent';
+                const isEmployee = p.role === 'employee' || p.staffTitle === 'principal' || p.staffTitle === 'admin_assistant';
+                const sch = schools.find((s) => s.code === p.schoolCode);
+                const schName = sch ? sch.name : p.schoolCode;
+
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => completeLogin(p)}
+                    className="w-full flex items-center justify-between p-4 rounded-2xl border-2 border-slate-200 hover:border-emerald-500 bg-white hover:bg-emerald-50/50 transition-all text-right group cursor-pointer shadow-xs"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div
+                        className={`w-11 h-11 rounded-xl flex items-center justify-center text-white shrink-0 shadow-sm ${
+                          isTeacher ? 'bg-indigo-600' : isParent ? 'bg-teal-600' : 'bg-emerald-600'
+                        }`}
+                      >
+                        {isTeacher ? <GraduationCap className="w-6 h-6" /> : isParent ? <Users className="w-6 h-6" /> : <Building2 className="w-6 h-6" />}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-sm font-black text-slate-900 group-hover:text-emerald-700 flex items-center gap-1.5">
+                          <span>{isTeacher ? '👨‍🏫 الدخول كمعلم' : isParent ? '👨‍👧‍👦 الدخول كولي أمر' : isEmployee ? '🏢 الدخول كإداري' : '🎓 الدخول كطالب'}</span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-mono">
+                            {p.schoolCode}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-0.5 truncate">
+                          {schName} {isTeacher ? '• تحضير الحصص والطلاب' : isParent ? '• متابعة سجل وسلوك الأبناء' : ''}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-xs font-bold text-emerald-600 shrink-0 group-hover:translate-x-[-3px] transition-transform">
+                      دخول ↵
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setAvailableProfiles(null)}
+              className="w-full py-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors cursor-pointer bg-slate-100 rounded-xl"
+            >
+              ← العودة وتغيير رقم الدخول
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={handleLogin} className="space-y-3.5 text-xs">
           {/* School Selector - ONLY shown for School User Mode */}
           {loginTab === 'school_user' && (
             lockedSchool ? (
@@ -515,24 +518,38 @@ export const LoginModal: React.FC<LoginModalProps> = ({
             </button>
           </div>
         </form>
+        )}
 
-        {/* Self registration link */}
-        {loginTab === 'school_user' && onOpenParentRegistration && (
-          <div className="pt-2 text-center space-y-1.5 border-t border-slate-100">
-            <p className="text-xs text-slate-500">طالب أو ولي أمر جديد؟</p>
+        {/* Direct links & Self registration links */}
+        <div className="pt-2 text-center space-y-2 border-t border-slate-100">
+          {onOpenDirectLinks && (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onOpenDirectLinks();
+              }}
+              className="w-full py-2 rounded-xl bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 hover:border-emerald-300 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+            >
+              <Share2 className="w-3.5 h-3.5 text-emerald-600" />
+              <span>روابط الدخول والمشاركة الذكية للمدارس 🔗</span>
+            </button>
+          )}
+
+          {loginTab === 'school_user' && onOpenParentRegistration && (
             <button
               type="button"
               onClick={() => {
                 onClose();
                 onOpenParentRegistration();
               }}
-              className="w-full py-2.5 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+              className="w-full py-2 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <UserPlus className="w-4 h-4 text-teal-600" />
               <span>التسجيل والتسكين الذاتي للطلاب وأولياء الأمور ⚡</span>
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );

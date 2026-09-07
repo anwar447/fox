@@ -1,7 +1,8 @@
 import { 
   School, User, UserRole, Attendance, CorrectionRequest, 
   SubscriptionPaymentRequest, SystemNotification, 
-  StudentPermission, StudentBehaviorLog, AdministrativeAbsenceAction 
+  StudentPermission, StudentBehaviorLog, AdministrativeAbsenceAction,
+  SchoolClassSection
 } from '../types';
 import { INITIAL_SCHOOLS, INITIAL_USERS, INITIAL_PERMISSIONS, INITIAL_BEHAVIOR_LOGS } from '../data/seedData';
 import { getTodayDateString } from './academic';
@@ -36,7 +37,53 @@ async function apiPost(endpoint: string, body: any): Promise<any> {
 }
 
 const DELETED_SCHOOLS_KEY = 'hodoorak_deleted_schools_registry';
+const DELETED_ATTENDANCES_KEY = 'hodoorak_deleted_attendance_ids_registry';
+const DELETED_NOTIFICATIONS_KEY = 'hodoorak_deleted_notification_ids_registry';
 export const DEFAULT_PURGED_DEMO_SCHOOLS: string[] = [];
+
+export function getDeletedNotificationIds(): string[] {
+  try {
+    const raw = localStorage.getItem(DELETED_NOTIFICATIONS_KEY);
+    const parsed: string[] = raw ? JSON.parse(raw) : [];
+    return Array.from(new Set(parsed.map((s) => String(s))));
+  } catch {
+    return [];
+  }
+}
+
+export function recordDeletedNotificationId(id: string): void {
+  try {
+    if (!id) return;
+    const list = getDeletedNotificationIds();
+    const str = String(id);
+    if (!list.includes(str)) {
+      list.push(str);
+      localStorage.setItem(DELETED_NOTIFICATIONS_KEY, JSON.stringify(list));
+    }
+  } catch {}
+}
+
+export function getDeletedAttendanceIds(): string[] {
+  try {
+    const raw = localStorage.getItem(DELETED_ATTENDANCES_KEY);
+    const parsed: string[] = raw ? JSON.parse(raw) : [];
+    return Array.from(new Set(parsed.map((s) => String(s))));
+  } catch {
+    return [];
+  }
+}
+
+export function recordDeletedAttendanceId(id: string): void {
+  try {
+    if (!id) return;
+    const list = getDeletedAttendanceIds();
+    const str = String(id);
+    if (!list.includes(str)) {
+      list.push(str);
+      localStorage.setItem(DELETED_ATTENDANCES_KEY, JSON.stringify(list));
+    }
+  } catch {}
+}
 
 export function getDeletedSchools(): string[] {
   try {
@@ -157,7 +204,7 @@ export function mergeSchools(existing: School[], incoming: School[]): School[] {
           map.set(key, {
             ...prev,
             ...s,
-            customClasses: (s.customClasses && s.customClasses.length > 0) ? s.customClasses : prev.customClasses,
+            customClasses: s.customClasses !== undefined ? s.customClasses : prev.customClasses,
           });
         } else {
           map.set(key, s);
@@ -174,8 +221,9 @@ export function mergeUsers(existing: User[], incoming: User[]): User[] {
   const processUser = (u: User) => {
     if (!u) return;
     const cleanNid = u.nationalId ? u.nationalId.trim() : '';
-    // If user has a valid nationalId, key by nid so multiple records for the same person unify
-    const key = cleanNid ? `nid_${cleanNid}` : (u.id || `${cleanNid}_${u.schoolCode || ''}`);
+    const roleKey = (u.staffTitle === 'teacher' || u.role === 'teacher') ? 'teacher' : (u.role || 'user');
+    // Distinct key by ID or (nationalId + role): Keeps teacher account and parent account separate!
+    const key = u.id || (cleanNid ? `nid_${cleanNid}_${roleKey}` : `${cleanNid}_${u.schoolCode || ''}`);
 
     if (map.has(key)) {
       const prev = map.get(key)!;
@@ -190,7 +238,7 @@ export function mergeUsers(existing: User[], incoming: User[]): User[] {
       const name = u.name || prev.name;
       const mobile = u.mobile || prev.mobile;
       const password = u.password || prev.password;
-      const role = (u.role === 'employee' || prev.role === 'employee') ? 'employee' : (u.role || prev.role);
+      const role = u.role || prev.role;
       const staffTitle = u.staffTitle || prev.staffTitle;
       const assignedClasses = (u.assignedClasses && u.assignedClasses.length > 0)
         ? u.assignedClasses
@@ -206,7 +254,7 @@ export function mergeUsers(existing: User[], incoming: User[]): User[] {
         password,
         role,
         staffTitle,
-        schoolCode: prev.schoolCode || u.schoolCode,
+        schoolCode: u.schoolCode || prev.schoolCode,
         managedSchoolCodes: unifiedSchools,
         assignedClasses,
       });
@@ -231,7 +279,7 @@ export function mergeUsers(existing: User[], incoming: User[]): User[] {
  * Universally returns all schools a user has access to, cross-referencing:
  * 1. user.schoolCode
  * 2. user.managedSchoolCodes
- * 3. All matching records for this person across the system by nationalId or mobile
+ * 3. All matching records for this person across the system for the SAME role
  */
 export function getUserAssignedSchools(
   user: User | null,
@@ -255,16 +303,14 @@ export function getUserAssignedSchools(
     });
   }
 
-  // 3. Cross-reference with allUsers by nationalId or mobile
+  // 3. Cross-reference ONLY with records having the SAME role (so a teacher doesn't inherit child's school)
   const usersList = allUsers || getUsers();
   const cleanNid = user.nationalId ? user.nationalId.trim() : '';
-  const cleanMobile = user.mobile ? user.mobile.trim() : '';
+  const currentRole = user.role;
 
-  if (cleanNid || cleanMobile) {
+  if (cleanNid) {
     usersList.forEach((u) => {
-      const match =
-        (cleanNid && u.nationalId && u.nationalId.trim() === cleanNid) ||
-        (cleanMobile && u.mobile && u.mobile.trim() === cleanMobile);
+      const match = u.nationalId && u.nationalId.trim() === cleanNid && u.role === currentRole;
       if (match) {
         if (u.schoolCode) schoolSet.add(u.schoolCode.trim().toUpperCase());
         if (Array.isArray(u.managedSchoolCodes)) {
@@ -283,21 +329,43 @@ export function getUserAssignedSchools(
   });
 }
 
+/**
+ * Returns alternative profiles for this person (e.g. A Teacher who also has a Parent profile for their child)
+ */
+export function getUserAlternativeProfiles(user: User | null, allUsers?: User[]): User[] {
+  if (!user || !user.nationalId) return [];
+  const cleanNid = user.nationalId.trim();
+  const cleanMobile = user.mobile ? user.mobile.trim() : '';
+  const usersList = allUsers || getUsers();
+
+  return usersList.filter((u) => {
+    if (u.id === user.id) return false;
+    const sameNid = Boolean(cleanNid && u.nationalId && u.nationalId.trim() === cleanNid);
+    const sameMobile = Boolean(cleanMobile && u.mobile && u.mobile.trim() === cleanMobile);
+    return (sameNid || sameMobile) && (u.role !== user.role || u.schoolCode !== user.schoolCode);
+  });
+}
+
 export function mergeAttendances(existing: Attendance[], incoming: Attendance[]): Attendance[] {
+  const deletedSet = new Set(getDeletedAttendanceIds());
   const map = new Map<string, Attendance>();
   existing.forEach((a) => {
     if (a) {
       const key = a.id || `${a.studentId}_${a.date}`;
-      map.set(key, a);
+      if (!deletedSet.has(String(a.id)) && !deletedSet.has(`${a.studentId}_${a.date}`)) {
+        map.set(key, a);
+      }
     }
   });
   incoming.forEach((a) => {
     if (a) {
       const key = a.id || `${a.studentId}_${a.date}`;
-      if (map.has(key)) {
-        map.set(key, { ...map.get(key)!, ...a });
-      } else {
-        map.set(key, a);
+      if (!deletedSet.has(String(a.id)) && !deletedSet.has(`${a.studentId}_${a.date}`)) {
+        if (map.has(key)) {
+          map.set(key, { ...map.get(key)!, ...a });
+        } else {
+          map.set(key, a);
+        }
       }
     }
   });
@@ -357,6 +425,8 @@ export async function syncDataFromServer(): Promise<{
         payments: localPayments,
         notifications: localNotifications,
         deleted_schools: getDeletedSchools(),
+        deleted_attendance_ids: getDeletedAttendanceIds(),
+        deleted_notification_ids: getDeletedNotificationIds(),
       });
     }
 
@@ -371,6 +441,20 @@ export async function syncDataFromServer(): Promise<{
         if (Array.isArray(d.deleted_schools) && d.deleted_schools.length > 0) {
           d.deleted_schools.forEach((del: string) => {
             recordDeletedSchool(del);
+          });
+        }
+
+        // Sync deleted attendance IDs from server
+        if (Array.isArray(d.deleted_attendance_ids) && d.deleted_attendance_ids.length > 0) {
+          d.deleted_attendance_ids.forEach((del: string) => {
+            recordDeletedAttendanceId(del);
+          });
+        }
+
+        // Sync deleted notification IDs from server
+        if (Array.isArray(d.deleted_notification_ids) && d.deleted_notification_ids.length > 0) {
+          d.deleted_notification_ids.forEach((del: string) => {
+            recordDeletedNotificationId(del);
           });
         }
 
@@ -522,6 +606,524 @@ export function updateSchool(school: School): void {
   apiPost('/api/schools', school);
 }
 
+/**
+ * Safely updates school's customClasses list
+ */
+export function updateSchoolCustomClasses(schoolCode: string, customClasses: SchoolClassSection[]): boolean {
+  const list = getSchools();
+  const idx = list.findIndex((s) => s.code?.toUpperCase() === schoolCode?.toUpperCase());
+  if (idx < 0) return false;
+  list[idx] = { ...list[idx], customClasses };
+  saveSchools(list, true);
+  apiPost('/api/schools', list[idx]);
+  return true;
+}
+
+/**
+ * Safely renames a class across the entire school without breaking anything:
+ * Cascades to Students, Teachers' assigned classes, Attendance records, Behavior logs, Permissions, and Correction requests.
+ */
+export function renameSchoolClassAndCascade(
+  schoolCode: string,
+  oldClassName: string,
+  newClassName: string
+): { updatedStudentsCount: number; updatedTeachersCount: number; updatedAttendanceCount: number } {
+  const cleanOld = oldClassName.trim();
+  const cleanNew = newClassName.trim();
+  if (!cleanOld || !cleanNew || cleanOld === cleanNew) {
+    return { updatedStudentsCount: 0, updatedTeachersCount: 0, updatedAttendanceCount: 0 };
+  }
+
+  // 1. Update School customClasses
+  const schools = getSchools();
+  const schoolIdx = schools.findIndex(
+    (s) => s.code?.toUpperCase() === schoolCode?.toUpperCase()
+  );
+  if (schoolIdx >= 0) {
+    const school = schools[schoolIdx];
+    const customClasses = (school.customClasses || []).map((c) => {
+      if (c.className.trim() === cleanOld) {
+        return { ...c, className: cleanNew };
+      }
+      return c;
+    });
+    schools[schoolIdx] = { ...school, customClasses };
+    saveSchools(schools, true);
+    apiPost('/api/schools', schools[schoolIdx]);
+  }
+
+  // 2. Cascade update to Users (Students + Teachers)
+  const users = getUsers();
+  let updatedStudentsCount = 0;
+  let updatedTeachersCount = 0;
+  let usersChanged = false;
+
+  users.forEach((u) => {
+    if (u.schoolCode?.toUpperCase() === schoolCode?.toUpperCase()) {
+      if (u.className && u.className.trim() === cleanOld) {
+        u.className = cleanNew;
+        updatedStudentsCount++;
+        usersChanged = true;
+      }
+      if (Array.isArray(u.assignedClasses) && u.assignedClasses.length > 0) {
+        let teacherAssignedChanged = false;
+        const newAssigned = u.assignedClasses.map((ac) => {
+          if (ac.className.trim() === cleanOld) {
+            teacherAssignedChanged = true;
+            return { ...ac, className: cleanNew };
+          }
+          return ac;
+        });
+        if (teacherAssignedChanged) {
+          u.assignedClasses = newAssigned;
+          updatedTeachersCount++;
+          usersChanged = true;
+        }
+      }
+    }
+  });
+  if (usersChanged) {
+    saveUsers(users, true);
+  }
+
+  // 3. Cascade update to Attendances
+  const attendances = getAttendances();
+  let updatedAttendanceCount = 0;
+  let attsChanged = false;
+  attendances.forEach((a) => {
+    if (a.schoolCode?.toUpperCase() === schoolCode?.toUpperCase()) {
+      if (a.className && a.className.trim() === cleanOld) {
+        a.className = cleanNew;
+        updatedAttendanceCount++;
+        attsChanged = true;
+      }
+    }
+  });
+  if (attsChanged) {
+    saveAttendances(attendances, true);
+  }
+
+  // 4. Cascade update to Behavior logs
+  try {
+    const behaviorLogs = getBehaviorLogs();
+    let behChanged = false;
+    behaviorLogs.forEach((b) => {
+      if (b.schoolCode?.toUpperCase() === schoolCode?.toUpperCase()) {
+        if (b.className && b.className.trim() === cleanOld) {
+          b.className = cleanNew;
+          behChanged = true;
+        }
+      }
+    });
+    if (behChanged) saveBehaviorLogs(behaviorLogs, true);
+  } catch {}
+
+  // 5. Cascade update to Permissions
+  try {
+    const permissions = getPermissions();
+    let permChanged = false;
+    permissions.forEach((p) => {
+      if (p.schoolCode?.toUpperCase() === schoolCode?.toUpperCase()) {
+        if (p.className && p.className.trim() === cleanOld) {
+          p.className = cleanNew;
+          permChanged = true;
+        }
+      }
+    });
+    if (permChanged) savePermissions(permissions, true);
+  } catch {}
+
+  // 6. Cascade update to Administrative Absence Actions
+  try {
+    const actions = getAbsenceActions();
+    let actsChanged = false;
+    actions.forEach((act) => {
+      if (act.schoolCode?.toUpperCase() === schoolCode?.toUpperCase()) {
+        if (act.className && act.className.trim() === cleanOld) {
+          act.className = cleanNew;
+          actsChanged = true;
+        }
+      }
+    });
+    if (actsChanged) saveAbsenceActions(actions, true);
+  } catch {}
+
+  // 7. Cascade update to Correction Requests
+  try {
+    const corrections = getCorrectionRequests();
+    let corrChanged = false;
+    corrections.forEach((c) => {
+      if (c.schoolCode?.toUpperCase() === schoolCode?.toUpperCase()) {
+        if (c.className && c.className.trim() === cleanOld) {
+          c.className = cleanNew;
+          corrChanged = true;
+        }
+      }
+    });
+    if (corrChanged) saveCorrectionRequests(corrections, true);
+  } catch {}
+
+  return { updatedStudentsCount, updatedTeachersCount, updatedAttendanceCount };
+}
+
+/**
+ * Safely renames a section within a class across the school without breaking anything:
+ * Cascades to Students, Teachers' assigned sections, Attendance records, Behavior logs, and Permissions.
+ */
+export function renameSchoolSectionAndCascade(
+  schoolCode: string,
+  className: string,
+  oldSectionName: string,
+  newSectionName: string
+): { updatedStudentsCount: number; updatedTeachersCount: number; updatedAttendanceCount: number } {
+  const cleanClass = className.trim();
+  const cleanOldSec = oldSectionName.trim();
+  const cleanNewSec = newSectionName.trim();
+  if (!cleanClass || !cleanOldSec || !cleanNewSec || cleanOldSec === cleanNewSec) {
+    return { updatedStudentsCount: 0, updatedTeachersCount: 0, updatedAttendanceCount: 0 };
+  }
+
+  // 1. Update School customClasses
+  const schools = getSchools();
+  const schoolIdx = schools.findIndex(
+    (s) => s.code?.toUpperCase() === schoolCode?.toUpperCase()
+  );
+  if (schoolIdx >= 0) {
+    const school = schools[schoolIdx];
+    const customClasses = (school.customClasses || []).map((c) => {
+      if (c.className.trim() === cleanClass) {
+        const nextSections = c.sections.map((sec) => (sec.trim() === cleanOldSec ? cleanNewSec : sec));
+        return { ...c, sections: Array.from(new Set(nextSections)) };
+      }
+      return c;
+    });
+    schools[schoolIdx] = { ...school, customClasses };
+    saveSchools(schools, true);
+    apiPost('/api/schools', schools[schoolIdx]);
+  }
+
+  // 2. Cascade update to Users
+  const users = getUsers();
+  let updatedStudentsCount = 0;
+  let updatedTeachersCount = 0;
+  let usersChanged = false;
+
+  users.forEach((u) => {
+    if (u.schoolCode?.toUpperCase() === schoolCode?.toUpperCase()) {
+      if (u.className?.trim() === cleanClass && u.sectionName?.trim() === cleanOldSec) {
+        u.sectionName = cleanNewSec;
+        updatedStudentsCount++;
+        usersChanged = true;
+      }
+      if (Array.isArray(u.assignedClasses)) {
+        let assignedChanged = false;
+        const newAssigned = u.assignedClasses.map((ac) => {
+          if (ac.className.trim() === cleanClass && ac.sectionName.trim() === cleanOldSec) {
+            assignedChanged = true;
+            return { ...ac, sectionName: cleanNewSec };
+          }
+          return ac;
+        });
+        if (assignedChanged) {
+          u.assignedClasses = newAssigned;
+          updatedTeachersCount++;
+          usersChanged = true;
+        }
+      }
+    }
+  });
+  if (usersChanged) {
+    saveUsers(users, true);
+  }
+
+  // 3. Cascade update to Attendances
+  const attendances = getAttendances();
+  let updatedAttendanceCount = 0;
+  let attsChanged = false;
+  attendances.forEach((a) => {
+    if (a.schoolCode?.toUpperCase() === schoolCode?.toUpperCase()) {
+      if (a.className?.trim() === cleanClass && a.sectionName?.trim() === cleanOldSec) {
+        a.sectionName = cleanNewSec;
+        updatedAttendanceCount++;
+        attsChanged = true;
+      }
+    }
+  });
+  if (attsChanged) {
+    saveAttendances(attendances, true);
+  }
+
+  // 4. Cascade update to Behavior logs & permissions
+  try {
+    const behaviorLogs = getBehaviorLogs();
+    let behChanged = false;
+    behaviorLogs.forEach((b) => {
+      if (b.schoolCode?.toUpperCase() === schoolCode?.toUpperCase()) {
+        if (b.className?.trim() === cleanClass && b.sectionName?.trim() === cleanOldSec) {
+          b.sectionName = cleanNewSec;
+          behChanged = true;
+        }
+      }
+    });
+    if (behChanged) saveBehaviorLogs(behaviorLogs, true);
+  } catch {}
+
+  try {
+    const permissions = getPermissions();
+    let permChanged = false;
+    permissions.forEach((p) => {
+      if (p.schoolCode?.toUpperCase() === schoolCode?.toUpperCase()) {
+        if (p.className?.trim() === cleanClass && p.sectionName?.trim() === cleanOldSec) {
+          p.sectionName = cleanNewSec;
+          permChanged = true;
+        }
+      }
+    });
+    if (permChanged) savePermissions(permissions, true);
+  } catch {}
+
+  return { updatedStudentsCount, updatedTeachersCount, updatedAttendanceCount };
+}
+
+/**
+ * Safely deletes a redundant class without breaking data:
+ * If migrateToClassName is provided, enrolled students and their records migrate cleanly.
+ * If no migration target is provided, students are safely preserved with unassigned class.
+ */
+export function deleteSchoolClassSafely(
+  schoolCode: string,
+  className: string,
+  migrateToClassName?: string,
+  migrateToSection?: string
+): { affectedStudentsCount: number; deleted: boolean } {
+  const cleanClass = className.trim();
+  const cleanMigrateClass = migrateToClassName?.trim();
+  const cleanMigrateSec = migrateToSection?.trim() || '1';
+
+  // 1. Update School customClasses
+  const schools = getSchools();
+  const schoolIdx = schools.findIndex(
+    (s) => s.code?.toUpperCase() === schoolCode?.toUpperCase()
+  );
+  if (schoolIdx < 0) return { affectedStudentsCount: 0, deleted: false };
+
+  const school = schools[schoolIdx];
+  const customClasses = (school.customClasses || []).filter(
+    (c) => c.className.trim() !== cleanClass
+  );
+  schools[schoolIdx] = { ...school, customClasses };
+  saveSchools(schools, true);
+  apiPost('/api/schools', schools[schoolIdx]);
+
+  // 2. Handle Students & Teachers
+  const users = getUsers();
+  let affectedStudentsCount = 0;
+  let usersChanged = false;
+
+  users.forEach((u) => {
+    if (u.schoolCode?.toUpperCase() === schoolCode?.toUpperCase()) {
+      if (u.className?.trim() === cleanClass) {
+        affectedStudentsCount++;
+        usersChanged = true;
+        if (cleanMigrateClass) {
+          u.className = cleanMigrateClass;
+          u.sectionName = cleanMigrateSec;
+        } else {
+          u.className = undefined;
+          u.sectionName = undefined;
+        }
+      }
+      if (Array.isArray(u.assignedClasses)) {
+        const filtered = u.assignedClasses.filter((ac) => ac.className.trim() !== cleanClass);
+        if (filtered.length !== u.assignedClasses.length) {
+          u.assignedClasses = filtered;
+          usersChanged = true;
+        }
+      }
+    }
+  });
+
+  if (usersChanged) {
+    saveUsers(users, true);
+  }
+
+  // 3. Attendances - if migrated, update attendance records to point to new class
+  if (cleanMigrateClass) {
+    const attendances = getAttendances();
+    let attsChanged = false;
+    attendances.forEach((a) => {
+      if (a.schoolCode?.toUpperCase() === schoolCode?.toUpperCase() && a.className?.trim() === cleanClass) {
+        a.className = cleanMigrateClass;
+        a.sectionName = cleanMigrateSec;
+        attsChanged = true;
+      }
+    });
+    if (attsChanged) {
+      saveAttendances(attendances, true);
+    }
+  }
+
+  return { affectedStudentsCount, deleted: true };
+}
+
+/**
+ * Safely deletes a section from a class without breaking data:
+ * If migrateToSection is provided, students in that section are migrated to the target section.
+ */
+export function deleteSchoolSectionSafely(
+  schoolCode: string,
+  className: string,
+  sectionName: string,
+  migrateToSection?: string
+): { affectedStudentsCount: number; deleted: boolean } {
+  const cleanClass = className.trim();
+  const cleanSec = sectionName.trim();
+  const cleanMigrateSec = migrateToSection?.trim();
+
+  // 1. Update School customClasses
+  const schools = getSchools();
+  const schoolIdx = schools.findIndex(
+    (s) => s.code?.toUpperCase() === schoolCode?.toUpperCase()
+  );
+  if (schoolIdx < 0) return { affectedStudentsCount: 0, deleted: false };
+
+  const school = schools[schoolIdx];
+  const customClasses = (school.customClasses || []).map((c) => {
+    if (c.className.trim() === cleanClass) {
+      return {
+        ...c,
+        sections: c.sections.filter((s) => s.trim() !== cleanSec),
+      };
+    }
+    return c;
+  });
+
+  schools[schoolIdx] = { ...school, customClasses };
+  saveSchools(schools, true);
+  apiPost('/api/schools', schools[schoolIdx]);
+
+  // 2. Handle Students & Teachers
+  const users = getUsers();
+  let affectedStudentsCount = 0;
+  let usersChanged = false;
+
+  users.forEach((u) => {
+    if (u.schoolCode?.toUpperCase() === schoolCode?.toUpperCase()) {
+      if (u.className?.trim() === cleanClass && u.sectionName?.trim() === cleanSec) {
+        affectedStudentsCount++;
+        usersChanged = true;
+        if (cleanMigrateSec) {
+          u.sectionName = cleanMigrateSec;
+        } else {
+          u.sectionName = undefined;
+        }
+      }
+      if (Array.isArray(u.assignedClasses)) {
+        const filtered = u.assignedClasses.filter(
+          (ac) => !(ac.className.trim() === cleanClass && ac.sectionName.trim() === cleanSec)
+        );
+        if (filtered.length !== u.assignedClasses.length) {
+          u.assignedClasses = filtered;
+          usersChanged = true;
+        }
+      }
+    }
+  });
+
+  if (usersChanged) {
+    saveUsers(users, true);
+  }
+
+  // 3. Update Attendances if migrated
+  if (cleanMigrateSec) {
+    const attendances = getAttendances();
+    let attsChanged = false;
+    attendances.forEach((a) => {
+      if (a.schoolCode?.toUpperCase() === schoolCode?.toUpperCase() && a.className?.trim() === cleanClass && a.sectionName?.trim() === cleanSec) {
+        a.sectionName = cleanMigrateSec;
+        attsChanged = true;
+      }
+    });
+    if (attsChanged) {
+      saveAttendances(attendances, true);
+    }
+  }
+
+  return { affectedStudentsCount, deleted: true };
+}
+
+/**
+ * Adds a new class to school with custom sections
+ */
+export function addSchoolClass(
+  schoolCode: string,
+  className: string,
+  sections: string[] = ['1', '2', '3']
+): { success: boolean; message?: string } {
+  const cleanName = className.trim();
+  if (!cleanName) return { success: false, message: 'يرجى إدخال اسم الصف' };
+
+  const schools = getSchools();
+  const schoolIdx = schools.findIndex(
+    (s) => s.code?.toUpperCase() === schoolCode?.toUpperCase()
+  );
+  if (schoolIdx < 0) return { success: false, message: 'المدرسة غير موجودة' };
+
+  const school = schools[schoolIdx];
+  const customClasses = [...(school.customClasses || [])];
+
+  if (customClasses.some((c) => c.className.trim() === cleanName)) {
+    return { success: false, message: 'هذا الصف موجود مسبقاً في قائمة المدرسة' };
+  }
+
+  const cleanSections = sections.map((s) => s.trim()).filter(Boolean);
+  customClasses.push({
+    id: `c-custom-${Date.now()}`,
+    className: cleanName,
+    sections: cleanSections.length > 0 ? cleanSections : ['1', '2', '3'],
+  });
+
+  schools[schoolIdx] = { ...school, customClasses };
+  saveSchools(schools, true);
+  apiPost('/api/schools', schools[schoolIdx]);
+  return { success: true };
+}
+
+/**
+ * Adds a new section to an existing class in a school
+ */
+export function addSchoolSection(
+  schoolCode: string,
+  className: string,
+  sectionName: string
+): { success: boolean; message?: string } {
+  const cleanClass = className.trim();
+  const cleanSec = sectionName.trim();
+  if (!cleanClass || !cleanSec) return { success: false, message: 'يرجى إدخال اسم الشعبة' };
+
+  const schools = getSchools();
+  const schoolIdx = schools.findIndex(
+    (s) => s.code?.toUpperCase() === schoolCode?.toUpperCase()
+  );
+  if (schoolIdx < 0) return { success: false, message: 'المدرسة غير موجودة' };
+
+  const school = schools[schoolIdx];
+  const customClasses = (school.customClasses || []).map((c) => {
+    if (c.className.trim() === cleanClass) {
+      if (c.sections.some((s) => s.trim() === cleanSec)) {
+        return c;
+      }
+      return { ...c, sections: [...c.sections, cleanSec] };
+    }
+    return c;
+  });
+
+  schools[schoolIdx] = { ...school, customClasses };
+  saveSchools(schools, true);
+  apiPost('/api/schools', schools[schoolIdx]);
+  return { success: true };
+}
+
 export function deleteSchool(schoolIdOrCode: string, extraCode?: string): void {
   recordDeletedSchool(schoolIdOrCode, extraCode);
   const deleted = getDeletedSchools();
@@ -644,8 +1246,15 @@ export function saveUsers(users: User[], syncServer: boolean = true): void {
 export function addUser(user: User): void {
   const list = getUsers();
   const cleanNid = user.nationalId ? user.nationalId.trim() : '';
+  const userRole = user.role || (user.staffTitle === 'teacher' ? 'teacher' : 'employee');
   const idx = list.findIndex(
-    (u) => (cleanNid && u.nationalId && u.nationalId.trim() === cleanNid) || u.id === user.id
+    (u) =>
+      u.id === user.id ||
+      (cleanNid &&
+        u.nationalId &&
+        u.nationalId.trim() === cleanNid &&
+        u.role === userRole &&
+        (userRole !== 'teacher' || u.schoolCode === user.schoolCode))
   );
   if (idx >= 0) {
     const prev = list[idx];
@@ -670,9 +1279,16 @@ export function addUser(user: User): void {
 export function updateUser(user: User): void {
   const list = getUsers();
   const cleanNid = user.nationalId ? user.nationalId.trim() : '';
+  const userRole = user.role || (user.staffTitle === 'teacher' ? 'teacher' : 'employee');
   let updatedAny = false;
   const updatedList = list.map((u) => {
-    const match = (cleanNid && u.nationalId && u.nationalId.trim() === cleanNid) || u.id === user.id;
+    const match =
+      u.id === user.id ||
+      (cleanNid &&
+        u.nationalId &&
+        u.nationalId.trim() === cleanNid &&
+        u.role === userRole &&
+        (userRole !== 'teacher' || u.schoolCode === user.schoolCode));
     if (match) {
       updatedAny = true;
       const unifiedSchools = Array.from(new Set([
@@ -707,6 +1323,7 @@ export function deleteUser(userId: string): void {
 // 3. Attendances
 export function getAttendances(): Attendance[] {
   try {
+    const deletedSet = new Set(getDeletedAttendanceIds());
     const raw = localStorage.getItem(ATTENDANCES_KEY);
     let current: Attendance[] = [];
     if (raw) {
@@ -720,16 +1337,22 @@ export function getAttendances(): Attendance[] {
       localStorage.setItem(ATTENDANCES_KEY, JSON.stringify(current));
     }
 
-    return current;
+    return current.filter(
+      (a) => !deletedSet.has(String(a.id)) && !deletedSet.has(`${a.studentId}_${a.date}`)
+    );
   } catch {
     return [];
   }
 }
 
 export function saveAttendances(attendances: Attendance[], syncServer: boolean = true): void {
-  localStorage.setItem(ATTENDANCES_KEY, JSON.stringify(attendances));
+  const deletedSet = new Set(getDeletedAttendanceIds());
+  const cleanList = attendances.filter(
+    (a) => !deletedSet.has(String(a.id)) && !deletedSet.has(`${a.studentId}_${a.date}`)
+  );
+  localStorage.setItem(ATTENDANCES_KEY, JSON.stringify(cleanList));
   if (syncServer) {
-    apiPost('/api/attendances', attendances);
+    apiPost('/api/attendances', cleanList);
   }
 }
 
@@ -752,6 +1375,283 @@ export function updateAttendance(attendance: Attendance): void {
     all.push(attendance);
   }
   saveAttendances(all, true);
+}
+
+/**
+ * Permanently deletes a single attendance record by ID and registers it in the deleted list
+ */
+export function deleteAttendance(attendanceId: string): void {
+  if (!attendanceId) return;
+  recordDeletedAttendanceId(attendanceId);
+  const all = getAttendances().filter((a) => a.id !== attendanceId);
+  saveAttendances(all, true);
+  fetch(`/api/attendances/${encodeURIComponent(attendanceId)}`, { method: 'DELETE' }).catch(() => {});
+}
+
+/**
+ * Permanently deletes multiple attendance records by IDs and syncs with backend
+ */
+export function deleteAttendances(attendanceIds: string[]): void {
+  if (!Array.isArray(attendanceIds) || attendanceIds.length === 0) return;
+  attendanceIds.forEach((id) => recordDeletedAttendanceId(id));
+  const delSet = new Set(attendanceIds.map(String));
+  const all = getAttendances().filter((a) => !delSet.has(String(a.id)));
+  saveAttendances(all, true);
+  apiPost('/api/attendances/delete-batch', { ids: attendanceIds });
+}
+
+/**
+ * Permanently deletes all recorded absences for a student (due to system glitch or technical error)
+ * and restarts the absence calculation from scratch
+ */
+export function deleteStudentAllAbsences(studentId: string): number {
+  if (!studentId) return 0;
+  const all = getAttendances();
+  const absences = all.filter(
+    (a) => a.studentId === studentId && (a.finalStatus === 'absent' || a.teacherMark === 'absent')
+  );
+  if (absences.length === 0) return 0;
+  const ids = absences.map((a) => a.id);
+  deleteAttendances(ids);
+
+  // Restart absence calculation from scratch
+  const users = getUsers();
+  const uIdx = users.findIndex((u) => u.id === studentId);
+  if (uIdx >= 0) {
+    users[uIdx].lastAbsenceResetDate = getTodayDateString();
+    saveUsers(users, true);
+  }
+
+  return ids.length;
+}
+
+/**
+ * Bulk converts all absences of a student to 'present' (حاضر) with administrative correction notes
+ * and restarts the absence calculation from scratch
+ */
+export function convertStudentAllAbsencesToPresent(
+  studentId: string,
+  reason: string = 'تصحيح إداري بسبب عطل تقني في النظام',
+  adminName?: string
+): number {
+  if (!studentId) return 0;
+  const all = getAttendances();
+  let count = 0;
+  const noteSuffix = adminName ? ` (بواسطة: ${adminName})` : '';
+  const fullNote = `${reason}${noteSuffix}`;
+
+  const updated = all.map((a) => {
+    if (a.studentId === studentId && (a.finalStatus === 'absent' || a.teacherMark === 'absent')) {
+      count++;
+      return {
+        ...a,
+        finalStatus: 'present' as const,
+        teacherMark: 'present' as const,
+        isTruant: false,
+        selfCheckTime: a.selfCheckTime || '07:15 ص',
+        adminDecisionNotes: fullNote,
+        excuseStatus: 'accepted' as const,
+      };
+    }
+    return a;
+  });
+
+  if (count > 0) {
+    saveAttendances(updated, true);
+  }
+
+  // Restart absence calculation from scratch
+  const users = getUsers();
+  const uIdx = users.findIndex((u) => u.id === studentId);
+  if (uIdx >= 0) {
+    users[uIdx].lastAbsenceResetDate = getTodayDateString();
+    saveUsers(users, true);
+  }
+
+  return count;
+}
+
+/**
+ * Bulk converts all absences of MULTIPLE selected students to 'present' (حاضر)
+ * and restarts the absence calculation & warning cycle from scratch
+ */
+export function bulkConvertMultipleStudentsAbsencesToPresent(
+  studentIds: string[],
+  reason: string = 'تصحيح إداري بسبب عطل تقني في النظام وإعادة بدء الحساب',
+  adminName?: string
+): { affectedStudentsCount: number; affectedAbsencesCount: number } {
+  if (!studentIds || studentIds.length === 0) {
+    return { affectedStudentsCount: 0, affectedAbsencesCount: 0 };
+  }
+
+  const all = getAttendances();
+  const studentSet = new Set(studentIds);
+  let affectedAbsencesCount = 0;
+  const noteSuffix = adminName ? ` (بواسطة: ${adminName})` : '';
+  const fullNote = `${reason}${noteSuffix}`;
+
+  const updated = all.map((a) => {
+    if (studentSet.has(a.studentId) && (a.finalStatus === 'absent' || a.teacherMark === 'absent')) {
+      affectedAbsencesCount++;
+      return {
+        ...a,
+        finalStatus: 'present' as const,
+        teacherMark: 'present' as const,
+        isTruant: false,
+        selfCheckTime: a.selfCheckTime || '07:15 ص',
+        adminDecisionNotes: fullNote,
+        excuseStatus: 'accepted' as const,
+      };
+    }
+    return a;
+  });
+
+  if (affectedAbsencesCount > 0) {
+    saveAttendances(updated, true);
+  }
+
+  // Restart absence calculation and reset cycle for all selected students ("يبدا الحساب من جديد")
+  const todayStr = getTodayDateString();
+  const users = getUsers();
+  let usersChanged = false;
+  users.forEach((u) => {
+    if (studentSet.has(u.id)) {
+      u.lastAbsenceResetDate = todayStr;
+      usersChanged = true;
+    }
+  });
+
+  if (usersChanged) {
+    saveUsers(users, true);
+  }
+
+  return { affectedStudentsCount: studentIds.length, affectedAbsencesCount };
+}
+
+/**
+ * Permanently deletes all recorded absences for MULTIPLE selected students
+ * and restarts their absence calculation from scratch
+ */
+export function bulkDeleteMultipleStudentsAbsences(
+  studentIds: string[]
+): { affectedStudentsCount: number; affectedAbsencesCount: number } {
+  if (!studentIds || studentIds.length === 0) {
+    return { affectedStudentsCount: 0, affectedAbsencesCount: 0 };
+  }
+
+  const all = getAttendances();
+  const studentSet = new Set(studentIds);
+  const absences = all.filter(
+    (a) => studentSet.has(a.studentId) && (a.finalStatus === 'absent' || a.teacherMark === 'absent')
+  );
+
+  const ids = absences.map((a) => a.id);
+  if (ids.length > 0) {
+    deleteAttendances(ids);
+  }
+
+  // Restart absence calculation and reset cycle for all selected students ("يبدا الحساب من جديد")
+  const todayStr = getTodayDateString();
+  const users = getUsers();
+  let usersChanged = false;
+  users.forEach((u) => {
+    if (studentSet.has(u.id)) {
+      u.lastAbsenceResetDate = todayStr;
+      usersChanged = true;
+    }
+  });
+
+  if (usersChanged) {
+    saveUsers(users, true);
+  }
+
+  return { affectedStudentsCount: studentIds.length, affectedAbsencesCount: ids.length };
+}
+
+/**
+ * Bulk converts selected attendance records (by attendance IDs) to 'present'
+ * and restarts the absence cycle for the corresponding students
+ */
+export function bulkConvertAttendanceRecordsToPresent(
+  attendanceIds: string[],
+  reason: string = 'تصحيح إداري بسبب عطل تقني - إعادة بدء الحساب',
+  adminName?: string
+): { affectedRecordsCount: number; affectedStudentsCount: number } {
+  if (!attendanceIds || attendanceIds.length === 0) return { affectedRecordsCount: 0, affectedStudentsCount: 0 };
+  const all = getAttendances();
+  const idSet = new Set(attendanceIds);
+  let count = 0;
+  const noteSuffix = adminName ? ` (بواسطة: ${adminName})` : '';
+  const fullNote = `${reason}${noteSuffix}`;
+  const studentIdsAffected = new Set<string>();
+
+  const updated = all.map((a) => {
+    if (idSet.has(a.id)) {
+      count++;
+      studentIdsAffected.add(a.studentId);
+      return {
+        ...a,
+        finalStatus: 'present' as const,
+        teacherMark: 'present' as const,
+        isTruant: false,
+        selfCheckTime: a.selfCheckTime || '07:15 ص',
+        adminDecisionNotes: fullNote,
+        excuseStatus: 'accepted' as const,
+      };
+    }
+    return a;
+  });
+
+  if (count > 0) {
+    saveAttendances(updated, true);
+  }
+
+  // Reset cycle for affected students
+  const todayStr = getTodayDateString();
+  const users = getUsers();
+  let usersChanged = false;
+  users.forEach((u) => {
+    if (studentIdsAffected.has(u.id)) {
+      u.lastAbsenceResetDate = todayStr;
+      usersChanged = true;
+    }
+  });
+  if (usersChanged) {
+    saveUsers(users, true);
+  }
+
+  return { affectedRecordsCount: count, affectedStudentsCount: studentIdsAffected.size };
+}
+
+/**
+ * Admin edits a specific attendance record with custom status, notes, or reason
+ */
+export function adminUpdateAttendance(
+  attendanceId: string,
+  updates: Partial<Attendance>,
+  adminName?: string
+): Attendance | null {
+  const all = getAttendances();
+  const idx = all.findIndex((a) => a.id === attendanceId);
+  if (idx < 0) return null;
+
+  const prev = all[idx];
+  const noteSuffix = adminName ? ` [تعديل إداري: ${adminName}]` : '';
+  const newNotes = updates.adminDecisionNotes
+    ? `${updates.adminDecisionNotes}${noteSuffix}`
+    : prev.adminDecisionNotes;
+
+  const merged: Attendance = {
+    ...prev,
+    ...updates,
+    adminDecisionNotes: newNotes,
+    // If status changed to present, clear truant flag
+    isTruant: updates.finalStatus === 'present' ? false : (updates.isTruant ?? prev.isTruant),
+  };
+
+  all[idx] = merged;
+  saveAttendances(all, true);
+  return merged;
 }
 
 // 3.5 Student Classroom Permissions
@@ -995,16 +1895,25 @@ export function updatePaymentRequest(req: SubscriptionPaymentRequest): void {
 export function getSystemNotifications(): SystemNotification[] {
   try {
     const raw = localStorage.getItem(NOTIFICATIONS_KEY);
-    return raw ? JSON.parse(raw) : [];
+    if (!raw) return [];
+    const parsed: SystemNotification[] = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const deleted = new Set(getDeletedNotificationIds());
+    return parsed.filter((n) => n?.id && !deleted.has(String(n.id)));
   } catch {
     return [];
   }
 }
 
 export function saveSystemNotifications(n: SystemNotification[], syncServer: boolean = true): void {
-  localStorage.setItem(NOTIFICATIONS_KEY, JSON.stringify(n));
+  const deleted = new Set(getDeletedNotificationIds());
+  const clean = (Array.isArray(n) ? n : []).filter((item) => item?.id && !deleted.has(String(item.id)));
+  localStorage.setItem(NOTIFICATIONS_KEY, JSON.stringify(clean));
   if (syncServer) {
-    apiPost('/api/sync', { notifications: n });
+    apiPost('/api/sync', { 
+      notifications: clean,
+      deleted_notification_ids: getDeletedNotificationIds(),
+    });
   }
 }
 
@@ -1012,6 +1921,54 @@ export function addSystemNotification(n: SystemNotification): void {
   const list = getSystemNotifications();
   list.unshift(n);
   saveSystemNotifications(list, true);
+}
+
+/**
+ * Retract an emergency broadcast / announcement (e.g. In case of rumors or weather cancellation)
+ * Marks it as officially retracted and clarifies the reason for all dashboards.
+ */
+export function retractSystemNotification(
+  notificationId: string, 
+  reason: string, 
+  retractedByName?: string
+): SystemNotification | null {
+  if (!notificationId) return null;
+  const list = getSystemNotifications();
+  const idx = list.findIndex((n) => n.id === notificationId);
+  if (idx < 0) return null;
+
+  const prev = list[idx];
+  const updated: SystemNotification = {
+    ...prev,
+    retracted: true,
+    retractedAt: new Date().toISOString(),
+    retractionReason: reason?.trim() || 'تم التراجع عن التعميم بناءً على التوجيهات الرسمية ونفي الشائعة',
+    retractedByName: retractedByName?.trim() || prev.senderName || 'إدارة المدرسة',
+  };
+
+  list[idx] = updated;
+  saveSystemNotifications(list, true);
+
+  // Notify backend API
+  apiPost(`/api/notifications/${encodeURIComponent(notificationId)}/retract`, {
+    reason: updated.retractionReason,
+    retractedByName: updated.retractedByName,
+  });
+
+  return updated;
+}
+
+/**
+ * Permanently delete a broadcast/notification so it vanishes everywhere
+ */
+export function deleteSystemNotification(notificationId: string): void {
+  if (!notificationId) return;
+  recordDeletedNotificationId(notificationId);
+  const current = getSystemNotifications().filter((n) => n.id !== notificationId);
+  saveSystemNotifications(current, true);
+
+  // Send DELETE to server API
+  fetch(`/api/notifications/${encodeURIComponent(notificationId)}`, { method: 'DELETE' }).catch(() => {});
 }
 
 export function updateUserAvatar(userId: string, avatarDataUrl: string): void {

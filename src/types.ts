@@ -237,4 +237,8 @@ export interface SystemNotification {
   senderName?: string;
   createdAt: string;
   read?: boolean;
+  retracted?: boolean;
+  retractedAt?: string;
+  retractionReason?: string;
+  retractedByName?: string;
 }

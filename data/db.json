@@ -1,5 +1,115 @@
 {
-  "schools": [],
+  "schools": [
+    {
+      "id": "sch-saqr-1",
+      "code": "SAQR-1448",
+      "name": "ثانوية صقر قريش",
+      "city": "الرياض",
+      "type": "secondary",
+      "lat": 24.7136,
+      "lng": 46.6753,
+      "radiusMeters": 500,
+      "subscriptionPlan": "yearly",
+      "subscriptionStatus": "active",
+      "subscriptionStartDate": "2026-01-01",
+      "subscriptionEndDate": "2027-01-01",
+      "contactMobile": "0555555555",
+      "isQuranSchool": false,
+      "customClasses": [
+        {
+          "id": "c-sq-1",
+          "className": "الأول الثانوي",
+          "sections": [
+            "1",
+            "2",
+            "3",
+            "4"
+          ]
+        },
+        {
+          "id": "c-sq-2",
+          "className": "الثاني الثانوي",
+          "sections": [
+            "1",
+            "2",
+            "3",
+            "4"
+          ]
+        },
+        {
+          "id": "c-sq-3",
+          "className": "الثالث الثانوي",
+          "sections": [
+            "1",
+            "2",
+            "3",
+            "4"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sch-raya-1",
+      "code": "RAYA-1448",
+      "name": "متوسطة الراية",
+      "city": "الرياض",
+      "type": "middle",
+      "lat": 24.7136,
+      "lng": 46.6753,
+      "radiusMeters": 500,
+      "subscriptionPlan": "yearly",
+      "subscriptionStatus": "active",
+      "subscriptionStartDate": "2026-01-01",
+      "subscriptionEndDate": "2027-01-01",
+      "contactMobile": "0551122334",
+      "isQuranSchool": false,
+      "customClasses": [
+        {
+          "id": "c-ry-1",
+          "className": "الأول المتوسط",
+          "sections": ["1", "2"]
+        },
+        {
+          "id": "c-ry-2",
+          "className": "الثاني المتوسط",
+          "sections": ["1", "2"]
+        },
+        {
+          "id": "c-ry-3",
+          "className": "الثالث المتوسط",
+          "sections": ["1", "2"]
+        }
+      ]
+    },
+    {
+      "id": "sch-quran-1",
+      "code": "QURAN-100",
+      "name": "مدرسة الفرقان لتحفيظ القرآن",
+      "city": "مكة المكرمة",
+      "type": "quran",
+      "lat": 21.4225,
+      "lng": 39.8262,
+      "radiusMeters": 400,
+      "subscriptionPlan": "free_forever",
+      "subscriptionStatus": "active",
+      "subscriptionStartDate": "2026-01-01",
+      "subscriptionEndDate": "2099-12-31",
+      "contactMobile": "0500000000",
+      "isQuranSchool": true,
+      "customClasses": [
+        {
+          "id": "c-q-1",
+          "className": "حلقة الإتقان",
+          "sections": ["1"]
+        },
+        {
+          "id": "c-q-2",
+          "className": "حلقة الترتيل",
+          "sections": ["1"]
+        }
+      ]
+    }
+  ],
   "users": [
     {
       "id": "usr-admin-1",
@@ -8,7 +118,11 @@
       "mobile": "0500000000",
       "password": "admin",
       "role": "superadmin",
-      "schoolCode": "SUPERADMIN"
+      "schoolCode": "SUPERADMIN",
+      "managedSchoolCodes": [
+        "SUPERADMIN"
+      ],
+      "childrenNationalIds": []
     },
     {
       "id": "usr-emp-1",
@@ -18,7 +132,11 @@
       "password": "123",
       "role": "employee",
       "staffTitle": "principal",
-      "schoolCode": "RAYA-1448"
+      "schoolCode": "RAYA-1448",
+      "managedSchoolCodes": [
+        "RAYA-1448"
+      ],
+      "childrenNationalIds": []
     },
     {
       "id": "usr-emp-2",
@@ -28,7 +146,11 @@
       "password": "123",
       "role": "employee",
       "staffTitle": "vice_principal",
-      "schoolCode": "RAYA-1448"
+      "schoolCode": "RAYA-1448",
+      "managedSchoolCodes": [
+        "RAYA-1448"
+      ],
+      "childrenNationalIds": []
     },
     {
       "id": "usr-tch-1",
@@ -48,7 +170,11 @@
           "className": "الأول المتوسط",
           "sectionName": "2"
         }
-      ]
+      ],
+      "managedSchoolCodes": [
+        "RAYA-1448"
+      ],
+      "childrenNationalIds": []
     },
     {
       "id": "usr-tch-2",
@@ -68,7 +194,11 @@
           "className": "الثالث المتوسط",
           "sectionName": "1"
         }
-      ]
+      ],
+      "managedSchoolCodes": [
+        "RAYA-1448"
+      ],
+      "childrenNationalIds": []
     },
     {
       "id": "usr-prn-1",
@@ -81,6 +211,9 @@
       "childrenNationalIds": [
         "1100110011",
         "1100220022"
+      ],
+      "managedSchoolCodes": [
+        "RAYA-1448"
       ]
     },
     {
@@ -93,7 +226,11 @@
       "role": "student",
       "schoolCode": "RAYA-1448",
       "className": "الأول المتوسط",
-      "sectionName": "1"
+      "sectionName": "1",
+      "managedSchoolCodes": [
+        "RAYA-1448"
+      ],
+      "childrenNationalIds": []
     },
     {
       "id": "usr-std-2",
@@ -105,7 +242,11 @@
       "role": "student",
       "schoolCode": "RAYA-1448",
       "className": "الأول المتوسط",
-      "sectionName": "2"
+      "sectionName": "2",
+      "managedSchoolCodes": [
+        "RAYA-1448"
+      ],
+      "childrenNationalIds": []
     },
     {
       "id": "usr-std-3",
@@ -117,7 +258,11 @@
       "role": "student",
       "schoolCode": "RAYA-1448",
       "className": "الأول المتوسط",
-      "sectionName": "1"
+      "sectionName": "1",
+      "managedSchoolCodes": [
+        "RAYA-1448"
+      ],
+      "childrenNationalIds": []
     },
     {
       "id": "usr-std-q1",
@@ -129,7 +274,11 @@
       "role": "student",
       "schoolCode": "QURAN-100",
       "className": "حلقة الإتقان",
-      "sectionName": "1"
+      "sectionName": "1",
+      "managedSchoolCodes": [
+        "QURAN-100"
+      ],
+      "childrenNationalIds": []
     }
   ],
   "attendances": [
@@ -186,9 +335,9 @@
   "payments": [],
   "notifications": [],
   "deleted_schools": [
-    "RAYA-1448",
     "SCH-RAYA-1",
-    "QURAN-100",
-    "SCH-QURAN-1"
+    "SCH-QURAN-1",
+    "RAYA-1448",
+    "QURAN-100"
   ]
 }

@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { School, User, StaffTitle, UserRole } from '../types';
 import { getUsers, saveUsers, getSchools } from '../utils/storage';
 import { buildTeacherWhatsAppInvitation, buildMagicLinkUrl } from '../utils/magicLink';
-import { getSchoolClasses } from '../utils/schoolClasses';
+import { TeacherClassPicker, AssignedClassItem } from './TeacherClassPicker';
 import { 
   Users, UserPlus, Trash2, Edit2, Check, X, 
   MessageSquare, Share2, Sparkles, BookOpen, Key, Phone, 
@@ -52,17 +52,7 @@ export const StaffManagementModal: React.FC<StaffManagementModalProps> = ({
   const [managedSchoolCodes, setManagedSchoolCodes] = useState<string[]>([]);
   
   // Assigned classes for teacher (strictly scoped to this school)
-  const availableSchoolClasses = useMemo(() => getSchoolClasses(school), [school]);
-  const [selectedClasses, setSelectedClasses] = useState<{ className: string; sectionName: string }[]>([]);
-  const [tempClassName, setTempClassName] = useState(availableSchoolClasses[0]?.className || '');
-  const [tempSectionName, setTempSectionName] = useState(availableSchoolClasses[0]?.sections?.[0] || '1');
-
-  useEffect(() => {
-    if (availableSchoolClasses.length > 0) {
-      setTempClassName(availableSchoolClasses[0].className);
-      setTempSectionName(availableSchoolClasses[0].sections?.[0] || '1');
-    }
-  }, [school.code, availableSchoolClasses]);
+  const [selectedClasses, setSelectedClasses] = useState<AssignedClassItem[]>([]);
 
   if (!isOpen) return null;
 
@@ -116,20 +106,6 @@ export const StaffManagementModal: React.FC<StaffManagementModalProps> = ({
     } else {
       setManagedSchoolCodes([...managedSchoolCodes, code]);
     }
-  };
-
-  const handleAddClassToTeacher = () => {
-    if (!tempClassName || !tempSectionName) return;
-    const exists = selectedClasses.some(
-      (c) => c.className === tempClassName && c.sectionName === tempSectionName
-    );
-    if (!exists) {
-      setSelectedClasses([...selectedClasses, { className: tempClassName, sectionName: tempSectionName }]);
-    }
-  };
-
-  const handleRemoveClassFromTeacher = (index: number) => {
-    setSelectedClasses(selectedClasses.filter((_, i) => i !== index));
   };
 
   const handleSaveStaff = (e: React.FormEvent) => {
@@ -541,79 +517,15 @@ export const StaffManagementModal: React.FC<StaffManagementModalProps> = ({
               </div>
             </div>
 
-            {/* If Teacher: Assign Classes */}
+            {/* If Teacher: Assign Classes with TeacherClassPicker */}
             {staffTitle === 'teacher' && (
-              <div className="bg-indigo-50/70 border border-indigo-200/80 rounded-2xl p-4 space-y-3">
-                <span className="font-bold text-indigo-950 block">إسناد الصفوف والشعب للمعلم (لتسهيل الرصد اليومي):</span>
-                <div className="flex flex-wrap items-center gap-2">
-                  <select
-                    value={tempClassName}
-                    onChange={(e) => {
-                      const newClass = e.target.value;
-                      setTempClassName(newClass);
-                      const matched = availableSchoolClasses.find((c) => c.className === newClass);
-                      if (matched && matched.sections.length > 0) {
-                        setTempSectionName(matched.sections[0]);
-                      }
-                    }}
-                    className="bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-800 font-medium"
-                  >
-                    {availableSchoolClasses.map((c) => (
-                      <option key={c.id} value={c.className}>
-                        {c.className}
-                      </option>
-                    ))}
-                  </select>
-
-                  <select
-                    value={tempSectionName}
-                    onChange={(e) => setTempSectionName(e.target.value)}
-                    className="bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-800 font-medium"
-                  >
-                    {(() => {
-                      const matched = availableSchoolClasses.find((c) => c.className === tempClassName);
-                      const sections = matched && matched.sections.length > 0 ? matched.sections : ['1', '2', '3'];
-                      return sections.map((sec) => (
-                        <option key={sec} value={sec}>
-                          شعبة / فصل ({sec})
-                        </option>
-                      ));
-                    })()}
-                  </select>
-
-                  <button
-                    type="button"
-                    onClick={handleAddClassToTeacher}
-                    className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold cursor-pointer shadow-2xs"
-                  >
-                    + إضافة الفصل للقائمة
-                  </button>
-                </div>
-
-                {selectedClasses.length > 0 ? (
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    {selectedClasses.map((c, idx) => (
-                      <span
-                        key={idx}
-                        className="px-3 py-1 rounded-xl bg-white border border-indigo-200 text-indigo-900 font-bold flex items-center gap-1.5 shadow-2xs"
-                      >
-                        <span>{c.className} - فصل ({c.sectionName})</span>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveClassFromTeacher(idx)}
-                          className="text-rose-500 hover:text-rose-700 cursor-pointer"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-[11px] text-indigo-700">
-                    * إذا لم تحدد فصولاً معينة، سيتاح للمعلم الوصول لجميع فصول المدرسة.
-                  </p>
-                )}
-              </div>
+              <TeacherClassPicker
+                school={school}
+                selectedClasses={selectedClasses}
+                onChange={setSelectedClasses}
+                title="إسناد الصفوف والشعب للمعلم في هذه المدرسة:"
+                hint="انقر مباشرة على أي شعبة لتفعيلها أو إلغائها فوراً (مجهزة بكافة مراحل المتوسطة والثانوية والشعب المعتمدة):"
+              />
             )}
 
             {/* Multi-School Assignment Section */}

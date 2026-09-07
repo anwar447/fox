@@ -8,13 +8,15 @@ import {
   Shield, CheckCircle, XCircle, Clock, 
   AlertTriangle, Save, Users, Sparkles, Filter, 
   Activity, ArrowUpRight, ShieldAlert, LogOut, Check, Star, ThumbsUp, ThumbsDown,
-  UserCheck, UserX, CheckCheck, RefreshCw, UserPlus, X
+  UserCheck, UserX, CheckCheck, RefreshCw, UserPlus, X, BookOpen
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { StudentPermissionModal } from './StudentPermissionModal';
 import { BehaviorRecordModal } from './BehaviorRecordModal';
 import { LiveClockHeader } from './LiveClockHeader';
 import { BroadcastAlertBanner } from './BroadcastAlertBanner';
+import { TeacherEditClassesModal } from './TeacherEditClassesModal';
+import { getSchoolClasses } from '../utils/schoolClasses';
 import { Building2 } from 'lucide-react';
 import { saveUsers } from '../utils/storage';
 
@@ -60,17 +62,27 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
       )
   );
 
+  const [activeUser, setActiveUser] = useState<User>(currentUser);
+  const [isEditClassesOpen, setIsEditClassesOpen] = useState(false);
+
+  useEffect(() => {
+    setActiveUser(currentUser);
+  }, [currentUser]);
+
   // Collect classes from:
   // 1. Teacher assignedClasses
-  const teacherClasses = currentUser.assignedClasses?.map((c) => c.className).filter(Boolean) as string[] || [];
-  // 2. School configured classes
+  const teacherClasses = activeUser.assignedClasses?.map((c) => c.className).filter(Boolean) as string[] || [];
+  // 2. School standard stage classes (e.g. all 3 middle school grades)
+  const stageClasses = getSchoolClasses(currentSchool).map((c) => c.className).filter(Boolean);
+  // 3. School configured custom classes
   const schoolConfigClasses = currentSchool.customClasses?.map((c) => c.className).filter(Boolean) as string[] || [];
-  // 3. Enrolled students
+  // 4. Enrolled students
   const studentClasses = schoolStudents.map((s) => s.className).filter(Boolean) as string[];
 
   const classes = Array.from(
     new Set([
       ...teacherClasses,
+      ...stageClasses,
       ...schoolConfigClasses,
       ...studentClasses,
     ])
@@ -80,14 +92,16 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
     classes.push(currentSchool.type === 'secondary' ? 'الأول الثانوي' : currentSchool.type === 'middle' ? 'الأول المتوسط' : 'الأول الابتدائي');
   }
 
-  const initialClass = teacherClasses[0] || classes[0] || 'الأول الثانوي';
+  const initialClass = teacherClasses[0] || classes[0] || 'الأول المتوسط';
   const [selectedClass, setSelectedClass] = useState<string>(initialClass);
 
   // Group sections for selectedClass
-  const teacherSections = currentUser.assignedClasses
+  const teacherSections = activeUser.assignedClasses
     ?.filter((c) => c.className === selectedClass)
     .map((c) => c.sectionName)
     .filter(Boolean) as string[] || [];
+
+  const stageSections = getSchoolClasses(currentSchool).find((c) => c.className === selectedClass)?.sections || ['1', '2', '3', '4'];
 
   const schoolConfigSections = currentSchool.customClasses
     ?.find((c) => c.className === selectedClass)
@@ -101,6 +115,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
   const sections = Array.from(
     new Set([
       ...teacherSections,
+      ...stageSections,
       ...schoolConfigSections,
       ...studentSections,
     ])
@@ -112,6 +127,21 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
 
   const initialSection = teacherSections[0] || sections[0] || '1';
   const [selectedSection, setSelectedSection] = useState<string>(initialSection);
+
+  // Sync selectedSection whenever class or sections list changes
+  useEffect(() => {
+    if (sections.length > 0 && !sections.includes(selectedSection)) {
+      setSelectedSection(teacherSections[0] || sections[0]);
+    }
+  }, [selectedClass, sections, selectedSection]);
+
+  const handleTeacherClassesUpdated = (updatedUser: User) => {
+    setActiveUser(updatedUser);
+    if (updatedUser.assignedClasses && updatedUser.assignedClasses.length > 0) {
+      setSelectedClass(updatedUser.assignedClasses[0].className);
+      setSelectedSection(updatedUser.assignedClasses[0].sectionName);
+    }
+  };
 
   // Quick Student Add State for teacher
   const [isQuickAddStudentOpen, setIsQuickAddStudentOpen] = useState(false);
@@ -392,8 +422,58 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
               </option>
             ))}
           </select>
+
+          <button
+            type="button"
+            onClick={() => setIsEditClassesOpen(true)}
+            className="py-2 px-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border border-indigo-200 font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-all shadow-2xs"
+            title="تعديل أو إضافة الفصول والشعب المسندة لك"
+          >
+            <BookOpen className="w-3.5 h-3.5 text-indigo-600" />
+            <span>تعديل فصولي المسندة ({activeUser.assignedClasses?.length || 0})</span>
+          </button>
         </div>
       </div>
+
+      {/* Quick Access Bar for Teacher's Assigned Classes */}
+      {activeUser.assignedClasses && activeUser.assignedClasses.length > 0 && (
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-2 shadow-2xs">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-xs font-bold text-slate-600 flex items-center gap-1 pl-1">
+              <BookOpen className="w-3.5 h-3.5 text-indigo-600" />
+              <span>فصولي المسندة:</span>
+            </span>
+            {activeUser.assignedClasses.map((ac, idx) => {
+              const isActive = selectedClass === ac.className && selectedSection === ac.sectionName;
+              return (
+                <button
+                  key={`${ac.className}-${ac.sectionName}-${idx}`}
+                  type="button"
+                  onClick={() => {
+                    setSelectedClass(ac.className);
+                    setSelectedSection(ac.sectionName);
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs ${
+                    isActive
+                      ? 'bg-indigo-600 text-white ring-2 ring-indigo-500 ring-offset-1 font-black scale-[1.02]'
+                      : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200'
+                  }`}
+                >
+                  {ac.className} - فصل ({ac.sectionName})
+                </button>
+              );
+            })}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsEditClassesOpen(true)}
+            className="text-xs font-bold text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1 cursor-pointer py-1 px-2 rounded-lg hover:bg-indigo-50 transition-colors"
+          >
+            <span>+ إضافة أو تعديل الفصول</span>
+          </button>
+        </div>
+      )}
 
       {savedMsg && (
         <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold shadow-xs">
@@ -790,6 +870,15 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
           </div>
         </div>
       )}
+
+      {/* Teacher Edit Assigned Classes Modal */}
+      <TeacherEditClassesModal
+        isOpen={isEditClassesOpen}
+        onClose={() => setIsEditClassesOpen(false)}
+        currentUser={activeUser}
+        currentSchool={currentSchool}
+        onClassesUpdated={handleTeacherClassesUpdated}
+      />
 
     </div>
   );

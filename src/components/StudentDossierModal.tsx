@@ -1,15 +1,22 @@
 import React, { useState } from 'react';
 import { User, Attendance, School, StudentPermission } from '../types';
-import { getAttendancesForStudent, getPermissionsForStudent, getCurrentUser } from '../utils/storage';
+import { 
+  getAttendancesForStudent, getPermissionsForStudent, getCurrentUser, 
+  deleteAttendance, deleteStudentAllAbsences, convertStudentAllAbsencesToPresent,
+  addSystemNotification
+} from '../utils/storage';
 import { calculateStudentBehaviorScore } from '../utils/behavior';
+import { soundManager } from '../utils/audio';
 import { CompensatoryPointsModal } from './CompensatoryPointsModal';
 import { BehaviorRecordModal } from './BehaviorRecordModal';
 import { AbsenceActionModal } from './AbsenceActionModal';
+import { AttendanceEditModal } from './AttendanceEditModal';
 import { 
   GraduationCap, Calendar, CheckCircle, XCircle, 
   AlertTriangle, Phone, X, QrCode, FileText, Activity, 
   LogOut, ShieldAlert, Clock, Star, Sparkles, Award, 
-  ThumbsUp, ThumbsDown, HeartHandshake, Plus, User as UserIcon, RefreshCw
+  ThumbsUp, ThumbsDown, HeartHandshake, Plus, User as UserIcon, RefreshCw,
+  Edit3, Trash2, Zap, Wrench, ShieldCheck
 } from 'lucide-react';
 
 interface StudentDossierModalProps {
@@ -18,6 +25,7 @@ interface StudentDossierModalProps {
   student: User;
   school: School;
   onOpenQrCard: () => void;
+  onAttendanceUpdated?: () => void;
 }
 
 export const StudentDossierModal: React.FC<StudentDossierModalProps> = ({
@@ -26,16 +34,31 @@ export const StudentDossierModal: React.FC<StudentDossierModalProps> = ({
   student,
   school,
   onOpenQrCard,
+  onAttendanceUpdated,
 }) => {
   if (!isOpen) return null;
 
   const currentUser = getCurrentUser() || student;
   const [dataVersion, setDataVersion] = useState(0);
 
+  // Administrative check
+  const isAdministrativeStaff = 
+    currentUser?.role === 'superadmin' || 
+    currentUser?.role === 'employee' ||
+    currentUser?.staffTitle === 'principal' ||
+    currentUser?.staffTitle === 'vice_principal' ||
+    currentUser?.staffTitle === 'admin_assistant' ||
+    currentUser?.staffTitle === 'student_advisor';
+
   // Modals for admin & counselor actions
   const [isCompensatoryModalOpen, setIsCompensatoryModalOpen] = useState(false);
   const [isBehaviorModalOpen, setIsBehaviorModalOpen] = useState(false);
   const [isAbsenceActionModalOpen, setIsAbsenceActionModalOpen] = useState(false);
+
+  // Modals & confirmation for attendance editing & deletion
+  const [selectedAttendanceForEdit, setSelectedAttendanceForEdit] = useState<Attendance | null>(null);
+  const [attendanceToDelete, setAttendanceToDelete] = useState<Attendance | null>(null);
+  const [confirmingBulkAction, setConfirmingBulkAction] = useState<'convert_all' | 'delete_all' | null>(null);
 
   const history = getAttendancesForStudent(student.id);
   const permissions = getPermissionsForStudent(student.id);
@@ -52,6 +75,62 @@ export const StudentDossierModal: React.FC<StudentDossierModalProps> = ({
 
   // Diagnostic rating for permissions
   const isHighPermissionFrequency = totalPermissionsCount >= 3;
+
+  const handleExecuteBulkAction = () => {
+    if (!confirmingBulkAction) return;
+
+    if (confirmingBulkAction === 'convert_all') {
+      convertStudentAllAbsencesToPresent(
+        student.id,
+        'تصحيح إداري بسبب عطل تقني في النظام',
+        currentUser.name
+      );
+
+      addSystemNotification({
+        id: `notif-dossier-bulk-${Date.now()}`,
+        schoolCode: school.code,
+        title: '✅ تصحيح سجل الغياب بسبب عطل تقني',
+        message: `تم تحويل جميع غيابات الطالب (${student.name}) إلى حاضر وإلغاء الحسم من السلوك بواسطة الإدارة المدرسية.`,
+        type: 'info',
+        createdAt: new Date().toISOString(),
+      });
+    } else if (confirmingBulkAction === 'delete_all') {
+      deleteStudentAllAbsences(student.id);
+
+      addSystemNotification({
+        id: `notif-dossier-del-${Date.now()}`,
+        schoolCode: school.code,
+        title: '🗑️ حذف سجلات الغياب غير الصحيحة للطالب',
+        message: `تم حذف جميع سجلات الغياب للطالب (${student.name}) نهائياً من النظام لتدارك عطل في المنظومة.`,
+        type: 'info',
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    soundManager.playSuccess();
+    setConfirmingBulkAction(null);
+    setDataVersion((v) => v + 1);
+    onAttendanceUpdated?.();
+  };
+
+  const handleConfirmSingleDelete = () => {
+    if (!attendanceToDelete) return;
+    deleteAttendance(attendanceToDelete.id);
+
+    addSystemNotification({
+      id: `notif-del-single-${Date.now()}`,
+      schoolCode: school.code,
+      title: '🗑️ حذف سجل غياب للطالب',
+      message: `تم حذف غياب يوم (${attendanceToDelete.date}) للطالب (${student.name}) نهائياً بواسطة الإدارة.`,
+      type: 'info',
+      createdAt: new Date().toISOString(),
+    });
+
+    soundManager.playSuccess();
+    setAttendanceToDelete(null);
+    setDataVersion((v) => v + 1);
+    onAttendanceUpdated?.();
+  };
 
   return (
     <div 
@@ -311,26 +390,143 @@ export const StudentDossierModal: React.FC<StudentDossierModalProps> = ({
           </div>
         </div>
 
-        {/* Attendance & Exit Timeline */}
-        <div className="space-y-2">
-          <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-            <Calendar className="w-4 h-4 text-emerald-600" />
-            <span>سجل الأيام والغياب والأعذار:</span>
-          </h4>
+        {/* Attendance & Exit Timeline with Administrative Controls */}
+        <div className="space-y-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+              <Calendar className="w-4 h-4 text-emerald-600" />
+              <span>سجل الأيام والغياب والأعذار ({history.length}):</span>
+            </h4>
 
-          <div className="space-y-1.5 max-h-28 overflow-y-auto pr-1">
+            {isAdministrativeStaff && absentCount > 0 && (
+              <span className="text-[10px] text-amber-800 bg-amber-100 font-bold px-2 py-0.5 rounded-full border border-amber-200">
+                لدى الطالب {absentCount} أيام غياب
+              </span>
+            )}
+          </div>
+
+          {/* Administrative Glitch Quick-Action Panel */}
+          {isAdministrativeStaff && absentCount > 0 && (
+            <div className="bg-gradient-to-l from-amber-50 to-orange-50/50 border border-amber-200 rounded-2xl p-3 text-xs space-y-2 text-amber-950 shadow-xs">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 font-black text-amber-900">
+                  <Wrench className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>معالجة غيابات الأعطال التقنية (صلاحية الإدارة):</span>
+                </div>
+                <span className="text-[10px] font-bold text-slate-500">
+                  تصحيح فوري لرفع القلق عن ولي الأمر
+                </span>
+              </div>
+              <p className="text-[11px] text-amber-900/80 leading-relaxed">
+                في حال تسجيل الغياب بسبب عطل في قارئ الباركود أو انقطاع الشبكة أو خلل في النظام، يمكنك تصحيح جميع الغيابات أو حذفها نهائياً بضغطة زر واحدة:
+              </p>
+              
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setConfirmingBulkAction('convert_all')}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[11px] flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                  title="تحويل جميع غيابات الطالب إلى حاضر وتصفير الحسم"
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  <span>تحويل جميع الغيابات إلى حاضر (عطل تقني) ⚡</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setConfirmingBulkAction('delete_all')}
+                  className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-[11px] flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                  title="حذف جميع سجلات الغياب نهائياً من قاعدة البيانات"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>حذف جميع الغيابات نهائياً 🗑️</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Bulk Action Confirmation Box */}
+          {confirmingBulkAction && (
+            <div className="bg-amber-50 border-2 border-amber-400 rounded-2xl p-3.5 space-y-2 text-xs shadow-md animate-fadeIn">
+              <div className="flex items-center gap-2 font-black text-amber-950">
+                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+                <span>
+                  {confirmingBulkAction === 'convert_all'
+                    ? `تأكيد تحويل جميع غيابات الطالب (${student.name}) إلى حاضر؟`
+                    : `تأكيد حذف جميع سجلات غياب الطالب (${student.name}) نهائياً؟`}
+                </span>
+              </div>
+              <p className="text-slate-700 text-[11px]">
+                {confirmingBulkAction === 'convert_all'
+                  ? `سيتم تحويل عدد (${absentCount}) غياب إلى حاضر مسجل، وإلغاء أي حسم من درجات السلوك لتعود إلى 100/100، وإشعار ولي الأمر بأن الرصد كان بسبب عطل وتم تصحيحه.`
+                  : `سيتم مسح جميع سجلات الغياب (${absentCount} أيام) تماماً من السيرفر وقاعدة البيانات ولن تظهر لولي الأمر إطلاقاً.`}
+              </p>
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setConfirmingBulkAction(null)}
+                  className="px-3 py-1 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs cursor-pointer"
+                >
+                  تراجع
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExecuteBulkAction}
+                  className={`px-4 py-1 rounded-xl text-white font-black text-xs cursor-pointer shadow-xs ${
+                    confirmingBulkAction === 'convert_all'
+                      ? 'bg-emerald-600 hover:bg-emerald-500'
+                      : 'bg-rose-600 hover:bg-rose-500'
+                  }`}
+                >
+                  {confirmingBulkAction === 'convert_all' ? 'نعم، تحويل الكل إلى حاضر ⚡' : 'نعم، حذف الكل نهائياً 🗑️'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Single Delete Confirmation Box */}
+          {attendanceToDelete && (
+            <div className="bg-rose-50 border-2 border-rose-300 rounded-2xl p-3.5 space-y-2 text-xs shadow-md animate-fadeIn">
+              <div className="flex items-center gap-2 font-black text-rose-950">
+                <Trash2 className="w-5 h-5 text-rose-600 shrink-0" />
+                <span>تأكيد حذف غياب يوم ({attendanceToDelete.date}) نهائياً</span>
+              </div>
+              <p className="text-rose-800 text-[11px]">
+                هل تريد بالتأكيد حذف هذا السجل نهائياً؟ سيتم إلغاؤه من سجل الطالب وقاعدة البيانات فوراً.
+              </p>
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setAttendanceToDelete(null)}
+                  className="px-3 py-1 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs cursor-pointer"
+                >
+                  تراجع
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmSingleDelete}
+                  className="px-4 py-1 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs cursor-pointer shadow-xs"
+                >
+                  نعم، حذف السجل نهائياً 🗑️
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Timeline List */}
+          <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
             {history.length === 0 ? (
-              <p className="text-xs text-slate-400 text-center py-2">لا توجد سجلات مسجلة بعد</p>
+              <p className="text-xs text-slate-400 text-center py-4 bg-slate-50 rounded-2xl">لا توجد سجلات مسجلة بعد</p>
             ) : (
               history.map((att) => (
-                <div key={att.id} className="bg-slate-50 border border-slate-200 rounded-xl p-2 flex items-center justify-between text-xs">
+                <div key={att.id} className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 flex items-center justify-between text-xs hover:bg-slate-100/60 transition-colors">
                   <div className="flex items-center gap-2">
                     {att.finalStatus === 'present' ? (
-                      <CheckCircle className="w-4 h-4 text-emerald-600" />
+                      <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
                     ) : att.finalStatus === 'absent' ? (
-                      <XCircle className="w-4 h-4 text-rose-600" />
+                      <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
                     ) : (
-                      <AlertTriangle className="w-4 h-4 text-amber-600" />
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
                     )}
                     <span className="font-mono text-slate-700 font-bold">{att.date}</span>
                     {att.selfCheckTime && (
@@ -339,6 +535,11 @@ export const StudentDossierModal: React.FC<StudentDossierModalProps> = ({
                     {att.exitTime && (
                       <span className="text-[10px] text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded-md font-bold">
                         (خروج: {att.exitTime})
+                      </span>
+                    )}
+                    {att.adminDecisionNotes && (
+                      <span className="hidden sm:inline-block text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded-md font-medium truncate max-w-[140px]" title={att.adminDecisionNotes}>
+                        {att.adminDecisionNotes}
                       </span>
                     )}
                   </div>
@@ -357,6 +558,28 @@ export const StudentDossierModal: React.FC<StudentDossierModalProps> = ({
                        att.excuseStatus === 'accepted' ? 'غائب بعذر مقبول' :
                        att.finalStatus === 'absent' ? 'غائب بدون عذر' : 'متأخر'}
                     </span>
+
+                    {/* Administrative Edit and Delete buttons */}
+                    {isAdministrativeStaff && (
+                      <div className="flex items-center gap-1 mr-1">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedAttendanceForEdit(att)}
+                          className="p-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 cursor-pointer transition-colors"
+                          title="تعديل هذا الرصد (حاضر / غائب / عذر)"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAttendanceToDelete(att)}
+                          className="p-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 cursor-pointer transition-colors"
+                          title="حذف هذا الغياب نهائياً"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))
@@ -373,6 +596,22 @@ export const StudentDossierModal: React.FC<StudentDossierModalProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Attendance Edit Modal */}
+      {selectedAttendanceForEdit && (
+        <AttendanceEditModal
+          isOpen={!!selectedAttendanceForEdit}
+          onClose={() => setSelectedAttendanceForEdit(null)}
+          attendance={selectedAttendanceForEdit}
+          studentName={student.name}
+          currentUser={currentUser}
+          onSaved={() => {
+            setSelectedAttendanceForEdit(null);
+            setDataVersion((v) => v + 1);
+            onAttendanceUpdated?.();
+          }}
+        />
+      )}
 
       {/* Compensatory Modal */}
       {isCompensatoryModalOpen && (

@@ -2,31 +2,38 @@ import React from 'react';
 import { User, School } from '../types';
 import { 
   Building2, LogOut, UserCircle, Shield, 
-  Sparkles, Heart, Bell, Smartphone, QrCode, ChevronDown
+  Sparkles, Heart, Bell, Smartphone, QrCode, ChevronDown,
+  Share2, ArrowLeftRight, GraduationCap, Users
 } from 'lucide-react';
 import { LiveClockHeader } from './LiveClockHeader';
-import { getUserAssignedSchools } from '../utils/storage';
+import { getUserAssignedSchools, getUserAlternativeProfiles } from '../utils/storage';
 
 interface HeaderProps {
   currentUser: User | null;
   currentSchool: School | null;
   schools?: School[];
+  allUsers?: User[];
   onSwitchSchool?: (school: School) => void;
+  onSwitchUser?: (user: User) => void;
   onLogout: () => void;
   onOpenLogin: () => void;
   onOpenRegisterSchool?: () => void;
   onOpenDonationModal: () => void;
+  onOpenDirectLinks?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   currentUser,
   currentSchool,
   schools = [],
+  allUsers = [],
   onSwitchSchool,
+  onSwitchUser,
   onLogout,
   onOpenLogin,
   onOpenRegisterSchool,
   onOpenDonationModal,
+  onOpenDirectLinks,
 }) => {
   const getRoleBadge = (role: string, staffTitle?: string) => {
     switch (role) {
@@ -48,18 +55,15 @@ export const Header: React.FC<HeaderProps> = ({
         if (staffTitle === 'lab_technician') {
           return { label: 'محضر مختبر 🔬', color: 'bg-cyan-50 text-cyan-800 border-cyan-200' };
         }
-        return { label: 'مدير المدرسة / إدارة', color: 'bg-emerald-50 text-emerald-800 border-emerald-200' };
+        return { label: 'إداري مدرسة 🏢', color: 'bg-emerald-50 text-emerald-800 border-emerald-200' };
       case 'teacher':
-        return { label: 'معلم مادة / رائد فصل', color: 'bg-indigo-50 text-indigo-800 border-indigo-200' };
-      case 'parent':
-        return { label: 'ولي أمر طالب', color: 'bg-teal-50 text-teal-800 border-teal-200' };
+        return { label: 'معلم 👨‍🏫', color: 'bg-indigo-50 text-indigo-800 border-indigo-200' };
       case 'student':
-        return { label: 'طالب', color: 'bg-blue-50 text-blue-800 border-blue-200' };
+        return { label: 'طالب 🎓', color: 'bg-teal-50 text-teal-800 border-teal-200' };
+      case 'parent':
+        return { label: 'ولي أمر 👨‍👦', color: 'bg-amber-50 text-amber-800 border-amber-200' };
       default:
-        if (staffTitle === 'admin_assistant') {
-          return { label: 'مساعد إداري 📋', color: 'bg-blue-50 text-blue-800 border-blue-200' };
-        }
-        return { label: 'زائر', color: 'bg-slate-100 text-slate-700 border-slate-200' };
+        return { label: 'زائر', color: 'bg-slate-50 text-slate-800 border-slate-200' };
     }
   };
 
@@ -67,6 +71,11 @@ export const Header: React.FC<HeaderProps> = ({
 
   // Managed schools for any user (Principal, Vice Principal, Teacher, Administrative Assistant, etc.)
   const userAssignedSchools = getUserAssignedSchools(currentUser, schools);
+
+  // Alternative profiles for this user (e.g. Teacher who also has a Parent profile for his son in another school)
+  const alternativeProfiles = currentUser && allUsers.length > 0
+    ? getUserAlternativeProfiles(currentUser, allUsers)
+    : [];
 
   return (
     <header className="bg-white/95 backdrop-blur-md border-b border-slate-200/80 sticky top-0 z-30 px-4 py-2.5 shadow-xs" dir="rtl">
@@ -128,10 +137,49 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         {/* Right side controls */}
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Direct links button */}
+          {onOpenDirectLinks && (
+            <button
+              onClick={onOpenDirectLinks}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 hover:border-emerald-300 text-xs font-bold transition-all cursor-pointer"
+              title="روابط الدخول المباشرة والمشاركة للمعلمين والطلاب وأولياء الأمور"
+            >
+              <Share2 className="w-3.5 h-3.5 text-emerald-600" />
+              <span className="hidden sm:inline">روابط الدخول الذكية 🔗</span>
+            </button>
+          )}
+
+          {/* Quick Dual Role Switcher (e.g. Teacher <-> Parent) */}
+          {currentUser && alternativeProfiles.length > 0 && onSwitchUser && (
+            alternativeProfiles.map((alt) => {
+              const isAltParent = alt.role === 'parent';
+              const altSchool = schools.find((s) => s.code === alt.schoolCode);
+              const altSchoolName = altSchool ? altSchool.name : alt.schoolCode;
+              return (
+                <button
+                  key={alt.id}
+                  onClick={() => onSwitchUser(alt)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs font-bold transition-all shadow-xs cursor-pointer animate-pulse"
+                  title={`التبديل الفوري إلى: ${isAltParent ? 'بوابة ولي الأمر' : 'بوابة المعلم'} (${altSchoolName})`}
+                >
+                  <ArrowLeftRight className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                  <span className="hidden md:inline">
+                    {isAltParent
+                      ? `تبديل إلى: ولي أمر (${altSchoolName})`
+                      : `تبديل إلى: معلم (${altSchoolName})`}
+                  </span>
+                  <span className="md:hidden">
+                    {isAltParent ? 'ولي أمر' : 'معلم'}
+                  </span>
+                </button>
+              );
+            })
+          )}
+
           <button
             onClick={onOpenDonationModal}
-            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold transition-colors cursor-pointer"
+            className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold transition-colors cursor-pointer"
           >
             <Heart className="w-3.5 h-3.5 fill-rose-500 text-rose-500" />
             <span>دعم المنصة</span>

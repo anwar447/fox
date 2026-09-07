@@ -4,7 +4,7 @@ import {
   Sparkles, CheckCircle2, ShieldCheck, MapPin, 
   ScanLine, AlertTriangle, Users, BookOpen, 
   ArrowLeft, Heart, Smartphone, Zap, Building2, UserPlus, FileSpreadsheet,
-  QrCode, Check, Award
+  QrCode, Check, Award, Share2
 } from 'lucide-react';
 import { LiveClockHeader } from './LiveClockHeader';
 
@@ -16,6 +16,7 @@ interface LandingPageProps {
   onOpenStaffRegistration?: () => void;
   onOpenPaymentModal: (plan: 'yearly' | 'free_forever') => void;
   onOpenDonationModal?: () => void;
+  onOpenDirectLinks?: () => void;
 }
 
 export const LandingPage: React.FC<LandingPageProps> = ({
@@ -26,6 +27,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   onOpenStaffRegistration,
   onOpenPaymentModal,
   onOpenDonationModal,
+  onOpenDirectLinks,
 }) => {
   return (
     <div className="space-y-12 py-8 px-4 max-w-6xl mx-auto text-slate-800" dir="rtl">
@@ -81,6 +83,16 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             >
               <Users className="w-4 h-4 text-indigo-600" />
               <span>تسجيل معلم / كادر مدرسي 👥</span>
+            </button>
+          )}
+
+          {onOpenDirectLinks && (
+            <button
+              onClick={onOpenDirectLinks}
+              className="px-6 py-3.5 rounded-2xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-sm transition-all cursor-pointer flex items-center gap-2"
+            >
+              <Share2 className="w-4 h-4 text-amber-700" />
+              <span>روابط الدخول الذكية والمشاركة 🔗</span>
             </button>
           )}
         </div>

@@ -1,7 +1,7 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { User, School, SchoolClassSection, StaffTitle } from '../types';
+import React, { useState, useMemo } from 'react';
+import { User, School, StaffTitle } from '../types';
 import { getUsers, saveUsers, addUser, setUserState } from '../utils/storage';
-import { getSchoolClasses } from '../utils/schoolClasses';
+import { TeacherClassPicker, AssignedClassItem } from './TeacherClassPicker';
 import { 
   Users, UserCheck, X, Check, BookOpen, 
   ShieldCheck, AlertCircle, Plus, Trash2, Key, Phone, Building2
@@ -32,7 +32,7 @@ export const StaffSelfRegistrationModal: React.FC<StaffSelfRegistrationModalProp
     } else if (schools.length > 0 && !selectedSchoolCode) {
       setSelectedSchoolCode(schools[0].code);
     }
-  }, [initialSchoolCode, schools]);
+  }, [initialSchoolCode, schools, selectedSchoolCode]);
 
   const [name, setName] = useState('');
   const [nationalId, setNationalId] = useState('');
@@ -46,42 +46,14 @@ export const StaffSelfRegistrationModal: React.FC<StaffSelfRegistrationModalProp
 
   const isLockedSchool = Boolean(initialSchoolCode && currentSchool);
 
-  const availableClasses: SchoolClassSection[] = useMemo(() => {
-    if (!currentSchool) return [];
-    return getSchoolClasses(currentSchool);
-  }, [currentSchool]);
-
-  // Selected classes for teachers
-  const [selectedClasses, setSelectedClasses] = useState<{ className: string; sectionName: string }[]>([]);
-  const [tempClassName, setTempClassName] = useState(availableClasses[0]?.className || '');
-  const [tempSectionName, setTempSectionName] = useState(availableClasses[0]?.sections[0] || '1');
-
-  useEffect(() => {
-    if (availableClasses.length > 0) {
-      setTempClassName(availableClasses[0].className);
-      setTempSectionName(availableClasses[0].sections[0] || '1');
-    }
-  }, [availableClasses]);
+  // Selected classes for teachers using interactive picker
+  const [selectedClasses, setSelectedClasses] = useState<AssignedClassItem[]>([]);
 
   const [errorMsg, setErrorMsg] = useState('');
   const [isSuccess, setIsSuccess] = useState(false);
   const [createdStaff, setCreatedStaff] = useState<User | null>(null);
 
   if (!isOpen) return null;
-
-  const handleAddClass = () => {
-    if (!tempClassName || !tempSectionName) return;
-    const exists = selectedClasses.some(
-      (c) => c.className === tempClassName && c.sectionName === tempSectionName
-    );
-    if (!exists) {
-      setSelectedClasses([...selectedClasses, { className: tempClassName, sectionName: tempSectionName }]);
-    }
-  };
-
-  const handleRemoveClass = (index: number) => {
-    setSelectedClasses(selectedClasses.filter((_, i) => i !== index));
-  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -327,71 +299,15 @@ export const StaffSelfRegistrationModal: React.FC<StaffSelfRegistrationModalProp
               </div>
             </div>
 
-            {/* If Teacher: Select classes */}
-            {staffTitle === 'teacher' && (
-              <div className="bg-indigo-50/70 border border-indigo-200/80 rounded-2xl p-4 space-y-3">
-                <span className="font-bold text-indigo-950 block">حدد الفصول والشعب المسندة إليك:</span>
-                
-                <div className="flex flex-wrap items-center gap-2">
-                  <select
-                    value={tempClassName}
-                    onChange={(e) => setTempClassName(e.target.value)}
-                    className="bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-800 font-medium"
-                  >
-                    {availableClasses.map((c) => (
-                      <option key={c.id} value={c.className}>
-                        {c.className}
-                      </option>
-                    ))}
-                  </select>
-
-                  <select
-                    value={tempSectionName}
-                    onChange={(e) => setTempSectionName(e.target.value)}
-                    className="bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-800 font-medium"
-                  >
-                    <option value="1">فصل (1)</option>
-                    <option value="2">فصل (2)</option>
-                    <option value="3">فصل (3)</option>
-                    <option value="4">فصل (4)</option>
-                    <option value="5">فصل (5)</option>
-                    <option value="أ">شعبة (أ)</option>
-                    <option value="ب">شعبة (ب)</option>
-                  </select>
-
-                  <button
-                    type="button"
-                    onClick={handleAddClass}
-                    className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold cursor-pointer"
-                  >
-                    + إضافة الفصل
-                  </button>
-                </div>
-
-                {selectedClasses.length > 0 ? (
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    {selectedClasses.map((c, idx) => (
-                      <span
-                        key={idx}
-                        className="px-3 py-1 rounded-xl bg-white border border-indigo-200 text-indigo-900 font-bold flex items-center gap-1.5 shadow-2xs"
-                      >
-                        <span>{c.className} - ({c.sectionName})</span>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveClass(idx)}
-                          className="text-rose-500 hover:text-rose-700 cursor-pointer"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-[11px] text-indigo-700">
-                    * لم تحدد أي فصل بعد. يمكنك إضافة الفصول الآن أو إسنادها لاحقاً من قبل مدير المدرسة.
-                  </p>
-                )}
-              </div>
+            {/* If Teacher: Select classes using interactive, zero-reset TeacherClassPicker */}
+            {staffTitle === 'teacher' && currentSchool && (
+              <TeacherClassPicker
+                school={currentSchool}
+                selectedClasses={selectedClasses}
+                onChange={setSelectedClasses}
+                title="حدد الفصول والشعب المسندة إليك:"
+                hint="اختر الصفوف والشعب التي تدرسها في المدرسة (انقر مباشرة لتفعيل الشعبة، فصول المتوسطة والثانوية مجهزة بالكامل):"
+              />
             )}
 
             <div className="pt-2 flex items-center justify-end gap-2">
