@@ -34,6 +34,7 @@ import { AttendanceCorrectionModal } from './components/AttendanceCorrectionModa
 import { StudentDossierModal } from './components/StudentDossierModal';
 import { DailyPrincipalReportModal } from './components/DailyPrincipalReportModal';
 import { ClassExcelManagerModal } from './components/ClassExcelManagerModal';
+import { ClassRosterManagerModal } from './components/ClassRosterManagerModal';
 import { StaffManagementModal } from './components/StaffManagementModal';
 import { AdminArchiveReportModal } from './components/AdminArchiveReportModal';
 import { InteractiveMapPicker } from './components/InteractiveMapPicker';
@@ -53,7 +54,7 @@ export function App() {
 
   const [urlSchoolCode, setUrlSchoolCode] = useState<string>(() => {
     const params = new URLSearchParams(window.location.search);
-    return params.get('school') || params.get('code') || params.get('schoolCode') || params.get('joinSchool') || '';
+    return params.get('school') || params.get('code') || params.get('schoolCode') || params.get('joinSchool') || params.get('joinStaff') || '';
   });
 
   // Current active school (resiliently resolved across code, id, managed schools, and fallback)
@@ -140,6 +141,14 @@ export function App() {
   const [isGatekeeperScannerOpen, setIsGatekeeperScannerOpen] = useState(false);
   const [isDailyReportOpen, setIsDailyReportOpen] = useState(false);
   const [isClassExcelManagerOpen, setIsClassExcelManagerOpen] = useState(false);
+  const [classManagerInitialTab, setClassManagerInitialTab] = useState<'excel' | 'manual' | 'classes'>('excel');
+  const [schoolForClassManager, setSchoolForClassManager] = useState<School | null>(null);
+
+  // Class Roster & Student Management & Print Modal
+  const [isClassRosterOpen, setIsClassRosterOpen] = useState(false);
+  const [rosterSelectedClass, setRosterSelectedClass] = useState<string>('');
+  const [rosterSelectedSection, setRosterSelectedSection] = useState<string>('');
+  const [schoolForClassRoster, setSchoolForClassRoster] = useState<School | null>(null);
   const [isStaffManagementOpen, setIsStaffManagementOpen] = useState(false);
   const [isArchiveReportOpen, setIsArchiveReportOpen] = useState(false);
   const [isMapPickerOpen, setIsMapPickerOpen] = useState(false);
@@ -242,46 +251,119 @@ export function App() {
       }
     }
 
-    // Direct actions (e.g. ?joinSchool=SCH-7912&action=register)
-    const directAction = params.get('action');
-    const directSchoolCode = params.get('joinSchool') || params.get('schoolCode') || params.get('code') || params.get('school');
-    const directStaffCode = params.get('joinStaff') || params.get('joinTeacher') || params.get('staffToken');
+    // Direct actions (e.g. ?joinSchool=SCH-7912&action=register-parent or ?joinStaff=SCH-7912&action=register-staff)
+    const directAction = (params.get('action') || params.get('mode') || '').trim().toLowerCase();
 
-    if (directStaffCode) {
-      const parsed = parseParentRegistrationToken(directStaffCode);
-      const codeToUse = parsed?.schoolCode || directStaffCode.trim().toUpperCase();
-      setStaffRegSchoolCode(codeToUse);
+    const isStaffAction = [
+      'register-staff',
+      'register_staff',
+      'staffregister',
+      'staff-register',
+      'staff_register',
+      'staff',
+      'teacher',
+      'teachers',
+      'register-teacher',
+      'teacherregister',
+      'teacher-register',
+      'joinstaff',
+      'join-staff',
+      'join_staff',
+    ].includes(directAction);
+
+    const isParentAction = [
+      'register-parent',
+      'register_parent',
+      'parentregister',
+      'parent-register',
+      'register',
+      'student',
+      'students',
+      'parent',
+      'parents',
+      'joinschool',
+      'join-school',
+    ].includes(directAction);
+
+    const directStaffParam = params.get('joinStaff') || params.get('joinTeacher') || params.get('staffToken');
+    const directParentParam = params.get('joinSchool') || params.get('regToken') || params.get('join');
+    const generalSchoolParam = params.get('schoolCode') || params.get('code') || params.get('school');
+
+    // 1. Staff / Teacher Registration (highest priority when staff action or joinStaff param present)
+    if (directStaffParam || isStaffAction) {
+      const rawStaffCode = directStaffParam || generalSchoolParam || directParentParam || '';
+      const parsed = parseParentRegistrationToken(rawStaffCode);
+      const codeToUse = parsed?.schoolCode || rawStaffCode.trim().toUpperCase();
+      if (codeToUse) {
+        setStaffRegSchoolCode(codeToUse);
+        setUrlSchoolCode(codeToUse);
+      }
+      setIsSelfRegOpen(false);
       setIsStaffSelfRegOpen(true);
       return;
     }
 
-    if (directSchoolCode) {
-      const parsed = parseParentRegistrationToken(directSchoolCode);
-      const codeToUse = parsed?.schoolCode || directSchoolCode.trim().toUpperCase();
+    // 2. Parent / Student Self-Registration
+    if (directParentParam || isParentAction) {
+      const rawParentCode = directParentParam || generalSchoolParam || '';
+      const parsed = parseParentRegistrationToken(rawParentCode);
+      const codeToUse = parsed?.schoolCode || rawParentCode.trim().toUpperCase();
+      if (codeToUse) {
+        setSelfRegSchoolCode(codeToUse);
+        setUrlSchoolCode(codeToUse);
+      }
+      setIsStaffSelfRegOpen(false);
+      setIsSelfRegOpen(true);
+      return;
+    }
+
+    // 3. Direct Class & Section Management Action (e.g. ?action=classes or ?classes=true)
+    if (directAction === 'classes' || directAction === 'sections' || params.get('classes')) {
+      const targetCode = generalSchoolParam || directParentParam || directStaffParam || '';
+      const cleanTarget = targetCode.trim().toUpperCase();
+      if (cleanTarget) {
+        setUrlSchoolCode(cleanTarget);
+        const sch = schools.find((s) => s.code?.trim().toUpperCase() === cleanTarget || s.id?.trim().toUpperCase() === cleanTarget);
+        if (sch) setSchoolForClassManager(sch);
+      } else if (schools.length > 0) {
+        setSchoolForClassManager(schools[0]);
+      }
+      setClassManagerInitialTab('classes');
+      setIsClassExcelManagerOpen(true);
+      return;
+    }
+
+    // 4. Direct Class Roster & Student Management Action (e.g. ?action=roster or ?roster=true)
+    if (directAction === 'roster' || directAction === 'students' || params.get('roster') || params.get('students')) {
+      const targetCode = generalSchoolParam || directParentParam || directStaffParam || '';
+      const cleanTarget = targetCode.trim().toUpperCase();
+      if (cleanTarget) {
+        setUrlSchoolCode(cleanTarget);
+        const sch = schools.find((s) => s.code?.trim().toUpperCase() === cleanTarget || s.id?.trim().toUpperCase() === cleanTarget);
+        if (sch) setSchoolForClassRoster(sch);
+      } else if (schools.length > 0) {
+        setSchoolForClassRoster(schools[0]);
+      }
+      const pClass = params.get('class') || '';
+      const pSec = params.get('section') || params.get('sec') || '';
+      if (pClass) setRosterSelectedClass(pClass);
+      if (pSec) setRosterSelectedSection(pSec);
+      setIsClassRosterOpen(true);
+      return;
+    }
+
+    // 3. Fallback for general school parameters with login or default
+    if (generalSchoolParam) {
+      const parsed = parseParentRegistrationToken(generalSchoolParam);
+      const codeToUse = parsed?.schoolCode || generalSchoolParam.trim().toUpperCase();
       setUrlSchoolCode(codeToUse);
-      if (directAction === 'staff' || directAction === 'teacher') {
-        setStaffRegSchoolCode(codeToUse);
-        setIsStaffSelfRegOpen(true);
-      } else if (directAction === 'login') {
+      if (directAction === 'login' || portalParam) {
         setIsLoginOpen(true);
       } else {
         setSelfRegSchoolCode(codeToUse);
         setIsSelfRegOpen(true);
       }
       return;
-    }
-
-    // Parent / Student Self-Registration Token
-    const token = params.get('regToken') || params.get('join');
-    if (token) {
-      const parsed = parseParentRegistrationToken(token);
-      if (parsed?.schoolCode) {
-        setSelfRegSchoolCode(parsed.schoolCode);
-        setIsSelfRegOpen(true);
-      } else {
-        setSelfRegSchoolCode(token.toUpperCase());
-        setIsSelfRegOpen(true);
-      }
     }
   }, [schools]);
 
@@ -439,7 +521,14 @@ export function App() {
                 onOpenDailyReport={() => setIsDailyReportOpen(true)}
                 onOpenGatekeeperScanner={() => setIsGatekeeperScannerOpen(true)}
                 onOpenMapPicker={() => setIsMapPickerOpen(true)}
-                onOpenClassExcelManager={() => setIsClassExcelManagerOpen(true)}
+                onOpenClassExcelManager={() => {
+                  setClassManagerInitialTab('excel');
+                  setIsClassExcelManagerOpen(true);
+                }}
+                onOpenClassManagerTab={(tab) => {
+                  setClassManagerInitialTab(tab);
+                  setIsClassExcelManagerOpen(true);
+                }}
                 onOpenStaffManagement={() => setIsStaffManagementOpen(true)}
                 onOpenStaffRegistrationLink={() => setIsStaffRegLinkOpen(true)}
                 onOpenArchiveReport={() => setIsArchiveReportOpen(true)}
@@ -454,6 +543,12 @@ export function App() {
                   setSelectedPlanForPayment('yearly');
                   setIsPaymentOpen(true);
                 }}
+                onOpenClassRoster={(className, sectionName) => {
+                  setSchoolForClassRoster(impersonatedSchool);
+                  setRosterSelectedClass(className || '');
+                  setRosterSelectedSection(sectionName || '');
+                  setIsClassRosterOpen(true);
+                }}
               />
             </div>
           ) : (
@@ -466,6 +561,17 @@ export function App() {
               onOpenCreateSchool={() => setIsSchoolWizardOpen(true)}
               onImpersonateSchool={(sch) => setImpersonatedSchool(sch)}
               onOpenApiIntegration={(sch) => setSelectedSchoolForApi(sch)}
+              onOpenClassManager={(sch) => {
+                setSchoolForClassManager(sch);
+                setClassManagerInitialTab('classes');
+                setIsClassExcelManagerOpen(true);
+              }}
+              onOpenClassRoster={(sch) => {
+                setSchoolForClassRoster(sch);
+                setRosterSelectedClass('');
+                setRosterSelectedSection('');
+                setIsClassRosterOpen(true);
+              }}
             />
           )
         ) : isStaffOrEmployeeRole(currentUser.role, currentUser.staffTitle) && currentSchool ? (
@@ -496,7 +602,14 @@ export function App() {
             onOpenDailyReport={() => setIsDailyReportOpen(true)}
             onOpenGatekeeperScanner={() => setIsGatekeeperScannerOpen(true)}
             onOpenMapPicker={() => setIsMapPickerOpen(true)}
-            onOpenClassExcelManager={() => setIsClassExcelManagerOpen(true)}
+            onOpenClassExcelManager={() => {
+              setClassManagerInitialTab('excel');
+              setIsClassExcelManagerOpen(true);
+            }}
+            onOpenClassManagerTab={(tab) => {
+              setClassManagerInitialTab(tab);
+              setIsClassExcelManagerOpen(true);
+            }}
             onOpenStaffManagement={() => setIsStaffManagementOpen(true)}
             onOpenStaffRegistrationLink={() => setIsStaffRegLinkOpen(true)}
             onOpenArchiveReport={() => setIsArchiveReportOpen(true)}
@@ -511,6 +624,12 @@ export function App() {
               setSelectedPlanForPayment('yearly');
               setIsPaymentOpen(true);
             }}
+            onOpenClassRoster={(className, sectionName) => {
+              setSchoolForClassRoster(currentSchool);
+              setRosterSelectedClass(className || '');
+              setRosterSelectedSection(sectionName || '');
+              setIsClassRosterOpen(true);
+            }}
           />
         ) : currentUser.role === 'teacher' && currentSchool ? (
           <TeacherPortal
@@ -520,6 +639,12 @@ export function App() {
             schools={schools}
             onSwitchSchool={handleSwitchSchool}
             onOpenDossier={(student) => setSelectedStudentForDossier(student)}
+            onOpenClassRoster={(className, sectionName) => {
+              setSchoolForClassRoster(currentSchool);
+              setRosterSelectedClass(className || '');
+              setRosterSelectedSection(sectionName || '');
+              setIsClassRosterOpen(true);
+            }}
           />
         ) : currentUser.role === 'parent' && currentSchool ? (
           <ParentPortal
@@ -795,12 +920,48 @@ export function App() {
       )}
 
       {/* 14. Class & Excel Manager Modal */}
-      {currentSchool && (
+      {(schoolForClassManager || impersonatedSchool || currentSchool) && (
         <ClassExcelManagerModal
-          key={`class-mgr-${currentSchool.code}`}
+          key={`class-mgr-${(schoolForClassManager || impersonatedSchool || currentSchool)?.code}-${classManagerInitialTab}`}
           isOpen={isClassExcelManagerOpen}
-          onClose={() => setIsClassExcelManagerOpen(false)}
-          school={currentSchool}
+          onClose={() => {
+            setIsClassExcelManagerOpen(false);
+            setSchoolForClassManager(null);
+          }}
+          school={schoolForClassManager || impersonatedSchool || currentSchool!}
+          initialTab={classManagerInitialTab}
+          onOpenClassRoster={(className, sectionName) => {
+            setSchoolForClassRoster(schoolForClassManager || impersonatedSchool || currentSchool!);
+            setRosterSelectedClass(className || '');
+            setRosterSelectedSection(sectionName || '');
+            setIsClassRosterOpen(true);
+          }}
+          onUpdated={() => refreshAll()}
+        />
+      )}
+
+      {/* 14b. Class Roster & Student Transfer & Print Modal */}
+      {(schoolForClassRoster || impersonatedSchool || currentSchool) && (
+        <ClassRosterManagerModal
+          key={`roster-mgr-${(schoolForClassRoster || impersonatedSchool || currentSchool)?.code}-${rosterSelectedClass}-${rosterSelectedSection}`}
+          isOpen={isClassRosterOpen}
+          onClose={() => {
+            setIsClassRosterOpen(false);
+            setRosterSelectedClass('');
+            setRosterSelectedSection('');
+            setSchoolForClassRoster(null);
+          }}
+          school={schoolForClassRoster || impersonatedSchool || currentSchool!}
+          initialClass={rosterSelectedClass}
+          initialSection={rosterSelectedSection}
+          onOpenClassEditor={() => {
+            setClassManagerInitialTab('classes');
+            setIsClassExcelManagerOpen(true);
+          }}
+          onOpenExcelManager={() => {
+            setClassManagerInitialTab('excel');
+            setIsClassExcelManagerOpen(true);
+          }}
           onUpdated={() => refreshAll()}
         />
       )}

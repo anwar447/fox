@@ -7,6 +7,7 @@ import {
   getSystemNotifications, getPaymentRequests, getUserAssignedSchools,
   deleteAttendance, deleteAttendances, bulkConvertAttendanceRecordsToPresent
 } from '../utils/storage';
+import { getSchoolClasses } from '../utils/schoolClasses';
 import { getTodayDateString } from '../utils/academic';
 import { soundManager } from '../utils/audio';
 import { calculateStudentBehaviorScore } from '../utils/behavior';
@@ -27,7 +28,7 @@ import {
   Activity, ShieldAlert, LogOut, Trash2, RefreshCw, User as UserIcon,
   Crown, CreditCard, Megaphone, HardDrive, Database, ArrowLeftRight,
   FileCheck, Code2, Paperclip, Eye, ExternalLink, FileCheck2, HelpCircle, CheckCircle2,
-  Wrench, Edit3, Zap, CheckSquare, Square
+  Wrench, Edit3, Zap, CheckSquare, Square, Layers
 } from 'lucide-react';
 
 interface EmployeeDashboardProps {
@@ -40,6 +41,7 @@ interface EmployeeDashboardProps {
   onOpenGatekeeperScanner: () => void;
   onOpenMapPicker: () => void;
   onOpenClassExcelManager: () => void;
+  onOpenClassManagerTab?: (tab: 'excel' | 'manual' | 'classes') => void;
   onOpenStaffManagement: () => void;
   onOpenStaffRegistrationLink: () => void;
   onOpenArchiveReport: () => void;
@@ -48,6 +50,7 @@ interface EmployeeDashboardProps {
   onOpenStudentDossier: (student: User) => void;
   onOpenCounselorApi?: () => void;
   onOpenPaymentModal?: (plan?: 'yearly') => void;
+  onOpenClassRoster?: (className?: string, sectionName?: string) => void;
 }
 
 export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
@@ -60,6 +63,7 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
   onOpenGatekeeperScanner,
   onOpenMapPicker,
   onOpenClassExcelManager,
+  onOpenClassManagerTab,
   onOpenStaffManagement,
   onOpenStaffRegistrationLink,
   onOpenArchiveReport,
@@ -68,16 +72,34 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
   onOpenStudentDossier,
   onOpenCounselorApi,
   onOpenPaymentModal,
+  onOpenClassRoster,
 }) => {
   const today = getTodayDateString();
+
+  // Helper to reliably match school code or school id (case-insensitive & trimmed)
+  const isSchoolMatch = (codeOrId?: string) => {
+    if (!codeOrId) return true;
+    const clean = String(codeOrId).trim().toUpperCase();
+    const sCode = String(currentSchool.code || '').trim().toUpperCase();
+    const sId = String(currentSchool.id || '').trim().toUpperCase();
+    if (clean === sCode || clean === sId) return true;
+    // If only one school exists in the app, map all records to it
+    if (schools && schools.length === 1) return true;
+    // If the current user manages this school code
+    if (currentUser.managedSchoolCodes?.some((mc) => mc && mc.trim().toUpperCase() === clean)) {
+      return true;
+    }
+    return false;
+  };
+
   const [attendances, setAttendances] = useState<Attendance[]>(() =>
-    getAttendances().filter((a) => a.schoolCode === currentSchool.code && a.date === today)
+    getAttendances().filter((a) => isSchoolMatch(a.schoolCode) && a.date === today)
   );
   const [corrections, setCorrections] = useState<CorrectionRequest[]>(() =>
-    getCorrectionRequests().filter((c) => c.schoolCode === currentSchool.code && c.status === 'pending')
+    getCorrectionRequests().filter((c) => isSchoolMatch(c.schoolCode) && c.status === 'pending')
   );
   const [allSchoolCorrections, setAllSchoolCorrections] = useState<CorrectionRequest[]>(() =>
-    getCorrectionRequests().filter((c) => c.schoolCode === currentSchool.code)
+    getCorrectionRequests().filter((c) => isSchoolMatch(c.schoolCode))
   );
   const [excuseFilterTab, setExcuseFilterTab] = useState<'pending' | 'resolved'>('pending');
   const [rejectingRequest, setRejectingRequest] = useState<CorrectionRequest | null>(null);
@@ -97,9 +119,12 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
   const [exitModalStudent, setExitModalStudent] = useState<User | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  const allSchoolUsers = getUsers().filter((u) => u.schoolCode === currentSchool.code);
+  const allSchoolUsers = getUsers().filter((u) => isSchoolMatch(u.schoolCode));
   const allSchoolStudents = allSchoolUsers.filter((u) => u.role === 'student');
   const allSchoolTeachers = allSchoolUsers.filter((u) => u.role === 'teacher');
+
+  const schoolClasses = getSchoolClasses(currentSchool);
+  const totalSectionsCount = schoolClasses.reduce((acc, c) => acc + c.sections.length, 0);
 
   const isSuspended = currentSchool.subscriptionStatus === 'pending_payment';
   const isFree = currentSchool.subscriptionPlan === 'free_forever';
@@ -108,7 +133,7 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
   const isPrincipal = !currentUser.staffTitle || currentUser.staffTitle === 'principal';
 
   // Subscription payment requests status
-  const schoolPayments = getPaymentRequests().filter((p) => p.schoolCode === currentSchool.code);
+  const schoolPayments = getPaymentRequests().filter((p) => isSchoolMatch(p.schoolCode));
   const pendingPayment = schoolPayments.find((p) => p.status === 'pending');
   const approvedPayment = schoolPayments.find((p) => p.status === 'approved');
 
@@ -124,9 +149,9 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
   // Sync attendances and corrections whenever currentSchool changes
   React.useEffect(() => {
     setAttendances(
-      getAttendances().filter((a) => a.schoolCode === currentSchool.code && a.date === today)
+      getAttendances().filter((a) => isSchoolMatch(a.schoolCode) && a.date === today)
     );
-    const schoolReqs = getCorrectionRequests().filter((c) => c.schoolCode === currentSchool.code);
+    const schoolReqs = getCorrectionRequests().filter((c) => isSchoolMatch(c.schoolCode));
     setAllSchoolCorrections(schoolReqs);
     setCorrections(schoolReqs.filter((c) => c.status === 'pending'));
   }, [currentSchool.code, today, refreshKey]);
@@ -148,7 +173,7 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
   const exitedList = attendances.filter((a) => !!a.exitTime);
 
   // Permissions analytics
-  const allPermissions = getPermissions().filter((p) => p.schoolCode === currentSchool.code && p.date === today);
+  const allPermissions = getPermissions().filter((p) => isSchoolMatch(p.schoolCode) && p.date === today);
   
   // Group permissions by student to detect ADHD / frequent out of seat
   const studentPermCounts: Record<string, { studentName: string; className: string; sectionName: string; count: number; studentId: string }> = {};
@@ -170,23 +195,46 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
   const attendanceRate = totalStudents > 0 ? Math.round((presentCount / totalStudents) * 100) : 0;
 
   const handleApproveCorrection = (req: CorrectionRequest) => {
-    // 1. Update correction req
+    // 1. Update correction req with decision audit trail
     const updatedReq: CorrectionRequest = { 
       ...req, 
       status: 'approved',
-      adminDecisionNotes: 'تم اعتماد وقبول العذر الرسمي واستعادة درجات المواظبة بنجاح.'
+      adminDecisionNotes: 'تم اعتماد وقبول العذر الرسمي واستعادة درجات المواظبة بنجاح.',
+      decidedByName: currentUser.name || 'إدارة المدرسة',
+      decidedByRole: currentUser.role || 'employee',
+      decidedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
     updateCorrectionRequest(updatedReq);
 
-    // 2. Update attendance
+    // 2. Update attendance record or create one if not yet recorded
     const allAtt = getAttendances();
     const idx = allAtt.findIndex((a) => a.id === req.attendanceId || (a.studentId === req.studentId && a.date === req.date));
     if (idx >= 0) {
-      allAtt[idx].finalStatus = req.requestedStatus;
+      allAtt[idx].finalStatus = req.requestedStatus || 'excused';
       allAtt[idx].excuseStatus = 'accepted';
       allAtt[idx].isTruant = false;
+      allAtt[idx].excuseReason = req.reason || allAtt[idx].excuseReason;
       saveAttendances(allAtt);
-      setAttendances(allAtt.filter((a) => a.schoolCode === currentSchool.code && a.date === today));
+      setAttendances(allAtt.filter((a) => isSchoolMatch(a.schoolCode) && a.date === today));
+    } else {
+      const newAtt: Attendance = {
+        id: req.attendanceId || `att-${req.studentId}-${req.date}`,
+        studentId: req.studentId,
+        studentName: req.studentName,
+        nationalId: req.nationalId || '',
+        schoolCode: req.schoolCode || currentSchool.code,
+        className: req.className,
+        sectionName: req.sectionName,
+        date: req.date,
+        finalStatus: req.requestedStatus || 'excused',
+        excuseStatus: 'accepted',
+        excuseReason: req.reason,
+        isTruant: false,
+      };
+      allAtt.push(newAtt);
+      saveAttendances(allAtt);
+      setAttendances(allAtt.filter((a) => isSchoolMatch(a.schoolCode) && a.date === today));
     }
 
     // 3. Notify student and parent
@@ -202,9 +250,10 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
     });
 
     soundManager.playSuccess();
-    const updatedAll = getCorrectionRequests().filter((c) => c.schoolCode === currentSchool.code);
+    const updatedAll = getCorrectionRequests().filter((c) => isSchoolMatch(c.schoolCode));
     setAllSchoolCorrections(updatedAll);
     setCorrections(updatedAll.filter((c) => c.status === 'pending'));
+    setRefreshKey((k) => k + 1);
   };
 
   const handleOpenRejectModal = (req: CorrectionRequest) => {
@@ -219,9 +268,21 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
     const updatedReq: CorrectionRequest = { 
       ...rejectingRequest, 
       status: 'rejected',
-      adminDecisionNotes: finalReason
+      adminDecisionNotes: finalReason,
+      decidedByName: currentUser.name || 'إدارة المدرسة',
+      decidedByRole: currentUser.role || 'employee',
+      decidedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
     updateCorrectionRequest(updatedReq);
+
+    // Update attendance excuseStatus to rejected
+    const allAtt = getAttendances();
+    const idx = allAtt.findIndex((a) => a.id === rejectingRequest.attendanceId || (a.studentId === rejectingRequest.studentId && a.date === rejectingRequest.date));
+    if (idx >= 0) {
+      allAtt[idx].excuseStatus = 'rejected';
+      saveAttendances(allAtt);
+    }
 
     addSystemNotification({
       id: `notif-rej-${Date.now()}`,
@@ -237,9 +298,10 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
     soundManager.playWarning();
     setRejectingRequest(null);
     setRejectReason('');
-    const updatedAll = getCorrectionRequests().filter((c) => c.schoolCode === currentSchool.code);
+    const updatedAll = getCorrectionRequests().filter((c) => isSchoolMatch(c.schoolCode));
     setAllSchoolCorrections(updatedAll);
     setCorrections(updatedAll.filter((c) => c.status === 'pending'));
+    setRefreshKey((k) => k + 1);
   };
 
   const filteredAttendances = attendances.filter((a) => {
@@ -698,6 +760,27 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
               <span>كشوفات نور</span>
             </button>
 
+            {/* Direct Classes & Sections Management Button */}
+            <button
+              onClick={() => (onOpenClassManagerTab ? onOpenClassManagerTab('classes') : onOpenClassExcelManager())}
+              className="py-2.5 px-3.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-black text-xs flex items-center gap-1.5 cursor-pointer shadow-md shadow-amber-500/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
+              title="تعديل وتخصيص أسماء الفصول والشعب، وحذف الصفوف الزائدة أو تزويد صفوف جديدة بأمان دون فقدان أي بيانات"
+            >
+              <Layers className="w-4 h-4" />
+              <span>هيكلة الصفوف 🏫</span>
+            </button>
+
+            {onOpenClassRoster && (
+              <button
+                onClick={() => onOpenClassRoster()}
+                className="py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-black text-xs flex items-center gap-1.5 cursor-pointer shadow-md transition-all hover:scale-[1.02] active:scale-[0.98]"
+                title="عرض كشوفات الطلاب ونقلهم بين الصفوف والطباعة"
+              >
+                <Users className="w-4 h-4 text-amber-400" />
+                <span>كشوفات الطلاب والنقل والطباعة 📋🖨️</span>
+              </button>
+            )}
+
             <button
               onClick={onOpenMapPicker}
               className="py-2.5 px-3.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
@@ -826,6 +909,107 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
               {corrections.length}
             </span>
           </button>
+        </div>
+      </div>
+
+      {/* School Classes & Sections Management Interactive Card */}
+      <div className="bg-white border border-slate-200/90 rounded-3xl p-5 space-y-4 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-black shadow-sm">
+              <Layers className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-black text-slate-900 text-sm sm:text-base">
+                  هيكلة وإدارة الصفوف والشعب المدرسية 🏫
+                </h3>
+                <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[11px] font-black border border-amber-200">
+                  {schoolClasses.length} صفوف • {totalSectionsCount} شعبة
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                تعديل أسماء الصفوف والفصول، تزويد شعب جديدة، وحذف الصفوف الزائدة بأمان دون فقدان بيانات الطلاب
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {onOpenClassRoster && (
+              <button
+                type="button"
+                onClick={() => onOpenClassRoster()}
+                className="py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-black text-xs flex items-center gap-2 shadow-md cursor-pointer transition-all hover:scale-[1.02] active:scale-[0.98]"
+              >
+                <Users className="w-4 h-4 text-amber-400" />
+                <span>كشوفات الطلاب والنقل والطباعة 📋🖨️</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => (onOpenClassManagerTab ? onOpenClassManagerTab('classes') : onOpenClassExcelManager())}
+              className="py-2.5 px-3.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-black text-xs flex items-center gap-1.5 cursor-pointer transition-all hover:scale-[1.02] active:scale-[0.98]"
+            >
+              <Edit3 className="w-4 h-4 text-amber-600" />
+              <span>تعديل الصفوف والشعب ✏️</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Classes and their sections preview grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {schoolClasses.map((c) => {
+            const classStudents = allSchoolStudents.filter((s) => s.className === c.className);
+            return (
+              <div 
+                key={c.id} 
+                className="bg-slate-50 border border-slate-200 hover:border-amber-300 rounded-2xl p-3.5 space-y-2.5 transition-all flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="font-black text-slate-900 text-xs flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                      {c.className}
+                    </span>
+                    <span className="text-[10px] font-bold text-slate-600 bg-white px-2 py-0.5 rounded-lg border border-slate-200">
+                      {classStudents.length} طالب
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5 pt-2">
+                    <span className="text-[10px] text-slate-400 font-bold">الشعب:</span>
+                    {c.sections.map((sec) => {
+                      const secCount = classStudents.filter((s) => (s.sectionName || '1') === sec).length;
+                      return (
+                        <button 
+                          key={sec} 
+                          type="button"
+                          onClick={() => onOpenClassRoster && onOpenClassRoster(c.className, sec)}
+                          title={`عرض كشف طلاب ${c.className} شعبة ${sec}`}
+                          className="inline-flex items-center gap-1 bg-white hover:bg-amber-50 hover:border-amber-300 border border-slate-200 text-slate-800 text-[10px] font-bold px-2 py-0.5 rounded-md shadow-2xs transition-colors cursor-pointer"
+                        >
+                          <span>شعبة ({sec})</span>
+                          <span className="text-amber-700 font-bold">({secCount})</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {onOpenClassRoster && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenClassRoster(c.className)}
+                    className="w-full mt-2 py-1.5 px-2.5 rounded-xl bg-white hover:bg-amber-100 text-slate-800 hover:text-amber-950 border border-slate-200 hover:border-amber-300 font-bold text-[11px] flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                    title={`عرض كشف طلاب ${c.className} بالكامل ونقلهم والطباعة`}
+                  >
+                    <Users className="w-3.5 h-3.5 text-amber-600" />
+                    <span>عرض طلاب الفصل ({classStudents.length}) والطباعة 📋</span>
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -1195,6 +1379,15 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
             >
               <Wrench className="w-3.5 h-3.5" />
               <span>إدارة غيابات الأعطال 🛠️</span>
+            </button>
+
+            <button
+              onClick={() => (onOpenClassManagerTab ? onOpenClassManagerTab('classes') : onOpenClassExcelManager())}
+              className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-black flex items-center gap-1.5 cursor-pointer shadow-xs transition-all"
+              title="تعديل وتخصيص أسماء الفصول والشعب وتزويد صفوف جديدة أو حذف الزائد بأمان دون فقدان أي بيانات"
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>تعديل الصفوف والشعب 🏫</span>
             </button>
 
             <button

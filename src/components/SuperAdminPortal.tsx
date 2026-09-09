@@ -22,6 +22,8 @@ interface SuperAdminPortalProps {
   onOpenCreateSchool: () => void;
   onImpersonateSchool?: (school: School) => void;
   onOpenApiIntegration?: (school: School) => void;
+  onOpenClassManager?: (school: School) => void;
+  onOpenClassRoster?: (school: School) => void;
 }
 
 export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
@@ -33,6 +35,8 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
   onOpenCreateSchool,
   onImpersonateSchool,
   onOpenApiIntegration,
+  onOpenClassManager,
+  onOpenClassRoster,
 }) => {
   const [payments, setPayments] = useState<SubscriptionPaymentRequest[]>(getPaymentRequests());
   const [search, setSearch] = useState('');
@@ -417,8 +421,8 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
               const schoolTeachers = users.filter((u) => u.schoolCode === sch.code && u.role === 'teacher');
               const schoolAdmin = users.find((u) => u.schoolCode === sch.code && u.role === 'employee');
 
-              const studentLink = `${window.location.origin}/?joinSchool=${encodeURIComponent(sch.code)}`;
-              const staffLink = `${window.location.origin}/?joinStaff=${encodeURIComponent(sch.code)}`;
+              const studentLink = `${window.location.origin}/?joinSchool=${encodeURIComponent(sch.code)}&action=register-parent`;
+              const staffLink = `${window.location.origin}/?joinStaff=${encodeURIComponent(sch.code)}&action=register-staff`;
 
               return (
                 <div 
@@ -479,24 +483,48 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
                     </div>
                   </div>
 
-                  {/* Direct Impersonation / Quick Management Action */}
-                  <div className="bg-emerald-50/60 border border-emerald-200/80 rounded-2xl p-3 flex items-center justify-between gap-3">
+                  {/* Direct Impersonation & Class Management Actions */}
+                  <div className="bg-emerald-50/60 border border-emerald-200/80 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-2.5">
                     <div>
-                      <span className="text-xs font-black text-emerald-950 block">الإدارة المباشرة للمدرسة</span>
+                      <span className="text-xs font-black text-emerald-950 block">الإدارة والتحكم في المدرسة</span>
                       <span className="text-[10px] text-emerald-700">
-                        {schoolAdmin ? `المدير: ${schoolAdmin.name} (${schoolAdmin.nationalId})` : 'تحكم كمدير للمدرسة'}
+                        {schoolAdmin ? `المدير: ${schoolAdmin.name} (${schoolAdmin.nationalId})` : 'تحكم مباشر بالمدرسة وصفوفها'}
                       </span>
                     </div>
 
-                    {onImpersonateSchool && (
-                      <button
-                        onClick={() => onImpersonateSchool(sch)}
-                        className="py-2 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center gap-1.5 shadow-sm cursor-pointer transition-all shrink-0"
-                      >
-                        <span>دخول وإدارة المدرسة كمدير ⚡</span>
-                        <ArrowRight className="w-3.5 h-3.5" />
-                      </button>
-                    )}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {onOpenClassRoster && (
+                        <button
+                          onClick={() => onOpenClassRoster(sch)}
+                          className="py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-black text-xs flex items-center gap-1.5 shadow-sm cursor-pointer transition-all shrink-0"
+                          title="عرض كشوفات الطلاب ونقلهم والطباعة"
+                        >
+                          <Users className="w-3.5 h-3.5 text-amber-400" />
+                          <span>كشوفات الطلاب والطباعة 📋🖨️</span>
+                        </button>
+                      )}
+
+                      {onOpenClassManager && (
+                        <button
+                          onClick={() => onOpenClassManager(sch)}
+                          className="py-2 px-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-black text-xs flex items-center gap-1.5 shadow-sm cursor-pointer transition-all shrink-0"
+                          title="تعديل وتخصيص أسماء الفصول والشعب، وحذف الصفوف الزائدة أو تزويد صفوف جديدة"
+                        >
+                          <Layers className="w-3.5 h-3.5" />
+                          <span>تعديل الصفوف والشعب 🏫</span>
+                        </button>
+                      )}
+
+                      {onImpersonateSchool && (
+                        <button
+                          onClick={() => onImpersonateSchool(sch)}
+                          className="py-2 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center gap-1.5 shadow-sm cursor-pointer transition-all shrink-0"
+                        >
+                          <span>دخول كمدير ⚡</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {/* Quick Share Links */}

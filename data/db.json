@@ -47,67 +47,6 @@
           ]
         }
       ]
-    },
-    {
-      "id": "sch-raya-1",
-      "code": "RAYA-1448",
-      "name": "متوسطة الراية",
-      "city": "الرياض",
-      "type": "middle",
-      "lat": 24.7136,
-      "lng": 46.6753,
-      "radiusMeters": 500,
-      "subscriptionPlan": "yearly",
-      "subscriptionStatus": "active",
-      "subscriptionStartDate": "2026-01-01",
-      "subscriptionEndDate": "2027-01-01",
-      "contactMobile": "0551122334",
-      "isQuranSchool": false,
-      "customClasses": [
-        {
-          "id": "c-ry-1",
-          "className": "الأول المتوسط",
-          "sections": ["1", "2"]
-        },
-        {
-          "id": "c-ry-2",
-          "className": "الثاني المتوسط",
-          "sections": ["1", "2"]
-        },
-        {
-          "id": "c-ry-3",
-          "className": "الثالث المتوسط",
-          "sections": ["1", "2"]
-        }
-      ]
-    },
-    {
-      "id": "sch-quran-1",
-      "code": "QURAN-100",
-      "name": "مدرسة الفرقان لتحفيظ القرآن",
-      "city": "مكة المكرمة",
-      "type": "quran",
-      "lat": 21.4225,
-      "lng": 39.8262,
-      "radiusMeters": 400,
-      "subscriptionPlan": "free_forever",
-      "subscriptionStatus": "active",
-      "subscriptionStartDate": "2026-01-01",
-      "subscriptionEndDate": "2099-12-31",
-      "contactMobile": "0500000000",
-      "isQuranSchool": true,
-      "customClasses": [
-        {
-          "id": "c-q-1",
-          "className": "حلقة الإتقان",
-          "sections": ["1"]
-        },
-        {
-          "id": "c-q-2",
-          "className": "حلقة الترتيل",
-          "sections": ["1"]
-        }
-      ]
     }
   ],
   "users": [
@@ -336,8 +275,8 @@
   "notifications": [],
   "deleted_schools": [
     "SCH-RAYA-1",
-    "SCH-QURAN-1",
-    "RAYA-1448",
-    "QURAN-100"
-  ]
+    "SCH-QURAN-1"
+  ],
+  "deleted_attendance_ids": [],
+  "deleted_notification_ids": []
 }

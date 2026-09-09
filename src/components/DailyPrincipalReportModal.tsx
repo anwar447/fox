@@ -30,9 +30,10 @@ export const DailyPrincipalReportModal: React.FC<DailyPrincipalReportModalProps>
   const dateInfo = getHijriDateInfo();
 
   const handlePrint = () => {
-    const printWin = window.open('', '_blank');
-    if (!printWin) return;
-    printWin.document.write(`
+    try {
+      const printWin = window.open('', '_blank');
+      if (printWin) {
+        printWin.document.write(`
       <html dir="rtl" lang="ar">
         <head>
           <title>التقرير الصباحي اليومي لمدير المدرسة - ${school.name}</title>
@@ -113,8 +114,14 @@ export const DailyPrincipalReportModal: React.FC<DailyPrincipalReportModalProps>
           </script>
         </body>
       </html>
-    `);
-    printWin.document.close();
+        `);
+        printWin.document.close();
+        return;
+      }
+    } catch {}
+
+    // Fallback: direct window.print()
+    window.print();
   };
 
   return (

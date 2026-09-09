@@ -313,7 +313,14 @@ app.post('/api/sync', (req, res) => {
         const key = a?.id || (a ? `${a.studentId}_${a.date}` : null);
         if (key && !deletedAttSet.has(String(a.id)) && !deletedAttSet.has(`${a.studentId}_${a.date}`)) {
           if (attMap.has(key)) {
-            attMap.set(key, { ...attMap.get(key), ...a });
+            const prev = attMap.get(key);
+            // If previous attendance already had an accepted excuse, never allow stale pending/unexcused state to revert it
+            const preserveAccepted = prev.excuseStatus === 'accepted' && a.excuseStatus !== 'accepted';
+            attMap.set(key, {
+              ...prev,
+              ...a,
+              ...(preserveAccepted ? { excuseStatus: 'accepted', finalStatus: prev.finalStatus || 'excused', isTruant: false } : {}),
+            });
           } else {
             attMap.set(key, a);
           }
@@ -346,11 +353,42 @@ app.post('/api/sync', (req, res) => {
       db.absence_actions = Array.from(actMap.values());
     }
 
-    // 7. Corrections
+    // 7. Corrections: Smart decision-aware unification (Approved/Rejected decisions CANNOT be reverted to pending)
     if (Array.isArray(incoming.corrections) && incoming.corrections.length > 0) {
       const corMap = new Map<string, any>();
       db.corrections.forEach((c) => c?.id && corMap.set(c.id, c));
-      incoming.corrections.forEach((c) => c?.id && corMap.set(c.id, { ...corMap.get(c.id), ...c }));
+
+      const statusWeight = (s?: string) => {
+        if (s === 'approved' || s === 'rejected') return 2;
+        if (s === 'pending') return 1;
+        return 0;
+      };
+
+      incoming.corrections.forEach((c) => {
+        if (!c?.id) return;
+        if (corMap.has(c.id)) {
+          const prev = corMap.get(c.id);
+          const prevWeight = statusWeight(prev.status);
+          const newWeight = statusWeight(c.status);
+
+          // If incoming status has lower weight (e.g. stale client sending 'pending' for an already approved/rejected excuse), keep the approved/rejected decision
+          if (newWeight < prevWeight) {
+            corMap.set(c.id, {
+              ...c,
+              status: prev.status,
+              adminDecisionNotes: prev.adminDecisionNotes || c.adminDecisionNotes,
+              decidedByName: prev.decidedByName || c.decidedByName,
+              decidedByRole: prev.decidedByRole || c.decidedByRole,
+              decidedAt: prev.decidedAt || c.decidedAt,
+              updatedAt: prev.updatedAt || c.updatedAt,
+            });
+          } else {
+            corMap.set(c.id, { ...prev, ...c });
+          }
+        } else {
+          corMap.set(c.id, c);
+        }
+      });
       db.corrections = Array.from(corMap.values());
     }
 
@@ -663,7 +701,132 @@ app.post('/api/permissions', (req, res) => {
   res.json({ success: true, permissions: db.permissions });
 });
 
-// 6. Reset all data (Complete Clean Wipe)
+// 6. Corrections endpoints (Excuses Management)
+app.get('/api/corrections', (req, res) => {
+  res.json({ success: true, corrections: db.corrections });
+});
+
+app.post('/api/corrections', (req, res) => {
+  const incoming = req.body;
+  if (incoming && incoming.id) {
+    if (!Array.isArray(db.corrections)) db.corrections = [];
+    const idx = db.corrections.findIndex((c) => c.id === incoming.id);
+    if (idx >= 0) {
+      const prev = db.corrections[idx];
+      // Never let stale pending overwrite already approved/rejected
+      if ((prev.status === 'approved' || prev.status === 'rejected') && incoming.status === 'pending') {
+        db.corrections[idx] = {
+          ...incoming,
+          status: prev.status,
+          adminDecisionNotes: prev.adminDecisionNotes,
+          decidedByName: prev.decidedByName,
+          decidedByRole: prev.decidedByRole,
+          decidedAt: prev.decidedAt,
+          updatedAt: prev.updatedAt || incoming.updatedAt,
+        };
+      } else {
+        db.corrections[idx] = { ...prev, ...incoming };
+      }
+    } else {
+      db.corrections.unshift(incoming);
+    }
+    saveDatabase(db);
+  }
+  res.json({ success: true, corrections: db.corrections });
+});
+
+app.post('/api/corrections/:id/approve', (req, res) => {
+  const id = req.params.id;
+  const { adminDecisionNotes, decidedByName, decidedByRole } = req.body || {};
+  if (!Array.isArray(db.corrections)) db.corrections = [];
+  const idx = db.corrections.findIndex((c) => c.id === id);
+  if (idx >= 0) {
+    const cor = db.corrections[idx];
+    cor.status = 'approved';
+    cor.adminDecisionNotes = adminDecisionNotes || 'تم اعتماد وقبول العذر الرسمي واستعادة درجات المواظبة بنجاح.';
+    cor.decidedByName = decidedByName || 'إدارة المدرسة';
+    cor.decidedByRole = decidedByRole || 'employee';
+    cor.decidedAt = new Date().toISOString();
+    cor.updatedAt = new Date().toISOString();
+
+    // Auto-update or create attendance record on the server
+    if (!Array.isArray(db.attendances)) db.attendances = [];
+    const attIdx = db.attendances.findIndex(
+      (a) => a.id === cor.attendanceId || (a.studentId === cor.studentId && a.date === cor.date)
+    );
+    if (attIdx >= 0) {
+      db.attendances[attIdx].finalStatus = cor.requestedStatus || 'excused';
+      db.attendances[attIdx].excuseStatus = 'accepted';
+      db.attendances[attIdx].isTruant = false;
+      db.attendances[attIdx].excuseReason = cor.reason || db.attendances[attIdx].excuseReason;
+    } else {
+      db.attendances.push({
+        id: cor.attendanceId || `att-${cor.studentId}-${cor.date}`,
+        studentId: cor.studentId,
+        studentName: cor.studentName,
+        schoolCode: cor.schoolCode,
+        className: cor.className,
+        sectionName: cor.sectionName,
+        date: cor.date,
+        period: 1,
+        finalStatus: cor.requestedStatus || 'excused',
+        excuseStatus: 'accepted',
+        excuseReason: cor.reason,
+        isTruant: false,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    saveDatabase(db);
+    res.json({ success: true, correction: cor, attendances: db.attendances });
+  } else {
+    // If not found by ID, attempt to locate by body if provided
+    const incoming = req.body;
+    if (incoming && (incoming.studentId || incoming.attendanceId)) {
+      const altIdx = db.corrections.findIndex(
+        (c) => (c.attendanceId && c.attendanceId === incoming.attendanceId) || (c.studentId === incoming.studentId && c.date === incoming.date)
+      );
+      if (altIdx >= 0) {
+        db.corrections[altIdx].status = 'approved';
+        db.corrections[altIdx].adminDecisionNotes = adminDecisionNotes || 'تم اعتماد وقبول العذر الرسمي واستعادة درجات المواظبة بنجاح.';
+        saveDatabase(db);
+        return res.json({ success: true, correction: db.corrections[altIdx] });
+      }
+    }
+    res.status(404).json({ success: false, message: 'Correction request not found' });
+  }
+});
+
+app.post('/api/corrections/:id/reject', (req, res) => {
+  const id = req.params.id;
+  const { reason, decidedByName, decidedByRole } = req.body || {};
+  if (!Array.isArray(db.corrections)) db.corrections = [];
+  const idx = db.corrections.findIndex((c) => c.id === id);
+  if (idx >= 0) {
+    const cor = db.corrections[idx];
+    cor.status = 'rejected';
+    cor.adminDecisionNotes = reason || 'تم رفض العذر لعدم كفاية المستند المرفق أو تعارضه مع لائحة المواظبة.';
+    cor.decidedByName = decidedByName || 'إدارة المدرسة';
+    cor.decidedByRole = decidedByRole || 'employee';
+    cor.decidedAt = new Date().toISOString();
+    cor.updatedAt = new Date().toISOString();
+
+    if (!Array.isArray(db.attendances)) db.attendances = [];
+    const attIdx = db.attendances.findIndex(
+      (a) => a.id === cor.attendanceId || (a.studentId === cor.studentId && a.date === cor.date)
+    );
+    if (attIdx >= 0) {
+      db.attendances[attIdx].excuseStatus = 'rejected';
+    }
+
+    saveDatabase(db);
+    res.json({ success: true, correction: cor, attendances: db.attendances });
+  } else {
+    res.status(404).json({ success: false, message: 'Correction request not found' });
+  }
+});
+
+// 7. Reset all data (Complete Clean Wipe)
 app.post('/api/reset-all', (req, res) => {
   db = getInitialDB();
   saveDatabase(db);

@@ -59,6 +59,7 @@ export interface User {
   name: string;
   mobile?: string;
   parentMobile?: string;
+  parentPhone?: string;
   password?: string;
   role: UserRole;
   staffTitle?: StaffTitle;
@@ -208,7 +209,11 @@ export interface CorrectionRequest {
   attachmentUrl?: string;
   status: 'pending' | 'approved' | 'rejected';
   adminDecisionNotes?: string;
+  decidedByName?: string;
+  decidedByRole?: string;
+  decidedAt?: string;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface SubscriptionPaymentRequest {

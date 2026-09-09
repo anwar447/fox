@@ -20,6 +20,7 @@ interface ClassExcelManagerModalProps {
   school: School;
   onUpdated: () => void;
   initialTab?: 'excel' | 'manual' | 'classes';
+  onOpenClassRoster?: (className?: string, sectionName?: string) => void;
 }
 
 export const ClassExcelManagerModal: React.FC<ClassExcelManagerModalProps> = ({
@@ -28,6 +29,7 @@ export const ClassExcelManagerModal: React.FC<ClassExcelManagerModalProps> = ({
   school,
   onUpdated,
   initialTab = 'excel',
+  onOpenClassRoster,
 }) => {
   const [activeTab, setActiveTab] = useState<'excel' | 'manual' | 'classes'>(initialTab);
   const [parsedRows, setParsedRows] = useState<ParsedStudentRow[]>([]);
@@ -651,11 +653,21 @@ export const ClassExcelManagerModal: React.FC<ClassExcelManagerModalProps> = ({
         {/* Header with clear School Stage context */}
         <div className="flex items-center justify-between border-b border-slate-200 pb-3">
           <div className="flex items-center gap-2">
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center">
-              <Building2 className="w-5 h-5" />
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center border ${
+              activeTab === 'classes' 
+                ? 'bg-amber-50 text-amber-700 border-amber-200' 
+                : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+            }`}>
+              {activeTab === 'classes' ? <Layers className="w-5 h-5" /> : <Building2 className="w-5 h-5" />}
             </div>
             <div>
-              <h3 className="text-base font-black text-slate-900">إدارة كشوفات الطلاب ونظام نور والفصول</h3>
+              <h3 className="text-base font-black text-slate-900">
+                {activeTab === 'classes' 
+                  ? 'إدارة وتعديل الصفوف والشعب المدرسية (الأسماء • الإضافة • الحذف) 🏫' 
+                  : activeTab === 'manual'
+                  ? 'إضافة وتسكين طالب فردي في الفصل ➕'
+                  : 'إدارة كشوفات الطلاب ونظام نور (Excel)'}
+              </h3>
               <div className="flex flex-wrap items-center gap-2 text-xs pt-0.5">
                 <span className="text-emerald-800 font-bold">مدرسة: {school.name}</span>
                 <span className="text-slate-300">|</span>
@@ -673,7 +685,7 @@ export const ClassExcelManagerModal: React.FC<ClassExcelManagerModalProps> = ({
         </div>
 
         {/* Tab Selector */}
-        <div className="flex rounded-xl bg-slate-100 p-1 text-xs font-bold">
+        <div className="flex rounded-xl bg-slate-100 p-1 text-xs font-bold gap-1">
           <button
             onClick={() => { setActiveTab('excel'); setMsg(''); }}
             className={`flex-1 py-2 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
@@ -697,12 +709,28 @@ export const ClassExcelManagerModal: React.FC<ClassExcelManagerModalProps> = ({
           <button
             onClick={() => { setActiveTab('classes'); setMsg(''); }}
             className={`flex-1 py-2 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-              activeTab === 'classes' ? 'bg-white text-emerald-800 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+              activeTab === 'classes' 
+                ? 'bg-amber-500 text-white shadow-sm font-black' 
+                : 'text-amber-900 bg-amber-50/70 hover:bg-amber-100 border border-amber-200/80 font-bold'
             }`}
           >
             <Layers className="w-3.5 h-3.5" />
-            <span>تخصيص الصفوف والشعب</span>
+            <span>تعديل الصفوف والشعب 🏫</span>
           </button>
+
+          {onOpenClassRoster && (
+            <button
+              onClick={() => {
+                onClose();
+                onOpenClassRoster();
+              }}
+              className="flex-1 py-2 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer text-indigo-900 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 font-bold"
+              title="عرض كشوفات الطلاب ونقلهم بين الصفوف والطباعة"
+            >
+              <Users className="w-3.5 h-3.5 text-indigo-600" />
+              <span>كشف الطلاب والنقل والطباعة 📋🖨️</span>
+            </button>
+          )}
         </div>
 
         {msg && (
@@ -774,6 +802,21 @@ export const ClassExcelManagerModal: React.FC<ClassExcelManagerModalProps> = ({
                 </div>
               </div>
             )}
+
+            {/* Quick Switch to Classes & Sections Banner */}
+            <div className="bg-amber-50/80 border border-amber-200 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-2 text-amber-950">
+                <Layers className="w-4 h-4 text-amber-600 shrink-0" />
+                <span className="font-bold">هل ترغب في تغيير أسماء الصفوف، أو حذف صفوف زائدة، أو إضافة/حذف شعب؟</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setActiveTab('classes'); setMsg(''); }}
+                className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white font-black text-xs rounded-xl shrink-0 cursor-pointer shadow-2xs transition-all"
+              >
+                تعديل الصفوف والشعب الآن ↵
+              </button>
+            </div>
           </div>
         )}
 
@@ -879,6 +922,21 @@ export const ClassExcelManagerModal: React.FC<ClassExcelManagerModalProps> = ({
               >
                 <Check className="w-4 h-4" />
                 <span>حفظ وتسكين الطالب فوراً ↵</span>
+              </button>
+            </div>
+
+            {/* Quick Switch to Classes & Sections Banner */}
+            <div className="bg-amber-50/80 border border-amber-200 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-2 text-amber-950">
+                <Layers className="w-4 h-4 text-amber-600 shrink-0" />
+                <span className="font-bold">هل ترغب في تغيير أسماء الصفوف، أو حذف صفوف زائدة، أو إضافة/حذف شعب؟</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setActiveTab('classes'); setMsg(''); }}
+                className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white font-black text-xs rounded-xl shrink-0 cursor-pointer shadow-2xs transition-all"
+              >
+                تعديل الصفوف والشعب الآن ↵
               </button>
             </div>
           </form>
@@ -1038,6 +1096,21 @@ export const ClassExcelManagerModal: React.FC<ClassExcelManagerModalProps> = ({
                           )}
 
                           <div className="flex items-center gap-1.5 shrink-0">
+                            {onOpenClassRoster && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onClose();
+                                  onOpenClassRoster(c.className);
+                                }}
+                                className="px-2.5 py-1 text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg font-bold flex items-center gap-1 cursor-pointer transition-colors text-xs"
+                                title="عرض كشف طلاب هذا الصف ونقلهم وطباعة الكشف"
+                              >
+                                <Users className="w-3.5 h-3.5 text-amber-600" />
+                                <span>كشف الطلاب ({enrolled}) 📋</span>
+                              </button>
+                            )}
+
                             {!isEditingClass && (
                               <button
                                 type="button"

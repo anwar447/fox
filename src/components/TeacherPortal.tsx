@@ -26,6 +26,7 @@ interface TeacherPortalProps {
   schools?: School[];
   onSwitchSchool?: (school: School) => void;
   onOpenDossier: (student: User) => void;
+  onOpenClassRoster?: (className?: string, sectionName?: string) => void;
 }
 
 export const TeacherPortal: React.FC<TeacherPortalProps> = ({
@@ -34,6 +35,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
   schools = [],
   onSwitchSchool,
   onOpenDossier,
+  onOpenClassRoster,
 }) => {
   const today = getTodayDateString();
   const allUsers = getUsers();
@@ -432,6 +434,18 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
             <BookOpen className="w-3.5 h-3.5 text-indigo-600" />
             <span>تعديل فصولي المسندة ({activeUser.assignedClasses?.length || 0})</span>
           </button>
+
+          {onOpenClassRoster && (
+            <button
+              type="button"
+              onClick={() => onOpenClassRoster(selectedClass, selectedSection)}
+              className="py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-all shadow-2xs"
+              title="عرض كشف طلاب الفصل والطباعة"
+            >
+              <Users className="w-3.5 h-3.5 text-amber-400" />
+              <span>كشف طلاب الفصل والطباعة 📋🖨️</span>
+            </button>
+          )}
         </div>
       </div>
 

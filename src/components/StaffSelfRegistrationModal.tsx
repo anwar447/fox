@@ -32,7 +32,7 @@ export const StaffSelfRegistrationModal: React.FC<StaffSelfRegistrationModalProp
     } else if (schools.length > 0 && !selectedSchoolCode) {
       setSelectedSchoolCode(schools[0].code);
     }
-  }, [initialSchoolCode, schools, selectedSchoolCode]);
+  }, [initialSchoolCode, schools]);
 
   const [name, setName] = useState('');
   const [nationalId, setNationalId] = useState('');
@@ -41,7 +41,12 @@ export const StaffSelfRegistrationModal: React.FC<StaffSelfRegistrationModalProp
   const [staffTitle, setStaffTitle] = useState<StaffTitle>('teacher');
 
   const currentSchool = useMemo(() => {
-    return schools.find((s) => s.code?.toUpperCase() === selectedSchoolCode?.toUpperCase()) || (initialSchoolCode ? null : schools[0]);
+    const code = (selectedSchoolCode || initialSchoolCode || '').trim().toUpperCase();
+    if (!code && schools.length > 0) return schools[0];
+    return (
+      schools.find((s) => s.code?.toUpperCase() === code || s.id?.toUpperCase() === code) ||
+      (schools.length === 1 ? schools[0] : (initialSchoolCode ? null : schools[0]))
+    );
   }, [schools, selectedSchoolCode, initialSchoolCode]);
 
   const isLockedSchool = Boolean(initialSchoolCode && currentSchool);

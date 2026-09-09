@@ -117,7 +117,7 @@ ${magicUrl}
  */
 export function buildSchoolRegistrationUrl(schoolCode: string): string {
   const baseUrl = window.location.origin + window.location.pathname;
-  return `${baseUrl}?joinSchool=${encodeURIComponent(schoolCode)}&action=register`;
+  return `${baseUrl}?joinSchool=${encodeURIComponent(schoolCode)}&action=register-parent`;
 }
 
 /**
@@ -155,7 +155,7 @@ ${registrationUrl}
  */
 export function buildStaffRegistrationUrl(schoolCode: string): string {
   const baseUrl = window.location.origin + window.location.pathname;
-  return `${baseUrl}?joinStaff=${encodeURIComponent(schoolCode)}&action=staffRegister`;
+  return `${baseUrl}?joinStaff=${encodeURIComponent(schoolCode)}&action=register-staff`;
 }
 
 /**

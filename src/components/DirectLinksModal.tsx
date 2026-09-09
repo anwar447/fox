@@ -12,6 +12,8 @@ import {
   UserCheck,
   UserPlus,
   ShieldCheck,
+  Layers,
+  FileSpreadsheet,
 } from 'lucide-react';
 
 interface DirectLinksModalProps {
@@ -84,7 +86,7 @@ export const DirectLinksModal: React.FC<DirectLinksModalProps> = ({
       id: 'reg-staff',
       title: 'رابط التسجيل الذاتي للمعلمين والكوادر ✍️',
       description: 'أرسل هذا الرابط للمعلمين الجدد للانضمام للمدرسة واختيار الفصول المسندة.',
-      url: `${baseUrl}?action=register-staff&school=${targetSchool?.code || ''}`,
+      url: `${baseUrl}?joinStaff=${encodeURIComponent(targetSchool?.code || '')}&action=register-staff&school=${encodeURIComponent(targetSchool?.code || '')}`,
       icon: UserPlus,
       color: 'from-purple-600 to-indigo-600',
       badge: 'تسجيل المعلمين',
@@ -93,10 +95,28 @@ export const DirectLinksModal: React.FC<DirectLinksModalProps> = ({
       id: 'reg-parent',
       title: 'رابط تسجيل الطلاب وربط أولياء الأمور 📝',
       description: 'أرسل هذا الرابط للطلاب وأولياء الأمور للتسجيل وربط الأبناء تلقائياً.',
-      url: `${baseUrl}?action=register-parent&school=${targetSchool?.code || ''}`,
+      url: `${baseUrl}?joinSchool=${encodeURIComponent(targetSchool?.code || '')}&action=register-parent&school=${encodeURIComponent(targetSchool?.code || '')}`,
       icon: Users,
       color: 'from-amber-600 to-orange-600',
       badge: 'تسجيل الطلاب والأبناء',
+    },
+    {
+      id: 'roster-manager',
+      title: 'رابط كشوفات الطلاب ونقلهم والطباعة 📋🖨️',
+      description: 'رابط مباشر لكشوفات الطلاب وأسمائهم حسب الفصول والشعب ونقلهم والطباعة الرسمية.',
+      url: `${baseUrl}?portal=admin&school=${encodeURIComponent(targetSchool?.code || '')}&action=roster`,
+      icon: FileSpreadsheet,
+      color: 'from-slate-800 to-slate-900',
+      badge: 'كشوفات الطلاب والطباعة',
+    },
+    {
+      id: 'classes-manager',
+      title: 'رابط تعديل وهيكلة الصفوف والشعب 🏫',
+      description: 'رابط مباشر لتعديل مسميات الصفوف وحذف وإضافة الشعب المدرسية.',
+      url: `${baseUrl}?portal=admin&school=${encodeURIComponent(targetSchool?.code || '')}&action=classes`,
+      icon: Layers,
+      color: 'from-amber-500 to-amber-600',
+      badge: 'هيكلة الصفوف والشعب',
     },
   ];
 
