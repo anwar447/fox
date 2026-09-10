@@ -3,7 +3,7 @@ import { User, Attendance, School, StudentPermission } from '../types';
 import { 
   getAttendancesForStudent, getPermissionsForStudent, getCurrentUser, 
   deleteAttendance, deleteStudentAllAbsences, convertStudentAllAbsencesToPresent,
-  addSystemNotification
+  addSystemNotification, getStudentExcuseStats
 } from '../utils/storage';
 import { calculateStudentBehaviorScore } from '../utils/behavior';
 import { soundManager } from '../utils/audio';
@@ -151,11 +151,38 @@ export const StudentDossierModal: React.FC<StudentDossierModalProps> = ({
               )}
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <h3 className="text-base font-black text-slate-900">{student.name}</h3>
                 <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-mono text-[10px] font-bold">
                   هوية: {student.nationalId}
                 </span>
+
+                {/* Excuses count badges */}
+                {(() => {
+                  const stats = getStudentExcuseStats(student.id, student.nationalId);
+                  return (
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1 shadow-2xs"
+                        title="عدد مرات قبول العذر الرسمي لهذا الطالب"
+                      >
+                        <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                        <span>عذر رسمي: {stats.officialCount}</span>
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded-md text-[11px] font-bold flex items-center gap-1 border shadow-2xs ${
+                          stats.conditionalCount > 0
+                            ? 'bg-amber-100 text-amber-900 border-amber-300 font-black ring-1 ring-amber-200'
+                            : 'bg-slate-100 text-slate-600 border-slate-200'
+                        }`}
+                        title="عدد مرات قبول العذر المشروط لهذا الطالب"
+                      >
+                        <AlertTriangle className={`w-3 h-3 ${stats.conditionalCount > 0 ? 'text-amber-600' : 'text-slate-400'}`} />
+                        <span>قبول مشروط: {stats.conditionalCount}</span>
+                      </span>
+                    </div>
+                  );
+                })()}
               </div>
               <p className="text-xs text-slate-500 font-medium">
                 {student.className} - فصل {student.sectionName} | {school.name}
@@ -552,10 +579,13 @@ export const StudentDossierModal: React.FC<StudentDossierModalProps> = ({
                     )}
                     <span className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${
                       att.finalStatus === 'present' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' :
+                      (att.excuseStatus === 'conditional_accepted' || att.excuseDecisionType === 'conditional') ? 'bg-amber-100 text-amber-900 border border-amber-300' :
+                      att.excuseStatus === 'accepted' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' :
                       att.finalStatus === 'absent' ? 'bg-rose-50 text-rose-800 border border-rose-200' : 'bg-amber-50 text-amber-800 border border-amber-200'
                     }`}>
                       {att.finalStatus === 'present' ? 'حاضر' : 
-                       att.excuseStatus === 'accepted' ? 'غائب بعذر مقبول' :
+                       (att.excuseStatus === 'conditional_accepted' || att.excuseDecisionType === 'conditional') ? 'معذور (قبول مشروط ⚠️)' :
+                       att.excuseStatus === 'accepted' ? 'غائب بعذر رسمي مقبول ✓' :
                        att.finalStatus === 'absent' ? 'غائب بدون عذر' : 'متأخر'}
                     </span>
 

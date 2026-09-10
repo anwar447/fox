@@ -8,6 +8,7 @@ import {
 } from '../utils/storage';
 import { parseNoorExcelFile, ParsedStudentRow } from '../utils/excelParser';
 import { getSchoolClasses, getDefaultClassesForSchoolType } from '../utils/schoolClasses';
+import { ClassRosterView } from './ClassRosterManagerModal';
 import { 
   FileSpreadsheet, Upload, Plus, Trash2, Check, 
   X, AlertCircle, Sparkles, Users, Layers, UserPlus,
@@ -19,7 +20,7 @@ interface ClassExcelManagerModalProps {
   onClose: () => void;
   school: School;
   onUpdated: () => void;
-  initialTab?: 'excel' | 'manual' | 'classes';
+  initialTab?: 'excel' | 'manual' | 'classes' | 'roster';
   onOpenClassRoster?: (className?: string, sectionName?: string) => void;
 }
 
@@ -31,7 +32,7 @@ export const ClassExcelManagerModal: React.FC<ClassExcelManagerModalProps> = ({
   initialTab = 'excel',
   onOpenClassRoster,
 }) => {
-  const [activeTab, setActiveTab] = useState<'excel' | 'manual' | 'classes'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'excel' | 'manual' | 'classes' | 'roster'>(initialTab);
   const [parsedRows, setParsedRows] = useState<ParsedStudentRow[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [msg, setMsg] = useState('');
@@ -718,19 +719,21 @@ export const ClassExcelManagerModal: React.FC<ClassExcelManagerModalProps> = ({
             <span>تعديل الصفوف والشعب 🏫</span>
           </button>
 
-          {onOpenClassRoster && (
-            <button
-              onClick={() => {
-                onClose();
-                onOpenClassRoster();
-              }}
-              className="flex-1 py-2 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer text-indigo-900 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 font-bold"
-              title="عرض كشوفات الطلاب ونقلهم بين الصفوف والطباعة"
-            >
-              <Users className="w-3.5 h-3.5 text-indigo-600" />
-              <span>كشف الطلاب والنقل والطباعة 📋🖨️</span>
-            </button>
-          )}
+          <button
+            onClick={() => {
+              setActiveTab('roster');
+              setMsg('');
+            }}
+            className={`flex-1 py-2 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer font-bold ${
+              activeTab === 'roster'
+                ? 'bg-indigo-600 text-white shadow-sm font-black'
+                : 'text-indigo-900 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200'
+            }`}
+            title="عرض كشوفات الطلاب ونقلهم بين الصفوف والطباعة"
+          >
+            <Users className="w-3.5 h-3.5" />
+            <span>كشف الطلاب والنقل والطباعة 📋🖨️</span>
+          </button>
         </div>
 
         {msg && (
@@ -1287,6 +1290,19 @@ export const ClassExcelManagerModal: React.FC<ClassExcelManagerModalProps> = ({
                 <span>حفظ وتثبيت تعديلات الصفوف والشعب</span>
               </button>
             </div>
+          </div>
+        )}
+
+        {/* TAB 4: STUDENT ROSTER, TRANSFER & PRINT */}
+        {activeTab === 'roster' && (
+          <div className="pt-1">
+            <ClassRosterView
+              school={school}
+              onOpenClassEditor={() => setActiveTab('classes')}
+              onOpenExcelManager={() => setActiveTab('excel')}
+              onUpdated={onUpdated}
+              isEmbedded={true}
+            />
           </div>
         )}
 

@@ -591,40 +591,62 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {childExcuses.map((excuse) => (
-                    <div
-                      key={excuse.id}
-                      className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2 text-xs"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono font-black text-slate-900 text-sm">{excuse.date}</span>
-                          <span className="text-[11px] px-2 py-0.5 rounded-md bg-slate-200 text-slate-800 font-bold">
-                            {excuse.requestedByRole === 'parent' ? 'مقدم من ولي الأمر' : 'مقدم ذاتياً من الطالب'}
+                  {childExcuses.map((excuse) => {
+                    const isCond = excuse.approvalType === 'conditional' || excuse.status === 'conditional_approved';
+                    return (
+                      <div
+                        key={excuse.id}
+                        className={`p-4 rounded-2xl space-y-2.5 text-xs border ${
+                          isCond ? 'bg-amber-50/70 border-amber-300 shadow-2xs' : 'bg-slate-50 border-slate-200'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-black text-slate-900 text-sm">{excuse.date}</span>
+                            <span className="text-[11px] px-2 py-0.5 rounded-md bg-slate-200 text-slate-800 font-bold">
+                              {excuse.requestedByRole === 'parent' ? 'مقدم من ولي الأمر' : 'مقدم ذاتياً من الطالب'}
+                            </span>
+                            {isCond && (
+                              <span className="px-2 py-0.5 rounded-md bg-amber-200 text-amber-950 font-black text-[10px] border border-amber-400">
+                                ⚠️ قبول مشروط
+                              </span>
+                            )}
+                          </div>
+
+                          <span className={`px-2.5 py-1 rounded-full font-black text-[11px] ${
+                            excuse.status === 'rejected' ? 'bg-rose-100 text-rose-800 border border-rose-200' :
+                            isCond ? 'bg-amber-200 text-amber-950 border border-amber-400 ring-1 ring-amber-300 font-black' :
+                            excuse.status === 'approved' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
+                            'bg-amber-100 text-amber-900 border border-amber-200'
+                          }`}>
+                            {excuse.status === 'rejected' ? '✕ تم رفض العذر' :
+                             isCond ? '⚠️ تم قبول العذر قبولاً مشروطاً (+1)' :
+                             excuse.status === 'approved' ? '✓ تم قبول العذر رسمياً واستعادة الدرجة (+1)' : '⏳ قيد مراجعة الإدارة'}
                           </span>
                         </div>
 
-                        <span className={`px-2.5 py-1 rounded-full font-black text-[11px] ${
-                          excuse.status === 'approved' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
-                          excuse.status === 'rejected' ? 'bg-rose-100 text-rose-800 border border-rose-200' :
-                          'bg-amber-100 text-amber-900 border border-amber-200'
-                        }`}>
-                          {excuse.status === 'approved' ? '✓ تم قبول العذر واستعادة الدرجة (+1)' :
-                           excuse.status === 'rejected' ? '✕ تم رفض العذر' : '⏳ قيد مراجعة الإدارة'}
-                        </span>
-                      </div>
-
-                      <p className="text-slate-700 bg-white p-2.5 rounded-xl border border-slate-100">
-                        <strong>تفاصيل العذر:</strong> {excuse.reason}
-                      </p>
-
-                      {excuse.adminDecisionNotes && (
-                        <p className="text-emerald-800 bg-emerald-50 p-2.5 rounded-xl border border-emerald-200 font-bold">
-                          <strong>قرار الإدارة:</strong> {excuse.adminDecisionNotes}
+                        <p className="text-slate-700 bg-white p-2.5 rounded-xl border border-slate-100 font-medium">
+                          <strong>المبرر المرفوع للإدارة:</strong> {excuse.reason}
                         </p>
-                      )}
-                    </div>
-                  ))}
+
+                        {excuse.adminDecisionNotes && (
+                          <div className={`p-3 rounded-xl border text-xs space-y-1 ${
+                            isCond ? 'bg-amber-100/90 text-amber-950 border-amber-300 shadow-2xs' :
+                            excuse.status === 'rejected' ? 'bg-rose-50 text-rose-900 border-rose-200' :
+                            'bg-emerald-50 text-emerald-900 border-emerald-200'
+                          }`}>
+                            <div className="flex items-center gap-1.5 font-black text-[12px]">
+                              {isCond ? <AlertTriangle className="w-4 h-4 text-amber-700" /> : <CheckCircle className="w-4 h-4 text-emerald-700" />}
+                              <span>{isCond ? '⚠️ رسالة وتوجيه إدارة المدرسة لولي الأمر (قبول مشروط):' : 'قرار وتوجيه الإدارة:'}</span>
+                            </div>
+                            <p className="font-medium pr-5 text-slate-900 leading-relaxed bg-white/90 p-2.5 rounded-lg border border-amber-200/70">
+                              "{excuse.adminDecisionNotes}"
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -650,15 +672,17 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                         <span className={`px-2.5 py-1 rounded-xl text-[11px] font-black ${
                           a.finalStatus === 'present' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' :
                           a.finalStatus === 'late' ? 'bg-amber-50 text-amber-800 border border-amber-200' :
+                          (a.excuseStatus === 'conditional_accepted' || a.excuseDecisionType === 'conditional') ? 'bg-amber-100 text-amber-950 border border-amber-300 ring-1 ring-amber-200' :
                           a.excuseStatus === 'accepted' ? 'bg-teal-50 text-teal-800 border border-teal-200' :
                           'bg-rose-50 text-rose-800 border border-rose-200'
                         }`}>
                           {a.finalStatus === 'present' ? 'حاضر' :
                            a.finalStatus === 'late' ? 'متأخر' :
-                           a.excuseStatus === 'accepted' ? 'غائب بعذر مقبول' : 'غائب بدون عذر (-1)'}
+                           (a.excuseStatus === 'conditional_accepted' || a.excuseDecisionType === 'conditional') ? 'معذور (قبول مشروط ⚠️)' :
+                           a.excuseStatus === 'accepted' ? 'غائب بعذر رسمي' : 'غائب بدون عذر (-1)'}
                         </span>
 
-                        {a.finalStatus === 'absent' && a.excuseStatus !== 'accepted' && (
+                        {a.finalStatus === 'absent' && a.excuseStatus !== 'accepted' && a.excuseStatus !== 'conditional_accepted' && (
                           <button
                             onClick={() => handleOpenExcuse(a.date)}
                             className="px-2 py-0.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-white text-[10px] font-bold cursor-pointer"

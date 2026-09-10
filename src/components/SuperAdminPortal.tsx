@@ -89,13 +89,9 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
     updateSchool(updated);
     onRefresh();
 
-    const planLabel = 
-      plan === 'free_forever' ? 'اشتراك مجاني دائم (وقف تحفيظ القرآن الكريم)' :
-      'اشتراك سنوي شامل (333 ريال فقط / سنة كاملة)';
-
     setStatusMsg({
       type: 'success',
-      text: `✅ تم تحديث اشتراك مدرسة (${school.name}) إلى: [${planLabel}] والحالة: [${status === 'active' ? 'نشط' : 'موقوف مؤقتاً حتى السداد'}].`
+      text: `✅ تم تحديث حالة مدرسة (${school.name}) إلى: [${status === 'active' ? 'نشط ومفعل' : 'موقوف مؤقتاً'}].`
     });
   };
 
@@ -111,7 +107,7 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
     if (newStatus === 'pending_payment') {
       setStatusMsg({
         type: 'warning',
-        text: `⚠️ تم إيقاف مدرسة (${school.name}) مؤقتاً حتى السداد.`
+        text: `⚠️ تم إيقاف حساب مدرسة (${school.name}) مؤقتاً.`
       });
     } else {
       setStatusMsg({
@@ -214,7 +210,7 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
               التحكم الشامل بالمدارس والتراخيص والإشراف
             </h2>
             <p className="text-xs text-slate-400 font-medium max-w-2xl">
-              يمكنك إدارة أي مدرسة كمدير بنقرة واحدة، تعديل الاشتراكات، إنشاء مدارس جديدة، أو تصفير المنظومة.
+              يمكنك إدارة أي مدرسة كمدير بنقرة واحدة، إدارة ومتابعة المدارس، إنشاء مدارس جديدة، أو تصفير المنظومة.
             </p>
           </div>
         </div>
@@ -455,15 +451,9 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
                       </div>
                     </div>
 
-                    {/* Plan badge */}
-                    <span className={`px-3 py-1 rounded-xl text-[11px] font-black shrink-0 ${
-                      isFree 
-                        ? 'bg-purple-100 text-purple-900 border border-purple-200' 
-                        : isYearly 
-                        ? 'bg-emerald-100 text-emerald-900 border border-emerald-200' 
-                        : 'bg-blue-100 text-blue-900 border border-blue-200'
-                    }`}>
-                      {isFree ? '🌟 مجاني دائم' : isYearly ? '👑 اشتراك سنوي' : '📅 اشتراك نصف سنوي'}
+                    {/* School License badge */}
+                    <span className="px-3 py-1 rounded-xl text-[11px] font-black shrink-0 bg-emerald-100 text-emerald-900 border border-emerald-200">
+                      🌟 ترخيص مجاني دائم
                     </span>
                   </div>
 
@@ -560,8 +550,8 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
                   <div className="pt-2 border-t border-slate-200/80 space-y-2">
                     <div className="flex items-center justify-between text-[11px] font-black text-slate-700">
                       <div className="flex items-center gap-1.5">
-                        <Crown className="w-3.5 h-3.5 text-amber-600" />
-                        <span>التحكم في اشتراك المدرسة:</span>
+                        <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>حالة تشغيل المدرسة:</span>
                       </div>
                       <button
                         onClick={() => setEditingSchool(sch)}
@@ -573,31 +563,9 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
                     </div>
 
                     <div className="flex flex-wrap items-center gap-1.5">
-                      {/* Free Plan Button */}
-                      <button
-                        onClick={() => handleUpdateSchoolSubscription(sch, 'free_forever', 'active')}
-                        className={`px-2.5 py-1.5 rounded-xl font-bold text-[11px] cursor-pointer transition-colors ${
-                          isFree && !isSuspended
-                            ? 'bg-purple-700 text-white shadow-xs'
-                            : 'bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-200'
-                        }`}
-                        title="تحويل إلى وقف تحفيظ قرآن مجاني مدى الحياة (0 ريال)"
-                      >
-                        🌟 تحفيظ قرآن (مجاني)
-                      </button>
-
-                      {/* 1 Year Plan Button */}
-                      <button
-                        onClick={() => handleUpdateSchoolSubscription(sch, 'yearly', 'active')}
-                        className={`px-2.5 py-1.5 rounded-xl font-bold text-[11px] cursor-pointer transition-colors ${
-                          !isFree && !isSuspended
-                            ? 'bg-emerald-700 text-white shadow-xs'
-                            : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200'
-                        }`}
-                        title="تفعيل اشتراك سنوي شامل لمدة سنة كاملة (333 ريال)"
-                      >
-                        👑 سنوي (333 ريال)
-                      </button>
+                      <span className="text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl font-bold flex items-center gap-1">
+                        <span>🌟 ترخيص مجاني دائم (0 ريال)</span>
+                      </span>
 
                       {/* Pause / Resume Button */}
                       <button

@@ -178,7 +178,8 @@ export interface Attendance {
   parentMobile?: string;
   excuseReason?: string;
   excuseType?: 'medical' | 'official' | 'emergency' | 'other';
-  excuseStatus?: 'pending' | 'accepted' | 'rejected';
+  excuseStatus?: 'pending' | 'accepted' | 'conditional_accepted' | 'rejected';
+  excuseDecisionType?: 'official' | 'conditional';
   excuseAttachment?: string;
   excuseSubmittedBy?: 'student' | 'parent';
   excuseSubmittedAt?: string;
@@ -207,7 +208,8 @@ export interface CorrectionRequest {
   reason: string;
   excuseType?: 'medical' | 'official' | 'emergency' | 'other';
   attachmentUrl?: string;
-  status: 'pending' | 'approved' | 'rejected';
+  status: 'pending' | 'approved' | 'conditional_approved' | 'rejected';
+  approvalType?: 'official' | 'conditional';
   adminDecisionNotes?: string;
   decidedByName?: string;
   decidedByRole?: string;

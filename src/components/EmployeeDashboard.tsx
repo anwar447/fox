@@ -5,7 +5,8 @@ import {
   getCorrectionRequests, saveCorrectionRequests, updateCorrectionRequest,
   getPermissions, addSystemNotification, cleanResetToEmptyProductionData,
   getSystemNotifications, getPaymentRequests, getUserAssignedSchools,
-  deleteAttendance, deleteAttendances, bulkConvertAttendanceRecordsToPresent
+  deleteAttendance, deleteAttendances, bulkConvertAttendanceRecordsToPresent,
+  getStudentExcuseStats
 } from '../utils/storage';
 import { getSchoolClasses } from '../utils/schoolClasses';
 import { getTodayDateString } from '../utils/academic';
@@ -104,6 +105,8 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
   const [excuseFilterTab, setExcuseFilterTab] = useState<'pending' | 'resolved'>('pending');
   const [rejectingRequest, setRejectingRequest] = useState<CorrectionRequest | null>(null);
   const [rejectReason, setRejectReason] = useState('');
+  const [conditionalRequest, setConditionalRequest] = useState<CorrectionRequest | null>(null);
+  const [conditionalMessage, setConditionalMessage] = useState('تم قبول عذره لهذه المرة فقط، ويرجى إحضار عذر رسمي في المرة القادمة.');
   const [previewAttachment, setPreviewAttachment] = useState<{ url: string; title: string } | null>(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'present' | 'absent' | 'late' | 'truant'>('all');
@@ -304,6 +307,85 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
     setRefreshKey((k) => k + 1);
   };
 
+  const handleOpenConditionalModal = (req: CorrectionRequest) => {
+    setConditionalRequest(req);
+    setConditionalMessage('تم قبول عذره لهذه المرة فقط، ويرجى إحضار عذر رسمي في المرة القادمة.');
+  };
+
+  const handleConfirmConditionalApprove = () => {
+    if (!conditionalRequest) return;
+    const finalNotes = conditionalMessage.trim() || 'تم قبول عذره لهذه المرة فقط، ويرجى إحضار عذر رسمي في المرة القادمة.';
+
+    // 1. Update correction request
+    const updatedReq: CorrectionRequest = {
+      ...conditionalRequest,
+      status: 'approved',
+      approvalType: 'conditional',
+      adminDecisionNotes: finalNotes,
+      decidedByName: currentUser.name || 'إدارة المدرسة',
+      decidedByRole: currentUser.role || 'employee',
+      decidedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    updateCorrectionRequest(updatedReq);
+
+    // 2. Update attendance record or create one if not yet recorded
+    const allAtt = getAttendances();
+    const idx = allAtt.findIndex(
+      (a) => a.id === conditionalRequest.attendanceId || (a.studentId === conditionalRequest.studentId && a.date === conditionalRequest.date)
+    );
+    if (idx >= 0) {
+      allAtt[idx].finalStatus = conditionalRequest.requestedStatus || 'excused';
+      allAtt[idx].excuseStatus = 'conditional_accepted';
+      allAtt[idx].excuseDecisionType = 'conditional';
+      allAtt[idx].isTruant = false;
+      allAtt[idx].adminDecisionNotes = finalNotes;
+      allAtt[idx].excuseReason = conditionalRequest.reason || allAtt[idx].excuseReason;
+      saveAttendances(allAtt);
+      setAttendances(allAtt.filter((a) => isSchoolMatch(a.schoolCode) && a.date === today));
+    } else {
+      const newAtt: Attendance = {
+        id: conditionalRequest.attendanceId || `att-${conditionalRequest.studentId}-${conditionalRequest.date}`,
+        studentId: conditionalRequest.studentId,
+        studentName: conditionalRequest.studentName,
+        nationalId: conditionalRequest.nationalId || '',
+        schoolCode: conditionalRequest.schoolCode || currentSchool.code,
+        className: conditionalRequest.className,
+        sectionName: conditionalRequest.sectionName,
+        date: conditionalRequest.date,
+        finalStatus: conditionalRequest.requestedStatus || 'excused',
+        excuseStatus: 'conditional_accepted',
+        excuseDecisionType: 'conditional',
+        adminDecisionNotes: finalNotes,
+        excuseReason: conditionalRequest.reason,
+        isTruant: false,
+      };
+      allAtt.push(newAtt);
+      saveAttendances(allAtt);
+      setAttendances(allAtt.filter((a) => isSchoolMatch(a.schoolCode) && a.date === today));
+    }
+
+    // 3. Notify student and parent
+    addSystemNotification({
+      id: `notif-cond-${Date.now()}`,
+      title: `⚠️ تم القبول المشروط لعذر الغياب: ${conditionalRequest.studentName}`,
+      message: `أحاطتكم إدارة المدرسة علماً بأنه تم قبول عذر الغياب ليوم (${conditionalRequest.date}) قبولاً مشروطاً. توجيه ورسالة الإدارة لولي الأمر: "${finalNotes}". يرجى الالتزام بالتعليمات الموضحة والتقارير المعتمدة.`,
+      type: 'warning',
+      targetRole: 'all',
+      schoolCode: currentSchool.code,
+      createdAt: new Date().toISOString(),
+      read: false,
+    });
+
+    soundManager.playWarning();
+    setConditionalRequest(null);
+    setConditionalMessage('');
+    const updatedAll = getCorrectionRequests().filter((c) => isSchoolMatch(c.schoolCode));
+    setAllSchoolCorrections(updatedAll);
+    setCorrections(updatedAll.filter((c) => c.status === 'pending'));
+    setRefreshKey((k) => k + 1);
+  };
+
   const filteredAttendances = attendances.filter((a) => {
     const matchSearch = a.studentName.includes(search) || a.nationalId.includes(search);
     if (!matchSearch) return false;
@@ -490,9 +572,9 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
               <ShieldAlert className="w-6 h-6" />
             </div>
             <div>
-              <strong className="font-black text-sm block">⚠️ تنبيه إداري: حساب المدرسة موقوف مؤقتاً حتى السداد</strong>
+              <strong className="font-black text-sm block">⚠️ تنبيه إداري: حساب المدرسة موقوف مؤقتاً</strong>
               <span className="text-rose-100 text-[11px] font-medium">
-                تم تعليق تفعيل المنظومة للمدرسة لحين استكمال سداد رسوم الاشتراك واعتمادها من المشرف العام.
+                تم إيقاف تفعيل حساب المدرسة مؤقتاً من قبل المشرف العام، يرجى التواصل مع الإدارة لإعادة التفعيل.
               </span>
             </div>
           </div>
@@ -507,131 +589,44 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
         </div>
       )}
 
-      {/* Subscription Payment Status & Post-Onboarding Reminder */}
-      {!isSuspended && !isFree && isPrincipal && (
-        <>
-          {/* 1. Pending payment review banner */}
-          {pendingPayment && (
-            <div className="bg-amber-50 border border-amber-300 text-amber-950 p-4 sm:p-5 rounded-3xl flex flex-wrap items-center justify-between gap-3 text-xs shadow-xs animate-fadeIn">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-amber-600 text-white flex items-center justify-center font-black shrink-0 shadow-sm">
-                  <Clock className="w-5 h-5" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <strong className="font-black text-sm block">⏳ إشعار السداد البنكي قيد المراجعة والاعتماد</strong>
-                    <span className="px-2 py-0.5 rounded-full bg-amber-200/80 text-amber-900 font-bold text-[10px]">
-                      مرجع: {pendingPayment.referenceNumber}
-                    </span>
-                  </div>
-                  <span className="text-amber-800 text-[11px] font-medium block mt-0.5">
-                    تم استلام بيانات التحويل البنكي بقيمة ({pendingPayment.amount} ريال) وجاري مراجعتها واعتمادها من المشرف العام. جميع ميزات المنظومة تعمل لديك بكامل طاقتها.
-                  </span>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                {onOpenPaymentModal && (
-                  <button
-                    onClick={() => onOpenPaymentModal('yearly')}
-                    className="px-3.5 py-2 rounded-xl bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs cursor-pointer transition-all"
-                  >
-                    <span>عرض تفاصيل التحويل 💳</span>
-                  </button>
-                )}
-                <a
-                  href="https://wa.me/966548171965"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="px-3.5 py-2 rounded-xl bg-amber-600 text-white hover:bg-amber-500 font-bold text-xs cursor-pointer transition-all flex items-center gap-1 shadow-xs"
-                >
-                  <span>واتساب الدعم 💬</span>
-                </a>
-              </div>
+      {/* Onboarding Guidance for newly registered schools without students */}
+      {isPrincipal && !isSuspended && (allSchoolStudents.length === 0 && allSchoolTeachers.length === 0) && (
+        <div className="bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-3xl p-4 sm:p-5 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-fadeIn">
+          <div className="flex items-start sm:items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+              <Sparkles className="w-5 h-5" />
             </div>
-          )}
-
-          {/* 2. Active without approved payment: Remind after adding students and staff */}
-          {!approvedPayment && !pendingPayment && (
-            allSchoolStudents.length > 0 || allSchoolTeachers.length > 0 ? (
-              <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border-2 border-emerald-300 rounded-3xl p-5 sm:p-6 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-fadeIn">
-                <div className="flex items-start sm:items-center gap-3.5">
-                  <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-md">
-                    <Crown className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="font-black text-sm sm:text-base text-slate-900">
-                        🎉 تم تجهيز المدرسة بنجاح! ({allSchoolStudents.length} طالب و {allSchoolTeachers.length} كادر تعليمي)
-                      </h3>
-                      <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">
-                        الاشتراك السنوي الشامل (333 ريال فقط / سنة كاملة)
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-600 font-medium mt-1 leading-relaxed max-w-2xl">
-                      لقد أتممت إضافة طلابك وكادرك المدرسي بنجاح. يرجى استكمال التحويل البنكي وتأكيد السداد (333 ريال فقط) لتثبيت اشتراك المدرسة وضمان استمرارية التقارير الصباحية وإشعارات أولياء الأمور دون انقطاع.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
-                  {onOpenPaymentModal && (
-                    <button
-                      onClick={() => onOpenPaymentModal('yearly')}
-                      className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center gap-2 shadow-md shadow-emerald-600/20 cursor-pointer transition-all"
-                    >
-                      <CreditCard className="w-4 h-4" />
-                      <span>استكمال وتأكيد السداد البنكي (333 ريال) 💳</span>
-                    </button>
-                  )}
-                  <a
-                    href="https://wa.me/966548171965"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="px-3.5 py-2.5 rounded-xl bg-white hover:bg-slate-50 text-emerald-800 border border-emerald-200 font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-all"
-                  >
-                    <span>مساعدة الدعم 💬</span>
-                  </a>
-                </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white">
+                  📋 مرحباً بك في منظومة حُضُورَكْ الذكية (المجانية بالكامل)
+                </h3>
+                <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 font-bold border border-emerald-200 dark:border-emerald-800">
+                  ترخيص مفتوح ومفعل
+                </span>
               </div>
-            ) : (
-              <div className="bg-slate-50 border border-slate-200 rounded-3xl p-4 sm:p-5 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-fadeIn">
-                <div className="flex items-start sm:items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-slate-800 text-white flex items-center justify-center shrink-0 shadow-sm">
-                    <Sparkles className="w-5 h-5 text-emerald-400" />
-                  </div>
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="font-bold text-xs sm:text-sm text-slate-900">
-                        📋 مرحباً بك! خطتك المحددة: اشتراك سنوي شامل (333 ريال فقط / سنة كاملة)
-                      </h3>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-200 text-slate-800 font-bold">
-                        فترة إعداد وتجهيز مفعّلة
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-500 mt-0.5">
-                      الخطوة الأولى: ابدأ برفع كشوفات طلابك (عبر إكسل نظام نور) ودعوة كادرك التعليمي، وعند اكتمال التجهيز سيتم تذكيرك بالسداد لتثبيت التفعيل.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-2 shrink-0">
-                  <button
-                    onClick={onOpenClassExcelManager}
-                    className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer"
-                  >
-                    <FileSpreadsheet className="w-3.5 h-3.5" />
-                    <span>رفع كشوفات نور (Excel)</span>
-                  </button>
-                  <button
-                    onClick={onOpenStaffRegistrationLink}
-                    className="px-3 py-2 rounded-xl bg-white hover:bg-slate-100 text-indigo-700 border border-indigo-200 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Users className="w-3.5 h-3.5" />
-                    <span>دعوة الكادر</span>
-                  </button>
-                </div>
-              </div>
-            )
-          )}
-        </>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                الخطوة الأولى: ابدأ برفع كشوفات طلابك (عبر إكسل نظام نور) ودعوة كادرك التعليمي لإطلاق التحضير الذكي والانضباط فوراً.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              onClick={onOpenClassExcelManager}
+              className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span>رفع كشوفات نور (Excel)</span>
+            </button>
+            <button
+              onClick={onOpenStaffRegistrationLink}
+              className="px-3 py-2 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span>دعوة الكادر</span>
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Top Action Bar & School Summary */}
@@ -809,49 +804,35 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
           </div>
         </div>
 
-        {/* Small Subscription Status Box for School Administrator */}
-        <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
+        {/* School Status & Geofence Box */}
+        <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
           <div className={`p-3 rounded-2xl border flex items-center gap-3 text-xs transition-all ${
             isSuspended 
               ? 'bg-rose-50/80 border-rose-300 text-rose-950 ring-1 ring-rose-200' 
-              : isFree
-              ? 'bg-purple-50/80 border-purple-200 text-purple-950'
-              : isYearly
-              ? 'bg-emerald-50/80 border-emerald-200 text-emerald-950'
-              : 'bg-blue-50/80 border-blue-200 text-blue-950'
+              : 'bg-emerald-50/80 border-emerald-200 text-emerald-950 dark:bg-emerald-950/40 dark:border-emerald-800/60 dark:text-emerald-200'
           }`}>
             <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 font-bold ${
-              isSuspended ? 'bg-rose-600 text-white' : isFree ? 'bg-purple-600 text-white' : isYearly ? 'bg-emerald-600 text-white' : 'bg-blue-600 text-white'
+              isSuspended ? 'bg-rose-600 text-white' : 'bg-emerald-600 text-white shadow-xs'
             }`}>
-              {isSuspended ? <ShieldAlert className="w-4 h-4" /> : isFree ? <Sparkles className="w-4 h-4" /> : isYearly ? <Crown className="w-4 h-4" /> : <CreditCard className="w-4 h-4" />}
+              {isSuspended ? <ShieldAlert className="w-4 h-4" /> : <Sparkles className="w-4 h-4" />}
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] text-slate-500 font-bold">نوع اشتراك المدرسة:</span>
-                <strong className="font-black text-xs">
-                  {isFree ? '🌟 اشتراك مجاني دائم (تحفيظ قرآن)' : '👑 اشتراك سنوي شامل (333 ريال / سنة كاملة)'}
+                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold">ترخيص المنظومة:</span>
+                <strong className="font-black text-xs text-emerald-800 dark:text-emerald-300">
+                  {isSuspended ? '⚠️ الحساب موقوف مؤقتاً' : '🌟 ترخيص مجاني دائم ومفتوح (0 ريال)'}
                 </strong>
               </div>
-              <div className="text-[10px] text-slate-600 flex items-center gap-2 mt-0.5">
-                <span>الحالة: <strong className={isSuspended ? 'text-rose-700 font-black' : 'text-emerald-700 font-bold'}>{isSuspended ? 'موقوف مؤقتاً حتى السداد ⚠️' : 'نشط ومفعل 🟢'}</strong></span>
+              <div className="text-[10px] text-slate-600 dark:text-slate-400 flex items-center gap-2 mt-0.5">
+                <span>الحالة: <strong className={isSuspended ? 'text-rose-700 font-black' : 'text-emerald-700 dark:text-emerald-300 font-bold'}>{isSuspended ? 'موقوف مؤقتاً ⚠️' : 'نشط ومفعل 🟢'}</strong></span>
                 <span>•</span>
-                <span>تاريخ الانتهاء: <strong className="font-mono text-slate-800">{isFree ? 'دائم (غير محدد)' : currentSchool.subscriptionEndDate}</strong></span>
+                <span>الصلاحية: <strong className="font-bold text-emerald-800 dark:text-emerald-300">مستمر مدى الحياة</strong></span>
               </div>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 font-medium mr-auto">
-            <span>نطاق التحضير الذاتي: <strong className="font-mono text-emerald-700 font-bold">{currentSchool.radiusMeters}م</strong></span>
-            
-            {onOpenPaymentModal && !isFree && isPrincipal && !approvedPayment && (
-              <button
-                onClick={() => onOpenPaymentModal('yearly')}
-                className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[11px] flex items-center gap-1 shadow-xs cursor-pointer transition-all mr-2"
-              >
-                <CreditCard className="w-3.5 h-3.5" />
-                <span>{pendingPayment ? 'بيانات التحويل 💳' : 'استكمال السداد (333 ريال) 💳'}</span>
-              </button>
-            )}
+          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400 font-medium mr-auto">
+            <span>نطاق التحضير الذاتي: <strong className="font-mono text-emerald-700 dark:text-emerald-300 font-bold">{currentSchool.radiusMeters}م</strong></span>
           </div>
         </div>
 
@@ -1222,6 +1203,34 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
                       <div>
                         <div className="flex flex-wrap items-center gap-2">
                           <strong className="text-slate-900 text-sm font-black">{req.studentName}</strong>
+                          
+                          {/* Stats badge: official vs conditional count */}
+                          {(() => {
+                            const stats = getStudentExcuseStats(req.studentId, req.nationalId);
+                            return (
+                              <div className="inline-flex items-center gap-1 mr-1">
+                                <span
+                                  className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1 shadow-2xs"
+                                  title="عدد مرات قبول العذر الرسمي لهذا الطالب"
+                                >
+                                  <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                                  <span>عذر رسمي: {stats.officialCount}</span>
+                                </span>
+                                <span
+                                  className={`px-2 py-0.5 rounded-md text-[11px] font-bold flex items-center gap-1 border shadow-2xs ${
+                                    stats.conditionalCount > 0
+                                      ? 'bg-amber-100 text-amber-900 border-amber-300 ring-1 ring-amber-200 font-black'
+                                      : 'bg-slate-100 text-slate-600 border-slate-200'
+                                  }`}
+                                  title="عدد مرات قبول العذر المشروط لهذا الطالب"
+                                >
+                                  <AlertTriangle className={`w-3 h-3 ${stats.conditionalCount > 0 ? 'text-amber-600' : 'text-slate-400'}`} />
+                                  <span>قبول مشروط: {stats.conditionalCount}</span>
+                                </span>
+                              </div>
+                            );
+                          })()}
+
                           <span className="text-slate-500 text-xs">({req.className} - فصل {req.sectionName})</span>
                           <span className="px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-800 text-[10px] font-bold">
                             📅 تاريخ الغياب: {req.date}
@@ -1267,11 +1276,21 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
 
                         <button
                           type="button"
+                          onClick={() => handleOpenConditionalModal(req)}
+                          className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-black text-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition-all hover:scale-[1.02] active:scale-[0.98]"
+                          title="قبول العذر مشروطاً لمرة واحدة مع كتابة رسالة توجيهية تظهر لولي الأمر"
+                        >
+                          <AlertTriangle className="w-3.5 h-3.5" />
+                          <span>قبول مشروط ⚠️</span>
+                        </button>
+
+                        <button
+                          type="button"
                           onClick={() => handleApproveCorrection(req)}
                           className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
                         >
                           <Check className="w-3.5 h-3.5" />
-                          <span>قبول واعتماد العذر ✓</span>
+                          <span>قبول واعتماد رسمي ✓</span>
                         </button>
                       </div>
                     </div>
@@ -1292,50 +1311,98 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
             ) : (
               allSchoolCorrections
                 .filter((c) => c.status !== 'pending')
-                .map((req) => (
-                  <div
-                    key={req.id}
-                    className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 text-xs flex flex-wrap items-center justify-between gap-3"
-                  >
-                    <div className="space-y-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <strong className="text-slate-900 text-sm font-bold">{req.studentName}</strong>
-                        <span className="text-slate-500">({req.className} - فصل {req.sectionName})</span>
-                        <span className="text-slate-400 font-mono">📅 {req.date}</span>
-                        <span
-                          className={`px-2 py-0.5 rounded-md font-bold text-[10px] border ${
-                            req.status === 'approved'
-                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                              : 'bg-rose-50 text-rose-800 border-rose-200'
-                          }`}
-                        >
-                          {req.status === 'approved' ? '✓ تم القبول والاعتماد' : '✕ تم الرفض'}
-                        </span>
-                      </div>
-                      <p className="text-slate-600">
-                        <strong>المبرر المرفوع:</strong> {req.reason}
-                      </p>
-                      {req.adminDecisionNotes && (
-                        <p className={`text-[11px] font-semibold ${req.status === 'approved' ? 'text-emerald-800' : 'text-rose-800'}`}>
-                          <strong>قرار وملاحظة الإدارة:</strong> {req.adminDecisionNotes}
-                        </p>
-                      )}
-                    </div>
+                .map((req) => {
+                  const isCond = req.approvalType === 'conditional' || req.status === 'conditional_approved';
+                  return (
+                    <div
+                      key={req.id}
+                      className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 text-xs flex flex-wrap items-center justify-between gap-3"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <strong className="text-slate-900 text-sm font-bold">{req.studentName}</strong>
+                          
+                          {/* Stats badge */}
+                          {(() => {
+                            const stats = getStudentExcuseStats(req.studentId, req.nationalId);
+                            return (
+                              <div className="inline-flex items-center gap-1">
+                                <span
+                                  className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-0.5"
+                                  title="مرات قبول العذر الرسمي"
+                                >
+                                  <ShieldCheck className="w-2.5 h-2.5 text-emerald-600" />
+                                  <span>رسمي: {stats.officialCount}</span>
+                                </span>
+                                <span
+                                  className={`px-1.5 py-0.5 rounded text-[10px] font-bold flex items-center gap-0.5 border ${
+                                    stats.conditionalCount > 0
+                                      ? 'bg-amber-100 text-amber-900 border-amber-300 font-black'
+                                      : 'bg-slate-100 text-slate-600 border-slate-200'
+                                  }`}
+                                  title="مرات قبول العذر المشروط"
+                                >
+                                  <AlertTriangle className={`w-2.5 h-2.5 ${stats.conditionalCount > 0 ? 'text-amber-600' : 'text-slate-400'}`} />
+                                  <span>مشروط: {stats.conditionalCount}</span>
+                                </span>
+                              </div>
+                            );
+                          })()}
 
-                    <div className="flex items-center gap-2">
-                      {req.attachmentUrl && (
-                        <button
-                          type="button"
-                          onClick={() => setPreviewAttachment({ url: req.attachmentUrl!, title: `مرفق عذر الطالب: ${req.studentName} ليوم ${req.date}` })}
-                          className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-[11px] flex items-center gap-1 cursor-pointer"
-                        >
-                          <Paperclip className="w-3 h-3" />
-                          <span>المرفق</span>
-                        </button>
-                      )}
+                          <span className="text-slate-500">({req.className} - فصل {req.sectionName})</span>
+                          <span className="text-slate-400 font-mono">📅 {req.date}</span>
+                          <span
+                            className={`px-2 py-0.5 rounded-md font-bold text-[10px] border ${
+                              req.status === 'rejected'
+                                ? 'bg-rose-50 text-rose-800 border-rose-200'
+                                : isCond
+                                ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                            }`}
+                          >
+                            {req.status === 'rejected'
+                              ? '✕ تم الرفض'
+                              : isCond
+                              ? '⚠️ قبول مشروط'
+                              : '✓ تم القبول والاعتماد (رسمي)'}
+                          </span>
+                        </div>
+                        <p className="text-slate-600">
+                          <strong>المبرر المرفوع:</strong> {req.reason}
+                        </p>
+                        {req.adminDecisionNotes && (
+                          <p
+                            className={`text-[11px] font-semibold ${
+                              req.status === 'rejected'
+                                ? 'text-rose-800'
+                                : isCond
+                                ? 'text-amber-950 bg-amber-50 p-2 rounded-lg border border-amber-200'
+                                : 'text-emerald-800'
+                            }`}
+                          >
+                            <strong>
+                              {isCond ? '⚠️ توجيه ورسالة الإدارة لولي الأمر (قبول مشروط): ' : 'قرار وملاحظة الإدارة: '}
+                            </strong>{' '}
+                            {req.adminDecisionNotes}
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {req.attachmentUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setPreviewAttachment({ url: req.attachmentUrl!, title: `مرفق عذر الطالب: ${req.studentName} ليوم ${req.date}` })}
+                            className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-[11px] flex items-center gap-1 cursor-pointer"
+                          >
+                            <Paperclip className="w-3 h-3" />
+                            <span>المرفق</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
             )}
           </div>
         )}
@@ -1835,6 +1902,148 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
               >
                 <X className="w-4 h-4" />
                 <span>تأكيد الرفض وإشعار ولي الأمر</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Conditional Acceptance Modal with Custom Parent Message */}
+      {conditionalRequest && (
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) setConditionalRequest(null); }}
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn"
+          dir="rtl"
+        >
+          <div className="bg-white border border-amber-300 rounded-3xl max-w-lg w-full p-6 text-right space-y-4 shadow-2xl text-slate-800">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold shadow-xs">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                    <span>قبول مشروط لعذر الغياب</span>
+                    <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[11px] font-bold">
+                      لهذه المرة فقط
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    الطالب: <span className="font-black text-slate-900">{conditionalRequest.studentName}</span> | تاريخ الغياب: <span className="font-mono text-slate-800">{conditionalRequest.date}</span>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setConditionalRequest(null)}
+                className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center cursor-pointer transition-all"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Historical stats banner for this student */}
+            {(() => {
+              const stats = getStudentExcuseStats(conditionalRequest.studentId, conditionalRequest.nationalId);
+              return (
+                <div className="bg-gradient-to-r from-amber-50 to-orange-50/50 border border-amber-200 rounded-2xl p-3 text-xs space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-black text-amber-950 flex items-center gap-1.5">
+                      <span>سجل أعذار الطالب السابقة:</span>
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-900 font-black text-[11px] border border-emerald-300">
+                        عذر رسمي: {stats.officialCount}
+                      </span>
+                      <span className={`px-2 py-0.5 rounded-md font-black text-[11px] border ${
+                        stats.conditionalCount > 0 
+                          ? 'bg-amber-200 text-amber-950 border-amber-400 ring-1 ring-amber-300' 
+                          : 'bg-slate-100 text-slate-700 border-slate-300'
+                      }`}>
+                        قبول مشروط: {stats.conditionalCount}
+                      </span>
+                    </div>
+                  </div>
+                  {stats.conditionalCount > 0 && (
+                    <p className="text-[11px] text-amber-900 font-semibold bg-white/70 p-2 rounded-lg border border-amber-200/60">
+                      ⚠️ تنبيه للإداري: لقد تم قبول عذر هذا الطالب قبولاً مشروطاً مسبقاً ({stats.conditionalCount} مرة). يُنصح بالتأكيد على ولي الأمر لإحضار التقارير الرسمية مستقبلاً.
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Original student justification */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-700 space-y-1">
+              <p className="font-bold text-slate-800">نص ومبرر العذر المرفوع من ولي الأمر:</p>
+              <p className="text-slate-600 bg-white p-2.5 rounded-lg border border-slate-200 font-medium leading-relaxed">
+                "{conditionalRequest.reason}"
+              </p>
+            </div>
+
+            {/* Quick response templates */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-700 block">
+                اختر صيغة توجيه جاهزة أو اكتب رسالتك لولي الأمر:
+              </label>
+              <div className="grid grid-cols-1 gap-1.5 max-h-36 overflow-y-auto pr-1">
+                {[
+                  'تم قبول عذره لهذه المرة فقط، ويرجى إحضار عذر رسمي في المرة القادمة.',
+                  'قبول مشروط بشرط تسليم التقرير الطبي المعتمد غداً لإدارة المدرسة.',
+                  'تم قبول العذر استثنائياً تقديراً لظرفكم، ونؤكد على ضرورة عدم تكرار الغياب بدون تقرير صحتي.',
+                  'تم قبول العذر مشروطاً لمرة واحدة تجنباً لحسم درجات المواظبة، ويلزم توفير العذر المعتمد مستقبلاً.'
+                ].map((preset, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setConditionalMessage(preset)}
+                    className={`text-right p-2 rounded-xl text-xs transition-all cursor-pointer border ${
+                      conditionalMessage === preset
+                        ? 'bg-amber-100 border-amber-300 text-amber-950 font-bold shadow-2xs'
+                        : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700'
+                    }`}
+                  >
+                    • {preset}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Live custom message textarea */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-black text-amber-950 flex items-center justify-between">
+                <span>الرسالة والتوجيه الموجه لولي الأمر (حقل قابل للتعديل):</span>
+                <span className="text-[11px] text-amber-700 font-normal">سيطلع عليها ولي الأمر مباشرة</span>
+              </label>
+              <textarea
+                value={conditionalMessage}
+                onChange={(e) => setConditionalMessage(e.target.value)}
+                rows={3}
+                placeholder="اكتب التوجيه أو الشرط الموجه لولي الأمر هنا..."
+                className="w-full text-xs p-3 rounded-xl border border-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-500 bg-amber-50/20 text-slate-900 font-medium"
+              />
+              <p className="text-[11px] text-slate-500">
+                💡 عند تأكيد القبول المشروط، يتم تحويل حالة الغياب إلى معذور واسترجاع درجات المواظبة، وإرسال هذه الرسالة إلى ولي الأمر ليطلع عليها فوراً.
+              </p>
+            </div>
+
+            {/* Actions */}
+            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setConditionalRequest(null)}
+                className="py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer transition-all"
+              >
+                تراجع وإلغاء
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmConditionalApprove}
+                className="py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-black text-xs cursor-pointer shadow-md shadow-amber-500/20 flex items-center justify-center gap-1.5 transition-all hover:scale-[1.01] active:scale-[0.99]"
+              >
+                <AlertTriangle className="w-4 h-4" />
+                <span>تأكيد القبول المشروط وإشعار ولي الأمر ⚠️</span>
               </button>
             </div>
           </div>

@@ -84,10 +84,10 @@ export const SchoolCreationWizard: React.FC<SchoolCreationWizardProps> = ({
       lat,
       lng,
       radiusMeters,
-      subscriptionPlan: isQuran ? 'free_forever' : 'yearly',
+      subscriptionPlan: 'free_forever',
       subscriptionStatus: 'active',
       subscriptionStartDate: new Date().toISOString().split('T')[0],
-      subscriptionEndDate: isQuran ? '2099-12-31' : '2027-01-01',
+      subscriptionEndDate: '2099-12-31',
       contactMobile: contactMobile.trim() || '0500000000',
       isQuranSchool: isQuran,
       customClasses: getDefaultClassesForSchoolType(type, isQuran),
@@ -158,61 +158,15 @@ export const SchoolCreationWizard: React.FC<SchoolCreationWizardProps> = ({
           {step === 1 && (
             <div className="space-y-3 animate-fadeIn">
               
-              {/* Selected Plan Display & Selector */}
-              <div className="space-y-2 pb-2">
-                <label className="block text-slate-700 font-bold text-xs">خطة الاشتراك المختارة للمدرسة:</label>
-                <div className="grid grid-cols-2 gap-2.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedPlan('yearly');
-                      if (type === 'quran') setType('middle');
-                    }}
-                    className={`p-3 rounded-2xl border text-right transition-all cursor-pointer flex flex-col justify-between ${
-                      selectedPlan === 'yearly' || selectedPlan === 'semester'
-                        ? 'bg-emerald-50 border-emerald-500 ring-1 ring-emerald-500 text-emerald-950 shadow-xs'
-                        : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-black text-xs">اشتراك سنوي شامل 🔥</span>
-                      <Crown className={`w-4 h-4 ${selectedPlan === 'yearly' || selectedPlan === 'semester' ? 'text-emerald-600' : 'text-slate-400'}`} />
-                    </div>
-                    <div className="mt-1 flex items-baseline gap-1">
-                      <span className="font-black text-xs text-emerald-700 font-mono">333 ريال</span>
-                      <span className="text-[10px] text-slate-500 font-normal">/ سنة كاملة</span>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedPlan('free_forever');
-                      setType('quran');
-                    }}
-                    className={`p-3 rounded-2xl border text-right transition-all cursor-pointer flex flex-col justify-between ${
-                      selectedPlan === 'free_forever'
-                        ? 'bg-amber-50 border-amber-500 ring-1 ring-amber-500 text-amber-950 shadow-xs'
-                        : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-black text-xs">وقف تحفيظ القرآن 🌟</span>
-                      <Sparkles className={`w-4 h-4 ${selectedPlan === 'free_forever' ? 'text-amber-600' : 'text-slate-400'}`} />
-                    </div>
-                    <div className="mt-1 flex items-baseline gap-1">
-                      <span className="font-black text-xs text-amber-700">مجاناً مدى الحياة</span>
-                      <span className="text-[10px] text-slate-500 font-normal">(0 ريال)</span>
-                    </div>
-                  </button>
+              {/* Free Initiative License Notice */}
+              <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-900 flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black shrink-0 shadow-xs">
+                  <Sparkles className="w-4 h-4" />
                 </div>
-
-                <div className="p-2.5 rounded-xl bg-emerald-50/70 border border-emerald-200 text-[11px] text-emerald-800 flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>
-                    {selectedPlan === 'free_forever'
-                      ? 'مدارس وحلقات تحفيظ القرآن الكريم معفية ومجانية بالكامل مدى الحياة (0 ريال).'
-                      : 'ستبدأ فترتك فوراً بكامل ميزات النظام، ويتم تذكيرك بالسداد وتأكيد الاشتراك بعد إضافة الطلاب والكادر.'}
+                <div>
+                  <strong className="block font-black text-xs text-emerald-950">ترخيص مجاني مفتوح بالكامل (0 ريال) 🌟</strong>
+                  <span className="text-[11px] text-emerald-800">
+                    المنظومة مجانية 100% لجميع المدارس والمجمعات وحلقات التحفيظ بالمملكة بدعم أهل الخير والداعمين.
                   </span>
                 </div>
               </div>

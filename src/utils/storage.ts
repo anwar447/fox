@@ -364,12 +364,20 @@ export function mergeAttendances(existing: Attendance[], incoming: Attendance[])
       if (!deletedSet.has(String(a.id)) && !deletedSet.has(`${a.studentId}_${a.date}`)) {
         if (map.has(key)) {
           const prev = map.get(key)!;
-          // Protect accepted excuse status from being reverted by stale attendance records
-          const preserveAccepted = prev.excuseStatus === 'accepted' && a.excuseStatus !== 'accepted';
+          // Protect accepted/conditional excuse status from being reverted by stale attendance records
+          const isPrevExcused = prev.excuseStatus === 'accepted' || prev.excuseStatus === 'conditional_accepted';
+          const isIncomingExcused = a.excuseStatus === 'accepted' || a.excuseStatus === 'conditional_accepted';
+          const preserveAccepted = isPrevExcused && !isIncomingExcused;
           map.set(key, {
             ...prev,
             ...a,
-            ...(preserveAccepted ? { excuseStatus: 'accepted', finalStatus: prev.finalStatus || 'excused', isTruant: false } : {}),
+            ...(preserveAccepted ? { 
+              excuseStatus: prev.excuseStatus, 
+              excuseDecisionType: prev.excuseDecisionType,
+              adminDecisionNotes: prev.adminDecisionNotes || a.adminDecisionNotes,
+              finalStatus: prev.finalStatus || 'excused', 
+              isTruant: false 
+            } : {}),
           });
         } else {
           map.set(key, a);
@@ -386,7 +394,7 @@ export function mergeCorrections(existing: CorrectionRequest[], incoming: Correc
     if (item && item.id) map.set(item.id, item);
   });
 
-  const weight = (s?: string) => (s === 'approved' || s === 'rejected' ? 2 : s === 'pending' ? 1 : 0);
+  const weight = (s?: string) => (s === 'approved' || s === 'conditional_approved' || s === 'rejected' ? 2 : s === 'pending' ? 1 : 0);
 
   incoming.forEach((item) => {
     if (item && item.id) {
@@ -400,6 +408,7 @@ export function mergeCorrections(existing: CorrectionRequest[], incoming: Correc
           map.set(item.id, {
             ...item,
             status: prev.status,
+            approvalType: prev.approvalType || item.approvalType,
             adminDecisionNotes: prev.adminDecisionNotes || item.adminDecisionNotes,
             decidedByName: prev.decidedByName || item.decidedByName,
             decidedByRole: prev.decidedByRole || item.decidedByRole,
@@ -607,7 +616,13 @@ export function getSchools(): School[] {
         return nonDeletedInitial;
       }
     }
-    return current;
+    // Harmonize all schools to free permanent license
+    const normalized = current.map((s) => ({
+      ...s,
+      subscriptionPlan: 'free_forever' as const,
+      subscriptionEndDate: '2099-12-31',
+    }));
+    return normalized;
   } catch {
     return INITIAL_SCHOOLS;
   }
@@ -2077,7 +2092,7 @@ export function updateCorrectionRequest(req: CorrectionRequest): void {
 
   // Directly call dedicated server endpoint for instant persistence
   try {
-    if (updatedReq.status === 'approved') {
+    if (updatedReq.status === 'approved' || updatedReq.status === 'conditional_approved') {
       apiPost(`/api/corrections/${encodeURIComponent(updatedReq.id)}/approve`, {
         adminDecisionNotes: updatedReq.adminDecisionNotes,
         decidedByName: updatedReq.decidedByName,
@@ -2085,6 +2100,7 @@ export function updateCorrectionRequest(req: CorrectionRequest): void {
         attendanceId: updatedReq.attendanceId,
         studentId: updatedReq.studentId,
         date: updatedReq.date,
+        approvalType: updatedReq.approvalType || (updatedReq.status === 'conditional_approved' ? 'conditional' : 'official'),
       });
     } else if (updatedReq.status === 'rejected') {
       apiPost(`/api/corrections/${encodeURIComponent(updatedReq.id)}/reject`, {
@@ -2101,6 +2117,86 @@ export function updateCorrectionRequest(req: CorrectionRequest): void {
   } catch (err) {
     console.warn('Dedicated correction endpoint call failed:', err);
   }
+}
+
+export interface StudentExcuseStats {
+  officialCount: number;
+  conditionalCount: number;
+  totalCount: number;
+}
+
+/**
+ * Calculates the exact historical count of official excuses vs conditional excuses for a student.
+ * Deduplicates by date across both Attendance and CorrectionRequest records.
+ */
+export function getStudentExcuseStats(studentId: string, nationalId?: string): StudentExcuseStats {
+  if (!studentId && !nationalId) {
+    return { officialCount: 0, conditionalCount: 0, totalCount: 0 };
+  }
+
+  const cleanStudentId = String(studentId || '').trim();
+  const cleanNid = String(nationalId || '').trim();
+
+  const allCorrections = getCorrectionRequests().filter((c) => {
+    const matchId = cleanStudentId && c.studentId && String(c.studentId).trim() === cleanStudentId;
+    const matchNid = cleanNid && c.nationalId && String(c.nationalId).trim() === cleanNid;
+    return matchId || matchNid;
+  });
+
+  const allAttendances = getAttendances().filter((a) => {
+    const matchId = cleanStudentId && a.studentId && String(a.studentId).trim() === cleanStudentId;
+    const matchNid = cleanNid && a.nationalId && String(a.nationalId).trim() === cleanNid;
+    return matchId || matchNid;
+  });
+
+  // Deduplicate by date (each day can only count once as either conditional or official)
+  const dateMap = new Map<string, { isConditional: boolean; isOfficial: boolean }>();
+
+  // Process Correction Requests
+  allCorrections.forEach((c) => {
+    if (c.status === 'approved' || c.status === 'conditional_approved') {
+      const isCond = c.approvalType === 'conditional' || c.status === 'conditional_approved';
+      const existing = dateMap.get(c.date) || { isConditional: false, isOfficial: false };
+      if (isCond) {
+        existing.isConditional = true;
+      } else {
+        existing.isOfficial = true;
+      }
+      dateMap.set(c.date, existing);
+    }
+  });
+
+  // Process Attendance records
+  allAttendances.forEach((a) => {
+    const isAccepted = a.excuseStatus === 'accepted' || a.excuseStatus === 'conditional_accepted';
+    if (isAccepted) {
+      const isCond = a.excuseDecisionType === 'conditional' || a.excuseStatus === 'conditional_accepted';
+      const existing = dateMap.get(a.date) || { isConditional: false, isOfficial: false };
+      if (isCond) {
+        existing.isConditional = true;
+      } else {
+        existing.isOfficial = true;
+      }
+      dateMap.set(a.date, existing);
+    }
+  });
+
+  let officialCount = 0;
+  let conditionalCount = 0;
+
+  dateMap.forEach((val) => {
+    if (val.isConditional) {
+      conditionalCount++;
+    } else if (val.isOfficial) {
+      officialCount++;
+    }
+  });
+
+  return {
+    officialCount,
+    conditionalCount,
+    totalCount: officialCount + conditionalCount,
+  };
 }
 
 // 5. Payment Requests

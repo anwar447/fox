@@ -737,13 +737,16 @@ app.post('/api/corrections', (req, res) => {
 
 app.post('/api/corrections/:id/approve', (req, res) => {
   const id = req.params.id;
-  const { adminDecisionNotes, decidedByName, decidedByRole } = req.body || {};
+  const { adminDecisionNotes, decidedByName, decidedByRole, approvalType } = req.body || {};
   if (!Array.isArray(db.corrections)) db.corrections = [];
   const idx = db.corrections.findIndex((c) => c.id === id);
+  const isConditional = approvalType === 'conditional';
+
   if (idx >= 0) {
     const cor = db.corrections[idx];
     cor.status = 'approved';
-    cor.adminDecisionNotes = adminDecisionNotes || 'تم اعتماد وقبول العذر الرسمي واستعادة درجات المواظبة بنجاح.';
+    cor.approvalType = isConditional ? 'conditional' : 'official';
+    cor.adminDecisionNotes = adminDecisionNotes || (isConditional ? 'تم قبول عذره لهذه المرة فقط، ويرجى إحضار عذر رسمي في المرة القادمة.' : 'تم اعتماد وقبول العذر الرسمي واستعادة درجات المواظبة بنجاح.');
     cor.decidedByName = decidedByName || 'إدارة المدرسة';
     cor.decidedByRole = decidedByRole || 'employee';
     cor.decidedAt = new Date().toISOString();
@@ -756,7 +759,9 @@ app.post('/api/corrections/:id/approve', (req, res) => {
     );
     if (attIdx >= 0) {
       db.attendances[attIdx].finalStatus = cor.requestedStatus || 'excused';
-      db.attendances[attIdx].excuseStatus = 'accepted';
+      db.attendances[attIdx].excuseStatus = isConditional ? 'conditional_accepted' : 'accepted';
+      db.attendances[attIdx].excuseDecisionType = isConditional ? 'conditional' : 'official';
+      db.attendances[attIdx].adminDecisionNotes = cor.adminDecisionNotes;
       db.attendances[attIdx].isTruant = false;
       db.attendances[attIdx].excuseReason = cor.reason || db.attendances[attIdx].excuseReason;
     } else {
@@ -770,7 +775,9 @@ app.post('/api/corrections/:id/approve', (req, res) => {
         date: cor.date,
         period: 1,
         finalStatus: cor.requestedStatus || 'excused',
-        excuseStatus: 'accepted',
+        excuseStatus: isConditional ? 'conditional_accepted' : 'accepted',
+        excuseDecisionType: isConditional ? 'conditional' : 'official',
+        adminDecisionNotes: cor.adminDecisionNotes,
         excuseReason: cor.reason,
         isTruant: false,
         timestamp: new Date().toISOString(),
@@ -788,7 +795,8 @@ app.post('/api/corrections/:id/approve', (req, res) => {
       );
       if (altIdx >= 0) {
         db.corrections[altIdx].status = 'approved';
-        db.corrections[altIdx].adminDecisionNotes = adminDecisionNotes || 'تم اعتماد وقبول العذر الرسمي واستعادة درجات المواظبة بنجاح.';
+        db.corrections[altIdx].approvalType = isConditional ? 'conditional' : 'official';
+        db.corrections[altIdx].adminDecisionNotes = adminDecisionNotes || (isConditional ? 'تم قبول عذره لهذه المرة فقط، ويرجى إحضار عذر رسمي في المرة القادمة.' : 'تم اعتماد وقبول العذر الرسمي واستعادة درجات المواظبة بنجاح.');
         saveDatabase(db);
         return res.json({ success: true, correction: db.corrections[altIdx] });
       }

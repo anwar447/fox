@@ -14,7 +14,7 @@ interface LandingPageProps {
   onOpenRegisterSchool: () => void;
   onOpenParentRegistration: () => void;
   onOpenStaffRegistration?: () => void;
-  onOpenPaymentModal: (plan: 'yearly' | 'free_forever') => void;
+  onOpenPaymentModal?: (plan: 'yearly' | 'free_forever') => void;
   onOpenDonationModal?: () => void;
   onOpenDirectLinks?: () => void;
 }
@@ -131,124 +131,90 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         </div>
       </div>
 
-      {/* Pricing & Subscriptions Section */}
-      <div className="space-y-6 text-center pt-8 border-t border-slate-200">
+      {/* Free Platform & Donor Supported Section */}
+      <div className="space-y-6 text-center pt-8 border-t border-slate-200 dark:border-slate-800">
         <div className="space-y-2">
-          <h2 className="text-2xl sm:text-3xl font-black text-slate-900">خطط الاشتراك والترخيص المدرسي</h2>
-          <p className="text-xs sm:text-sm text-slate-500">أسعار رمزية ومناسبة لدعم المدارس، ومجاناً مدى الحياة لمدارس وحلقات تحفيظ القرآن الكريم 🌟</p>
+          <div className="inline-flex items-center gap-2 px-4 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-xs font-black">
+            <Sparkles className="w-4 h-4 text-emerald-600" />
+            <span>مبادرة تقنية تعليمية مجانية بالكامل 🌟</span>
+          </div>
+          <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white">
+            المنظومة مجانية بالكامل وقائمة على الداعمين فقط
+          </h2>
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 max-w-2xl mx-auto leading-relaxed">
+            لا توجد أي رسوم سنوية أو تكاليف اشتراك. التطبيق متاح مجاناً لكافة المدارس والمجمعات التعليمية بنين وبنات، ومستمر بفضل الله ثم مساهمات الداعمين وأهل الخير.
+          </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto text-right">
-          {/* Yearly Plan (Single Annual Subscription - 333 SAR for a Full Year) */}
-          <div className="bg-white border-2 border-emerald-500 rounded-3xl p-6 sm:p-7 space-y-5 relative flex flex-col justify-between shadow-lg ring-1 ring-emerald-500/20">
-            <div className="space-y-3.5">
-              <div className="flex items-center justify-between gap-2">
-                <span className="px-3.5 py-1 rounded-full bg-emerald-600 text-white text-xs font-black inline-flex items-center gap-1 shadow-xs">
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>الخطة السنوية المعتمدة الشاملة 🔥</span>
-                </span>
-                <span className="text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-                  سنة كاملة 12 شهر
-                </span>
-              </div>
-              
-              <div>
-                <h3 className="text-xl font-black text-slate-900">اشتراك سنوي شامل لكامل المدرسة</h3>
-                <p className="text-xs text-slate-500 mt-1 font-medium">سنة دراسية كاملة دون أي رسوم إضافية أو قيود على عدد الطلاب</p>
-              </div>
-
-              <div className="bg-emerald-50/70 border border-emerald-200/80 rounded-2xl p-3.5 flex items-baseline gap-2">
-                <span className="text-3xl sm:text-4xl font-black text-emerald-700 font-mono">333</span>
-                <span className="text-xs font-bold text-slate-700">ريال فقط / سنة كاملة (12 شهراً)</span>
-              </div>
-
-              <ul className="text-xs text-slate-700 space-y-2.5 pt-1 font-medium">
-                <li className="flex items-center gap-2">
-                  <span className="w-4 h-4 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-[10px]">✓</span>
-                  <span>تغطية شاملة للعام الدراسي كاملاً (12 شهراً متواصلة)</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="w-4 h-4 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-[10px]">✓</span>
-                  <span>استيراد وتسكين كشوفات نظام نور (Excel) لجميع الفصول بنقرة زر</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="w-4 h-4 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-[10px]">✓</span>
-                  <span>التحضير الذكي الثلاثي: باركود QR + سياج جغرافي + رصد يدوي</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="w-4 h-4 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-[10px]">✓</span>
-                  <span>بوابات خاصة للمدير، المعلمين، الإداريين، والطلاب وأولياء الأمور</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="w-4 h-4 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-[10px]">✓</span>
-                  <span>روابط واتساب فورية ودعم فني وتحديثات مستمرة طوال العام</span>
-                </li>
-              </ul>
+        <div className="max-w-4xl mx-auto bg-gradient-to-b from-white to-emerald-50/40 dark:from-slate-900 dark:to-emerald-950/20 border-2 border-emerald-500/40 dark:border-emerald-600/40 rounded-3xl p-6 sm:p-8 space-y-6 shadow-lg text-right">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
+            <div>
+              <span className="px-3.5 py-1 rounded-full bg-emerald-600 text-white text-xs font-black inline-flex items-center gap-1 shadow-xs">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>مجاني 100% لجميع المدارس بدون أي رسوم سنوية</span>
+              </span>
+              <h3 className="text-xl font-black text-slate-900 dark:text-white mt-2">
+                ترخيص شامل ومفتوح لكافة المدارس والمجمعات وحلقات التحفيظ
+              </h3>
             </div>
-
-            <button
-              onClick={() => onOpenPaymentModal('yearly')}
-              className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-sm shadow-md shadow-emerald-600/25 transition-all cursor-pointer flex items-center justify-center gap-2 mt-2"
-            >
-              <span>تسجيل المدرسة وبدء الاشتراك السنوي (333 ريال فقط) 🔥</span>
-            </button>
+            <div className="bg-emerald-100/70 dark:bg-emerald-950/80 border border-emerald-300 dark:border-emerald-700 px-4 py-2 rounded-2xl text-center">
+              <span className="text-2xl sm:text-3xl font-black text-emerald-800 dark:text-emerald-300">0 ريال</span>
+              <span className="block text-[10px] text-emerald-950 dark:text-emerald-200 font-bold">مجاناً مدى الحياة</span>
+            </div>
           </div>
 
-          {/* Quran School Plan (FREE FOREVER) */}
-          <div className="bg-gradient-to-b from-amber-50/70 to-white border-2 border-amber-300 rounded-3xl p-6 sm:p-7 space-y-5 relative flex flex-col justify-between shadow-sm">
-            <div className="space-y-3.5">
-              <div className="flex items-center justify-between gap-2">
-                <span className="px-3.5 py-1 rounded-full bg-amber-100 text-amber-900 text-xs font-black border border-amber-300 inline-block">
-                  وقف تعليمي خيري 🌟
-                </span>
-                <span className="text-[11px] font-bold text-amber-800 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
-                  دعم الحلقات والمجمعات
-                </span>
-              </div>
-
-              <div>
-                <h3 className="text-xl font-black text-slate-900">مدارس وحلقات تحفيظ القرآن الكريم</h3>
-                <p className="text-xs text-slate-500 mt-1 font-medium">مجمعات ومدارس ودور وحلقات القرآن الكريم بنين وبنات</p>
-              </div>
-
-              <div className="bg-amber-100/60 border border-amber-300/80 rounded-2xl p-3.5 flex items-baseline gap-2">
-                <span className="text-2xl sm:text-3xl font-black text-amber-800">مجاناً مدى الحياة</span>
-                <span className="text-xs font-bold text-slate-700">(0 ريال - دعم دائم)</span>
-              </div>
-
-              <ul className="text-xs text-slate-700 space-y-2.5 pt-1 font-medium">
-                <li className="flex items-center gap-2">
-                  <span className="w-4 h-4 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-[10px]">✓</span>
-                  <span>عدد غير محدود من الطلاب والطالبات والحلقات والفصول</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="w-4 h-4 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-[10px]">✓</span>
-                  <span>تحضير إلكتروني بالباركود الذكي والسياج الجغرافي للمسجد أو المجمع</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="w-4 h-4 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-[10px]">✓</span>
-                  <span>متابعة الغياب والأعذار وتتبع التسميع والحضور يومياً</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="w-4 h-4 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-[10px]">✓</span>
-                  <span>دعم فني كامل واحتساب الأجر صدقة جارية</span>
-                </li>
-              </ul>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-slate-700 dark:text-slate-300 font-medium">
+            <div className="flex items-center gap-2.5 bg-white dark:bg-slate-800/80 p-3 rounded-2xl border border-slate-200 dark:border-slate-700">
+              <span className="w-5 h-5 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 flex items-center justify-center font-bold text-xs shrink-0">✓</span>
+              <span>عدد غير محدود من الطلاب والطالبات والصفوف والشعب</span>
             </div>
+            <div className="flex items-center gap-2.5 bg-white dark:bg-slate-800/80 p-3 rounded-2xl border border-slate-200 dark:border-slate-700">
+              <span className="w-5 h-5 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 flex items-center justify-center font-bold text-xs shrink-0">✓</span>
+              <span>استيراد كشوفات نظام نور (Excel) بنقرة واحدة وتسكينها تلقائياً</span>
+            </div>
+            <div className="flex items-center gap-2.5 bg-white dark:bg-slate-800/80 p-3 rounded-2xl border border-slate-200 dark:border-slate-700">
+              <span className="w-5 h-5 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 flex items-center justify-center font-bold text-xs shrink-0">✓</span>
+              <span>السياج الجغرافي الذكي وكشف التباين والهروب الفوري</span>
+            </div>
+            <div className="flex items-center gap-2.5 bg-white dark:bg-slate-800/80 p-3 rounded-2xl border border-slate-200 dark:border-slate-700">
+              <span className="w-5 h-5 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 flex items-center justify-center font-bold text-xs shrink-0">✓</span>
+              <span>كشوفات الطلاب ونقل الطلاب بين الفصول والشعب والطباعة</span>
+            </div>
+            <div className="flex items-center gap-2.5 bg-white dark:bg-slate-800/80 p-3 rounded-2xl border border-slate-200 dark:border-slate-700">
+              <span className="w-5 h-5 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 flex items-center justify-center font-bold text-xs shrink-0">✓</span>
+              <span>إدارة وقبول الأعذار (قبول مشروط وقبول رسمي) مع إشعار ولي الأمر</span>
+            </div>
+            <div className="flex items-center gap-2.5 bg-white dark:bg-slate-800/80 p-3 rounded-2xl border border-slate-200 dark:border-slate-700">
+              <span className="w-5 h-5 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 flex items-center justify-center font-bold text-xs shrink-0">✓</span>
+              <span>بوابات تفاعلية مستقلة للإدارة والمعلمين والطلاب وأولياء الأمور</span>
+            </div>
+          </div>
 
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
             <button
-              onClick={() => onOpenPaymentModal('free_forever')}
-              className="w-full py-3.5 rounded-2xl bg-amber-600 hover:bg-amber-500 text-white font-black text-sm transition-all cursor-pointer shadow-sm flex items-center justify-center gap-2 mt-2"
+              onClick={onOpenRegisterSchool}
+              className="px-8 py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-sm shadow-md shadow-emerald-600/25 transition-all cursor-pointer flex items-center gap-2"
             >
-              <span>تسجيل مجمع تحفيظ قرآن (مجاناً مدى الحياة) 🌟</span>
+              <Building2 className="w-4 h-4" />
+              <span>تسجيل وتفعيل مدرستك مجاناً الآن 🚀</span>
             </button>
+
+            {onOpenDonationModal && (
+              <button
+                onClick={onOpenDonationModal}
+                className="px-6 py-3.5 rounded-2xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-sm transition-all cursor-pointer flex items-center gap-2"
+              >
+                <Heart className="w-4 h-4 fill-rose-500 text-rose-500" />
+                <span>المساهمة في دعم واستمرار المنظومة (كداعم) ☕❤️</span>
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Informative Step-by-Step Flow Explanation */}
-        <div className="bg-emerald-50/60 border border-emerald-200/80 rounded-2xl p-3.5 max-w-3xl mx-auto flex items-center justify-center gap-2 text-xs text-emerald-900 font-bold">
+        {/* Informative Note */}
+        <div className="bg-emerald-50/60 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-800/60 rounded-2xl p-3.5 max-w-3xl mx-auto flex items-center justify-center gap-2 text-xs text-emerald-900 dark:text-emerald-200 font-bold">
           <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
-          <span>خطوة بخطوة: ابدأ بتسجيل مدرستك الآن وتجربة المنظومة، وعند إضافة كشوفات طلابك وكادرك المدرسي يتم استكمال السداد والتفعيل النهائي بسهولة.</span>
+          <span>منظومة غير ربحية قائمة على التطوع التقني ومساهمات أهل الخير، لخدمة منسوبي التعليم في جميع أنحاء المملكة العربية السعودية.</span>
         </div>
       </div>
 

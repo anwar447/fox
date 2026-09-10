@@ -41,6 +41,7 @@ import { InteractiveMapPicker } from './components/InteractiveMapPicker';
 import { SchoolCreationWizard } from './components/SchoolCreationWizard';
 import { CounselorApiIntegrationModal } from './components/CounselorApiIntegrationModal';
 import { DirectLinksModal } from './components/DirectLinksModal';
+import { ContinuousDevBadge } from './components/ContinuousDevBadge';
 
 export function App() {
   const [currentUser, setUserState] = useState<User | null>(() => getCurrentUser());
@@ -1027,6 +1028,9 @@ export function App() {
           if (currentUser) handleSwitchSchool(s);
         }}
       />
+
+      {/* Persistent Experimental/Continuous Development Badge across all pages */}
+      <ContinuousDevBadge variant="floating" />
     </div>
   );
 }

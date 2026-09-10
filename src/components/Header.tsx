@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import { LiveClockHeader } from './LiveClockHeader';
 import { getUserAssignedSchools, getUserAlternativeProfiles } from '../utils/storage';
+import { ContinuousDevBadge } from './ContinuousDevBadge';
+import { ThemeToggle } from './ThemeToggle';
 
 interface HeaderProps {
   currentUser: User | null;
@@ -97,6 +99,7 @@ export const Header: React.FC<HeaderProps> = ({
                   كود: {currentSchool.code}
                 </span>
               )}
+              <ContinuousDevBadge variant="header" />
             </div>
 
             {/* If user has multiple assigned schools (Teacher, Assistant, Principal), show quick switcher */}
@@ -138,6 +141,9 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Right side controls */}
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Theme Toggle for Dark Mode / Eye Comfort */}
+          <ThemeToggle />
+
           {/* Direct links button */}
           {onOpenDirectLinks && (
             <button
