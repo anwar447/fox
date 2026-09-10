@@ -6,6 +6,7 @@ import { soundManager } from '../utils/audio';
 import { getTodayDateString } from '../utils/academic';
 import { calculateStudentBehaviorScore } from '../utils/behavior';
 import { compressImageFile } from '../utils/imageCompressor';
+import { isAttendanceLate, isAbsenceSuspendedForSchool } from '../utils/schoolSchedule';
 import { SubmitExcuseModal } from './SubmitExcuseModal';
 import { LiveClockHeader } from './LiveClockHeader';
 import { BroadcastAlertBanner } from './BroadcastAlertBanner';
@@ -14,7 +15,8 @@ import {
   AlertTriangle, Navigation, QrCode, FileEdit, Sparkles, 
   Star, Award, ShieldAlert, HeartHandshake, FileText, 
   Calendar, Check, Plus, AlertCircle, ArrowUpRight, TrendingUp, 
-  ThumbsUp, ThumbsDown, Camera, User as UserIcon, RefreshCw
+  ThumbsUp, ThumbsDown, Camera, User as UserIcon, RefreshCw,
+  CloudRain
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -102,7 +104,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
       // Successful check-in inside geofence
       const now = new Date();
       const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-      const isLate = now.getHours() > 7 || (now.getHours() === 7 && now.getMinutes() > 15);
+      const isLate = isAttendanceLate(now, currentSchool);
 
       const allAtt = getAttendances();
       const existingIdx = allAtt.findIndex((a) => a.studentId === currentUser.id && a.date === today);
@@ -155,6 +157,28 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
       
       {/* Live Day, Date & Live Clock Header Bar */}
       <LiveClockHeader />
+
+      {/* Rain Emergency Absence Suspension Notice */}
+      {isAbsenceSuspendedForSchool(currentSchool, today) && (
+        <div className="bg-sky-50 border-2 border-sky-300 text-sky-950 rounded-3xl p-5 flex items-start sm:items-center gap-3.5 shadow-sm animate-fadeIn">
+          <div className="w-12 h-12 rounded-2xl bg-sky-500 text-white flex items-center justify-center shrink-0 shadow-md shadow-sky-500/20">
+            <CloudRain className="w-6 h-6" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <strong className="text-sm font-black text-sky-900">
+                🌧️ تنبيه عاجل من إدارة المدرسة: إيقاف احتساب الغياب لليوم
+              </strong>
+              <span className="px-2 py-0.5 rounded-full bg-sky-200 text-sky-800 text-[10px] font-black">
+                معفى رسمياً
+              </span>
+            </div>
+            <p className="text-xs text-sky-800 mt-1 leading-relaxed">
+              نظراً لـ ({currentSchool.absenceSuspensionReason || 'الظروف المطرية والإنذارات المفاجئة'})، تم تعليق احتساب الغياب لليوم ({today}). جميع الطلاب معفون رسمياً من الغياب ولن تتأثر درجات مواظبتك وسلوكك إطلاقاً.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Urgent Broadcast Banner */}
       <BroadcastAlertBanner

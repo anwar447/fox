@@ -51,6 +51,12 @@ export interface School {
   isQuranSchool?: boolean;
   customClasses?: SchoolClassSection[];
   apiToken?: string; // رمز التوكن البرمجي لربط الأنظمة الخارجية والموجه الطلابي
+  workStartTime?: string; // وقت بدء فتح التحضير الصباحي (مثال: '06:45')
+  lateCutoffTime?: string; // حد بداية احتساب التأخير الصباحي (مثال: '07:15')
+  absenceCutoffTime?: string; // حد إغلاق التحضير وبدء احتساب الغياب (مثال: '08:30')
+  workEndTime?: string; // وقت نهاية اليوم الدراسي والانصراف (مثال: '13:30')
+  absenceSuspendedDates?: string[]; // تواريخ تعليق احتساب الغياب للدواعي المطرية والطارئة
+  absenceSuspensionReason?: string; // سبب تعليق الغياب (مثال: 'حالة مطرية مفاجئة وتحذيرات دفاع مدني')
 }
 
 export interface User {

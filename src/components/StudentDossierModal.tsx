@@ -3,7 +3,7 @@ import { User, Attendance, School, StudentPermission } from '../types';
 import { 
   getAttendancesForStudent, getPermissionsForStudent, getCurrentUser, 
   deleteAttendance, deleteStudentAllAbsences, convertStudentAllAbsencesToPresent,
-  addSystemNotification, getStudentExcuseStats
+  addSystemNotification, getStudentExcuseStats, deleteStudentPermanently
 } from '../utils/storage';
 import { calculateStudentBehaviorScore } from '../utils/behavior';
 import { soundManager } from '../utils/audio';
@@ -130,6 +130,32 @@ export const StudentDossierModal: React.FC<StudentDossierModalProps> = ({
     setAttendanceToDelete(null);
     setDataVersion((v) => v + 1);
     onAttendanceUpdated?.();
+  };
+
+  const [isConfirmingDeleteStudent, setIsConfirmingDeleteStudent] = useState(false);
+  const [isDeletingStudentInProgress, setIsDeletingStudentInProgress] = useState(false);
+
+  const handlePermanentDeleteStudent = () => {
+    setIsDeletingStudentInProgress(true);
+    try {
+      deleteStudentPermanently(student.id, student.nationalId, school.code);
+
+      addSystemNotification({
+        id: `notif-del-std-${Date.now()}`,
+        schoolCode: school.code,
+        title: '🗑️ حذف طالب نهائياً من المدرسة',
+        message: `تم حذف الطالب (${student.name}) نهائياً من المدرسة وإلغاء ارتباطه لتسهيل إعادة تسجيله بالشكل الصحيح.`,
+        type: 'info',
+        createdAt: new Date().toISOString(),
+      });
+
+      soundManager.playSuccess();
+      setIsConfirmingDeleteStudent(false);
+      onAttendanceUpdated?.();
+      onClose();
+    } catch {
+      setIsDeletingStudentInProgress(false);
+    }
   };
 
   return (
@@ -617,14 +643,80 @@ export const StudentDossierModal: React.FC<StudentDossierModalProps> = ({
           </div>
         </div>
 
-        <div className="pt-2">
-          <button
-            onClick={onClose}
-            className="w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
-          >
-            إغلاق الملف
-          </button>
-        </div>
+        {/* Permanent Student Deletion Section for Administrators */}
+        {isAdministrativeStaff && (
+          <div className="pt-2 border-t border-slate-200">
+            {isConfirmingDeleteStudent ? (
+              <div className="bg-rose-50 border-2 border-rose-300 rounded-2xl p-4 space-y-3 animate-fadeIn">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 rounded-xl bg-rose-100 text-rose-700 shrink-0 mt-0.5">
+                    <Trash2 className="w-5 h-5 text-rose-600" />
+                  </div>
+                  <div className="space-y-1 text-xs">
+                    <strong className="text-sm font-black text-rose-950 block">
+                      تأكيد حذف الطالب نهائياً من المدرسة
+                    </strong>
+                    <p className="text-rose-900 leading-relaxed font-medium">
+                      هل أنت متأكد من رغبتك في حذف الطالب <strong className="font-bold underline">({student.name})</strong> نهائياً من المدرسة؟
+                    </p>
+                    <p className="text-[11px] text-rose-800">
+                      ⚠️ سيتم حذف حسابه وكافة سجلات حضوره وغيابه وأذوناته فوراً وفك ارتباطه بحساب ولي الأمر، ليتمكن من إعادة التسجيل في فصول مدرسته الصحيحة بدون أي تعارض في رقم الهوية.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    disabled={isDeletingStudentInProgress}
+                    onClick={() => setIsConfirmingDeleteStudent(false)}
+                    className="px-4 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs cursor-pointer"
+                  >
+                    تراجع / إلغاء
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isDeletingStudentInProgress}
+                    onClick={handlePermanentDeleteStudent}
+                    className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs flex items-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-50"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>{isDeletingStudentInProgress ? 'جارِ الحذف...' : 'نعم، احذف الطالب نهائياً الآن'}</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsConfirmingDeleteStudent(true)}
+                  className="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-800 border border-rose-200 font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-colors"
+                  title="حذف الطالب نهائياً من المدرسة ليتسنى له إعادة التسجيل الصحيح"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                  <span>حذف الطالب نهائياً من المدرسة</span>
+                </button>
+                <button
+                  onClick={onClose}
+                  className="px-5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
+                >
+                  إغلاق الملف
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {!isAdministrativeStaff && (
+          <div className="pt-2">
+            <button
+              onClick={onClose}
+              className="w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
+            >
+              إغلاق الملف
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Attendance Edit Modal */}

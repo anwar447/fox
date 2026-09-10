@@ -53,6 +53,9 @@ export function App() {
   // Selected School for API integration modal (Counselor app)
   const [selectedSchoolForApi, setSelectedSchoolForApi] = useState<School | null>(null);
 
+  // Dual-role view toggle (e.g. Teacher or Employee switching to Parent View for their children)
+  const [isParentViewOverride, setIsParentViewOverride] = useState<boolean>(false);
+
   const [urlSchoolCode, setUrlSchoolCode] = useState<string>(() => {
     const params = new URLSearchParams(window.location.search);
     return params.get('school') || params.get('code') || params.get('schoolCode') || params.get('joinSchool') || params.get('joinStaff') || '';
@@ -385,11 +388,13 @@ export function App() {
   const handleLogout = () => {
     setCurrentUser(null);
     setUserState(null);
+    setIsParentViewOverride(false);
   };
 
   const handleSwitchUser = (user: User) => {
     setCurrentUser(user);
     setUserState(user);
+    setIsParentViewOverride(false);
     refreshAll();
   };
 
@@ -459,6 +464,8 @@ export function App() {
         onOpenRegisterSchool={() => setIsSchoolWizardOpen(true)}
         onOpenDonationModal={() => setIsDonationOpen(true)}
         onOpenDirectLinks={() => setIsDirectLinksOpen(true)}
+        isParentViewOverride={isParentViewOverride}
+        onToggleParentView={() => setIsParentViewOverride(!isParentViewOverride)}
       />
 
       {/* Official Academic Calendar Banner */}
@@ -575,6 +582,18 @@ export function App() {
               }}
             />
           )
+        ) : (isStaffOrEmployeeRole(currentUser.role, currentUser.staffTitle) || currentUser.role === 'teacher') && currentSchool && isParentViewOverride ? (
+          <ParentPortal
+            key={`parent-override-${currentSchool.code}`}
+            currentUser={{
+              ...currentUser,
+              role: 'parent',
+            }}
+            currentSchool={currentSchool}
+            onOpenCorrection={(att) => setSelectedAttendanceForCorrection(att)}
+            isDualRoleTeacher={true}
+            onSwitchBackToTeacher={() => setIsParentViewOverride(false)}
+          />
         ) : isStaffOrEmployeeRole(currentUser.role, currentUser.staffTitle) && currentSchool ? (
           <EmployeeDashboard
             key={currentSchool.code}
@@ -631,6 +650,7 @@ export function App() {
               setRosterSelectedSection(sectionName || '');
               setIsClassRosterOpen(true);
             }}
+            onSwitchToParentView={() => setIsParentViewOverride(true)}
           />
         ) : currentUser.role === 'teacher' && currentSchool ? (
           <TeacherPortal
@@ -646,6 +666,7 @@ export function App() {
               setRosterSelectedSection(sectionName || '');
               setIsClassRosterOpen(true);
             }}
+            onSwitchToParentView={() => setIsParentViewOverride(true)}
           />
         ) : currentUser.role === 'parent' && currentSchool ? (
           <ParentPortal
@@ -977,16 +998,30 @@ export function App() {
         />
       )}
 
-      {/* 16. Interactive Map Geofence Picker Modal */}
+      {/* 16. Interactive Map Geofence & School Schedule Picker Modal */}
       {isMapPickerOpen && currentSchool && (
         <InteractiveMapPicker
           key={`map-picker-${currentSchool.code}`}
+          school={currentSchool}
           initialLat={currentSchool.lat}
           initialLng={currentSchool.lng}
           initialRadius={currentSchool.radiusMeters}
+          initialWorkStartTime={currentSchool.workStartTime}
+          initialLateCutoffTime={currentSchool.lateCutoffTime}
+          initialAbsenceCutoffTime={currentSchool.absenceCutoffTime}
+          initialWorkEndTime={currentSchool.workEndTime}
           onClose={() => setIsMapPickerOpen(false)}
-          onSave={(lat, lng, radius) => {
-            const updated = { ...currentSchool, lat, lng, radiusMeters: radius };
+          onSave={(lat, lng, radius, schedule) => {
+            const updated = { 
+              ...currentSchool, 
+              lat, 
+              lng, 
+              radiusMeters: radius,
+              workStartTime: schedule.workStartTime,
+              lateCutoffTime: schedule.lateCutoffTime,
+              absenceCutoffTime: schedule.absenceCutoffTime,
+              workEndTime: schedule.workEndTime,
+            };
             const allSchools = getSchools().map((s) => (s.code === currentSchool.code ? updated : s));
             saveSchools(allSchools, true);
             setIsMapPickerOpen(false);

@@ -22,6 +22,8 @@ interface HeaderProps {
   onOpenRegisterSchool?: () => void;
   onOpenDonationModal: () => void;
   onOpenDirectLinks?: () => void;
+  isParentViewOverride?: boolean;
+  onToggleParentView?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -36,6 +38,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenRegisterSchool,
   onOpenDonationModal,
   onOpenDirectLinks,
+  isParentViewOverride = false,
+  onToggleParentView,
 }) => {
   const getRoleBadge = (role: string, staffTitle?: string) => {
     switch (role) {
@@ -69,7 +73,28 @@ export const Header: React.FC<HeaderProps> = ({
     }
   };
 
-  const badge = currentUser ? getRoleBadge(currentUser.role, currentUser.staffTitle) : null;
+  const badge = currentUser 
+    ? (isParentViewOverride 
+        ? { label: 'وضع ولي الأمر (حساب مدمج) 👨‍👧‍👦', color: 'bg-amber-100 text-amber-900 border-amber-300 ring-1 ring-amber-200' }
+        : getRoleBadge(currentUser.role, currentUser.staffTitle))
+    : null;
+
+  // Find children associated with this user if they are also a parent
+  const userChildren = currentUser && allUsers.length > 0
+    ? allUsers.filter((u) => {
+        if (u.role !== 'student') return false;
+        const cleanUNid = (u.nationalId || '').trim();
+        const isChildNid = currentUser.childrenNationalIds?.some((nid) => nid?.trim() === cleanUNid);
+        const cleanParentMob = (currentUser.mobile || '').trim().replace(/\D/g, '');
+        const cleanStudentParentMob = (u.parentMobile || '').trim().replace(/\D/g, '');
+        const isMobileMatch = Boolean(cleanParentMob && cleanStudentParentMob && (
+          cleanParentMob === cleanStudentParentMob ||
+          cleanParentMob.endsWith(cleanStudentParentMob) ||
+          cleanStudentParentMob.endsWith(cleanParentMob)
+        ));
+        return isChildNid || isMobileMatch;
+      })
+    : [];
 
   // Managed schools for any user (Principal, Vice Principal, Teacher, Administrative Assistant, etc.)
   const userAssignedSchools = getUserAssignedSchools(currentUser, schools);
@@ -156,8 +181,34 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
 
+          {/* Dedicated Dual Role Switcher (Teacher/Staff <-> Parent) */}
+          {currentUser && (currentUser.role === 'teacher' || currentUser.role === 'employee' || isParentViewOverride) && onToggleParentView && (
+            <button
+              onClick={onToggleParentView}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black transition-all shadow-xs cursor-pointer ${
+                isParentViewOverride
+                  ? 'bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white border border-indigo-500 shadow-indigo-600/20 animate-pulse'
+                  : 'bg-amber-50 hover:bg-amber-100 text-amber-950 border border-amber-300 hover:border-amber-400'
+              }`}
+              title={
+                isParentViewOverride
+                  ? 'العودة إلى بوابة المعلم / العمل المدرسي'
+                  : 'أنت معلم ولديك أبناء؟ انقر للتبديل الفوري لحساب ولي الأمر لمتابعة حضور وغياب وأعذار أبنائك الطلاب'
+              }
+            >
+              <ArrowLeftRight className="w-3.5 h-3.5 shrink-0" />
+              <span>
+                {isParentViewOverride
+                  ? 'العودة لبوابة المعلم 👨‍🏫'
+                  : userChildren.length > 0
+                    ? `وضع ولي الأمر (${userChildren.length} أبناء) 👨‍👧‍👦`
+                    : 'التبديل لولي أمر (أبنائي) 👨‍👧‍👦'}
+              </span>
+            </button>
+          )}
+
           {/* Quick Dual Role Switcher (e.g. Teacher <-> Parent) */}
-          {currentUser && alternativeProfiles.length > 0 && onSwitchUser && (
+          {currentUser && !isParentViewOverride && alternativeProfiles.length > 0 && onSwitchUser && (
             alternativeProfiles.map((alt) => {
               const isAltParent = alt.role === 'parent';
               const altSchool = schools.find((s) => s.code === alt.schoolCode);

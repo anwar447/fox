@@ -27,6 +27,7 @@ interface TeacherPortalProps {
   onSwitchSchool?: (school: School) => void;
   onOpenDossier: (student: User) => void;
   onOpenClassRoster?: (className?: string, sectionName?: string) => void;
+  onSwitchToParentView?: () => void;
 }
 
 export const TeacherPortal: React.FC<TeacherPortalProps> = ({
@@ -36,10 +37,26 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
   onSwitchSchool,
   onOpenDossier,
   onOpenClassRoster,
+  onSwitchToParentView,
 }) => {
   const today = getTodayDateString();
   const allUsers = getUsers();
   const allAttendances = getAttendances();
+
+  // Find linked or matching children for this teacher if they are also a parent
+  const userChildren = allUsers.filter((u) => {
+    if (u.role !== 'student') return false;
+    const cleanUNid = (u.nationalId || '').trim();
+    const isChildNid = currentUser.childrenNationalIds?.some((nid) => nid?.trim() === cleanUNid);
+    const cleanParentMob = (currentUser.mobile || '').trim().replace(/\D/g, '');
+    const cleanStudentParentMob = (u.parentMobile || '').trim().replace(/\D/g, '');
+    const isMobileMatch = Boolean(cleanParentMob && cleanStudentParentMob && (
+      cleanParentMob === cleanStudentParentMob ||
+      cleanParentMob.endsWith(cleanStudentParentMob) ||
+      cleanStudentParentMob.endsWith(cleanParentMob)
+    ));
+    return isChildNid || isMobileMatch;
+  });
   const [permissionsVersion, setPermissionsVersion] = useState(0);
   const [behaviorVersion, setBehaviorVersion] = useState(0);
 
@@ -444,6 +461,27 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
             >
               <Users className="w-3.5 h-3.5 text-amber-400" />
               <span>كشف طلاب الفصل والطباعة 📋🖨️</span>
+            </button>
+          )}
+
+          {/* Dual Role Parent Switcher Button for Teacher */}
+          {onSwitchToParentView && (
+            <button
+              type="button"
+              onClick={onSwitchToParentView}
+              className={`py-2 px-3.5 rounded-xl font-black text-xs flex items-center gap-1.5 cursor-pointer transition-all shadow-xs ${
+                userChildren.length > 0
+                  ? 'bg-amber-50 hover:bg-amber-100 text-amber-950 border border-amber-300 ring-1 ring-amber-200 hover:scale-[1.02]'
+                  : 'bg-slate-100 hover:bg-amber-50 text-slate-700 hover:text-amber-900 border border-slate-200 hover:border-amber-300'
+              }`}
+              title="أنت معلم وأيضاً ولي أمر؟ انقر للتبديل الفوري لبوابة ولي الأمر ومتابعة أبنائك الطلاب"
+            >
+              <Users className="w-4 h-4 text-amber-700 shrink-0" />
+              <span>
+                {userChildren.length > 0
+                  ? `بوابة ولي الأمر (أبنائي: ${userChildren.length}) 👨‍👧‍👦`
+                  : 'التبديل لولي أمر (أبنائي) 👨‍👧‍👦'}
+              </span>
             </button>
           )}
         </div>

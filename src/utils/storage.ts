@@ -86,14 +86,63 @@ export function recordDeletedAttendanceId(id: string): void {
   } catch {}
 }
 
+const PROTECTED_CORE_SCHOOLS = ['RAYA-1448', 'SCH-RAYA-1', 'SAQR-1448', 'SCH-SAQR-1', 'QURAN-100', 'SCH-QURAN-1'];
+const DELETED_USERS_KEY = 'hodoorak_deleted_users_registry';
+
+export function getDeletedUserIds(): string[] {
+  try {
+    const raw = localStorage.getItem(DELETED_USERS_KEY);
+    const parsed: string[] = raw ? JSON.parse(raw) : [];
+    return Array.from(new Set(parsed.map((x) => String(x).trim()).filter(Boolean)));
+  } catch {
+    return [];
+  }
+}
+
+export function recordDeletedUserId(idOrNid: string): void {
+  try {
+    if (!idOrNid) return;
+    const clean = String(idOrNid).trim();
+    if (!clean) return;
+    const list = getDeletedUserIds();
+    if (!list.includes(clean)) {
+      list.push(clean);
+      localStorage.setItem(DELETED_USERS_KEY, JSON.stringify(list));
+    }
+  } catch {}
+}
+
+export function unrecordDeletedUserId(idOrNid: string): void {
+  try {
+    if (!idOrNid) return;
+    const clean = String(idOrNid).trim();
+    const list = getDeletedUserIds().filter((x) => x !== clean);
+    localStorage.setItem(DELETED_USERS_KEY, JSON.stringify(list));
+    apiPost('/api/users/unrecord-deleted', { id: clean });
+  } catch {}
+}
+
 export function getDeletedSchools(): string[] {
   try {
     const raw = localStorage.getItem(DELETED_SCHOOLS_KEY);
     const parsed: string[] = raw ? JSON.parse(raw) : [];
-    const set = new Set<string>([
-      ...parsed.map((s) => String(s).toUpperCase()),
-    ]);
-    return Array.from(set);
+    const set = new Set<string>(
+      parsed
+        .map((s) => String(s).toUpperCase())
+        .filter(
+          (s) =>
+            !PROTECTED_CORE_SCHOOLS.includes(s) &&
+            !s.includes('RAYA') &&
+            !s.includes('الراية') &&
+            !s.includes('SAQR') &&
+            !s.includes('صقر')
+        )
+    );
+    const result = Array.from(set);
+    if (raw && parsed.length !== result.length) {
+      localStorage.setItem(DELETED_SCHOOLS_KEY, JSON.stringify(result));
+    }
+    return result;
   } catch {
     return [];
   }
@@ -102,7 +151,20 @@ export function getDeletedSchools(): string[] {
 export function recordDeletedSchool(idOrCode: string, extraCode?: string): void {
   try {
     const list = getDeletedSchools();
-    const toAdd = [idOrCode, extraCode].filter(Boolean) as string[];
+    const toAdd = [idOrCode, extraCode]
+      .filter(Boolean)
+      .map((val) => String(val).toUpperCase())
+      .filter(
+        (u) =>
+          !PROTECTED_CORE_SCHOOLS.includes(u) &&
+          !u.includes('RAYA') &&
+          !u.includes('الراية') &&
+          !u.includes('SAQR') &&
+          !u.includes('صقر')
+      );
+
+    if (toAdd.length === 0) return;
+
     toAdd.forEach((val) => {
       const upper = String(val).toUpperCase();
       if (!list.includes(upper)) list.push(upper);
@@ -481,6 +543,7 @@ export async function syncDataFromServer(): Promise<{
         deleted_schools: getDeletedSchools(),
         deleted_attendance_ids: getDeletedAttendanceIds(),
         deleted_notification_ids: getDeletedNotificationIds(),
+        deleted_user_ids: getDeletedUserIds(),
       });
     }
 
@@ -495,6 +558,13 @@ export async function syncDataFromServer(): Promise<{
         if (Array.isArray(d.deleted_schools) && d.deleted_schools.length > 0) {
           d.deleted_schools.forEach((del: string) => {
             recordDeletedSchool(del);
+          });
+        }
+
+        // Sync deleted user IDs from server
+        if (Array.isArray(d.deleted_user_ids) && d.deleted_user_ids.length > 0) {
+          d.deleted_user_ids.forEach((uid: string) => {
+            recordDeletedUserId(uid);
           });
         }
 
@@ -616,6 +686,17 @@ export function getSchools(): School[] {
         return nonDeletedInitial;
       }
     }
+
+    // Ensure protected core schools like RAYA-1448 always exist
+    const rayaFound = current.some((s) => String(s?.code || s?.id).toUpperCase() === 'RAYA-1448');
+    if (!rayaFound) {
+      const rayaInitial = INITIAL_SCHOOLS.find((s) => String(s?.code || s?.id).toUpperCase() === 'RAYA-1448');
+      if (rayaInitial) {
+        current.push(rayaInitial);
+        localStorage.setItem(SCHOOLS_KEY, JSON.stringify(current));
+      }
+    }
+
     // Harmonize all schools to free permanent license
     const normalized = current.map((s) => ({
       ...s,
@@ -1435,14 +1516,25 @@ export function normalizeUser(u: User, availableSchools?: School[]): User {
 // 2. Users
 export function getUsers(): User[] {
   try {
+    const deletedUserIds = new Set(getDeletedUserIds());
+    const isUserDeleted = (u: User): boolean => {
+      const uid = String(u?.id || '').trim();
+      const unid = String(u?.nationalId || '').trim();
+      return Boolean((uid && deletedUserIds.has(uid)) || (unid && deletedUserIds.has(unid)));
+    };
+
     const raw = localStorage.getItem(USERS_KEY);
     let current: User[] = [];
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) current = parsed;
+      if (Array.isArray(parsed)) current = parsed.filter((u) => !isUserDeleted(u));
     }
 
-    const recovered = recoverLegacyItems<User>('hodoorak_users', (u) => u.id || `${u.nationalId}_${u.schoolCode || ''}`);
+    const recovered = recoverLegacyItems<User>(
+      'hodoorak_users',
+      (u) => u.id || `${u.nationalId}_${u.schoolCode || ''}`,
+      isUserDeleted
+    );
     if (recovered.length > current.length) {
       current = mergeUsers(current, recovered);
       localStorage.setItem(USERS_KEY, JSON.stringify(current));
@@ -1450,20 +1542,34 @@ export function getUsers(): User[] {
 
     const rawList = current.length > 0 ? current : INITIAL_USERS;
     const schools = getSchools();
-    return rawList.map((u) => normalizeUser(u, schools));
+    return rawList
+      .filter((u) => !isUserDeleted(u))
+      .map((u) => normalizeUser(u, schools));
   } catch {
     return INITIAL_USERS;
   }
 }
 
 export function saveUsers(users: User[], syncServer: boolean = true): void {
-  localStorage.setItem(USERS_KEY, JSON.stringify(users));
+  const deletedUserIds = new Set(getDeletedUserIds());
+  const cleanUsers = users.filter((u) => {
+    if (u.role === 'superadmin' || u.schoolCode === 'SUPERADMIN') return true;
+    const uid = String(u.id || '').trim();
+    const unid = String(u.nationalId || '').trim();
+    return !deletedUserIds.has(uid) && (!unid || !deletedUserIds.has(unid));
+  });
+
+  localStorage.setItem(USERS_KEY, JSON.stringify(cleanUsers));
   if (syncServer) {
-    apiPost('/api/sync', { users });
+    apiPost('/api/sync', { users: cleanUsers, deleted_user_ids: getDeletedUserIds() });
   }
 }
 
 export function addUser(user: User): void {
+  // Clear any tombstone so re-registering student or user is permitted
+  if (user.id) unrecordDeletedUserId(user.id);
+  if (user.nationalId) unrecordDeletedUserId(user.nationalId);
+
   const list = getUsers();
   const cleanNid = user.nationalId ? user.nationalId.trim() : '';
   const userRole = user.role || (user.staffTitle === 'teacher' ? 'teacher' : 'employee');
@@ -1497,6 +1603,9 @@ export function addUser(user: User): void {
 }
 
 export function updateUser(user: User): void {
+  if (user.id) unrecordDeletedUserId(user.id);
+  if (user.nationalId) unrecordDeletedUserId(user.nationalId);
+
   const list = getUsers();
   const cleanNid = user.nationalId ? user.nationalId.trim() : '';
   const userRole = user.role || (user.staffTitle === 'teacher' ? 'teacher' : 'employee');
@@ -1534,8 +1643,121 @@ export function updateUser(user: User): void {
   apiPost('/api/users', user);
 }
 
+/**
+ * Permanently delete a student from school records and database,
+ * completely wiping their attendance, parent links, and permissions
+ * so they can re-register correctly without conflict.
+ */
+export function deleteStudentPermanently(
+  studentId: string,
+  studentNationalId?: string,
+  schoolCode?: string
+): void {
+  const allUsers = getUsers();
+  const targetStudent = allUsers.find(
+    (u) => u.id === studentId || (studentNationalId && u.nationalId === studentNationalId)
+  );
+  const effectiveId = targetStudent?.id || studentId;
+  const effectiveNid = (targetStudent?.nationalId || studentNationalId || '').trim();
+  const effectiveSchoolCode = targetStudent?.schoolCode || schoolCode || '';
+
+  // 1. Record in deleted users registry
+  if (effectiveId) recordDeletedUserId(effectiveId);
+  if (effectiveNid) recordDeletedUserId(effectiveNid);
+
+  // 2. Remove student user from local storage and unlink from parents
+  const remainingUsers = allUsers
+    .filter((u) => u.id !== effectiveId && (!effectiveNid || u.nationalId !== effectiveNid))
+    .map((u) => {
+      if (u.role === 'parent' && Array.isArray(u.childrenNationalIds) && effectiveNid) {
+        return {
+          ...u,
+          childrenNationalIds: u.childrenNationalIds.filter((cid) => String(cid).trim() !== effectiveNid),
+        };
+      }
+      return u;
+    });
+
+  saveUsers(remainingUsers, true);
+
+  // Clean from legacy keys
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith('hodoorak_users')) {
+      try {
+        const content = localStorage.getItem(k);
+        if (content) {
+          const parsed = JSON.parse(content);
+          if (Array.isArray(parsed)) {
+            const cleaned = parsed.filter(
+              (u: User) => u.id !== effectiveId && (!effectiveNid || u.nationalId !== effectiveNid)
+            );
+            localStorage.setItem(k, JSON.stringify(cleaned));
+          }
+        }
+      } catch {}
+    }
+  }
+
+  // 3. Delete attendance records for this student
+  const attendances = getAttendances();
+  const remainingAttendances = attendances.filter(
+    (a) => a.studentId !== effectiveId && (!effectiveNid || a.nationalId !== effectiveNid)
+  );
+  if (remainingAttendances.length !== attendances.length) {
+    saveAttendances(remainingAttendances, true);
+  }
+
+  // 4. Delete permissions
+  try {
+    const rawPerms = localStorage.getItem('hodoorak_permissions');
+    if (rawPerms) {
+      const perms = JSON.parse(rawPerms);
+      if (Array.isArray(perms)) {
+        const cleaned = perms.filter((p: any) => p.studentId !== effectiveId);
+        localStorage.setItem('hodoorak_permissions', JSON.stringify(cleaned));
+      }
+    }
+  } catch {}
+
+  // 5. Delete behavior logs
+  try {
+    const rawBeh = localStorage.getItem('hodoorak_behavior_logs');
+    if (rawBeh) {
+      const beh = JSON.parse(rawBeh);
+      if (Array.isArray(beh)) {
+        const cleaned = beh.filter((b: any) => b.studentId !== effectiveId);
+        localStorage.setItem('hodoorak_behavior_logs', JSON.stringify(cleaned));
+      }
+    }
+  } catch {}
+
+  // 6. Notify server via POST /api/users/purge-student
+  fetch('/api/users/purge-student', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      studentId: effectiveId,
+      studentNationalId: effectiveNid,
+      schoolCode: effectiveSchoolCode,
+    }),
+  }).catch(() => {});
+
+  if (effectiveId) {
+    fetch(`/api/users/${encodeURIComponent(effectiveId)}`, { method: 'DELETE' }).catch(() => {});
+  }
+}
+
 export function deleteUser(userId: string): void {
-  const list = getUsers().filter((u) => u.id !== userId);
+  const target = getUsers().find((u) => u.id === userId);
+  if (target && target.role === 'student') {
+    deleteStudentPermanently(target.id, target.nationalId, target.schoolCode);
+    return;
+  }
+  const cleanNid = target?.nationalId ? String(target.nationalId).trim() : '';
+  if (userId) recordDeletedUserId(userId);
+  if (cleanNid) recordDeletedUserId(cleanNid);
+  const list = getUsers().filter((u) => u.id !== userId && (!cleanNid || u.nationalId !== cleanNid));
   saveUsers(list, true);
   fetch(`/api/users/${encodeURIComponent(userId)}`, { method: 'DELETE' }).catch(() => {});
 }

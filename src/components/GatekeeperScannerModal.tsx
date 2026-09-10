@@ -6,6 +6,7 @@ import {
 } from '../utils/storage';
 import { soundManager } from '../utils/audio';
 import { getTodayDateString } from '../utils/academic';
+import { isAttendanceLate } from '../utils/schoolSchedule';
 import { 
   ScanLine, UserCheck, X, Check, LogOut, 
   LogIn, ShieldCheck, AlertCircle, Clock, User as UserIcon,
@@ -102,7 +103,7 @@ export const GatekeeperScannerModal: React.FC<GatekeeperScannerModalProps> = ({
 
     if (mode === 'entry') {
       // 1. ENTRY (دخول صباحي)
-      const isLate = now.getHours() > 7 || (now.getHours() === 7 && now.getMinutes() > 15);
+      const isLate = isAttendanceLate(now, school);
 
       if (existingIdx >= 0) {
         attendances[existingIdx].selfCheckTime = currentTimeStr;

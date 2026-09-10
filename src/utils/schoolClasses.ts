@@ -15,15 +15,44 @@ export function detectSchoolStage(school?: { type?: string; name?: string; isQur
   if (name.includes('مجمع') || (name.includes('متوسط') && name.includes('ثانوي')) || (name.includes('ابتدائي') && name.includes('متوسط'))) {
     return 'combined';
   }
-  if (type === 'elementary' || name.includes('ابتدائي') || name.includes('ابتدائية')) {
+  // Middle School detection (prioritize to strictly protect schools like متوسطة الراية)
+  if (
+    type === 'middle' ||
+    type.includes('middle') ||
+    name.includes('متوسط') ||
+    name.includes('متوسطة') ||
+    name.includes('إعدادي') ||
+    name.includes('اعدادي')
+  ) {
+    return 'middle';
+  }
+  if (type === 'elementary' || type.includes('elem') || type.includes('primary') || name.includes('ابتدائي') || name.includes('ابتدائية')) {
     return 'elementary';
   }
-  if (type === 'secondary' || name.includes('ثانوي') || name.includes('ثانوية')) {
+  if (type === 'secondary' || type.includes('sec') || type.includes('high') || name.includes('ثانوي') || name.includes('ثانوية')) {
     return 'secondary';
   }
   // Default to middle (المرحلة المتوسطة)
   return 'middle';
 }
+
+/**
+ * Standard Saudi educational stages priority sort order
+ */
+const GRADE_ORDER = [
+  'الأول الابتدائي',
+  'الثاني الابتدائي',
+  'الثالث الابتدائي',
+  'الرابع الابتدائي',
+  'الخامس الابتدائي',
+  'السادس الابتدائي',
+  'الأول المتوسط',
+  'الثاني المتوسط',
+  'الثالث المتوسط',
+  'الأول الثانوي',
+  'الثاني الثانوي',
+  'الثالث الثانوي',
+];
 
 /**
  * Generates standard Saudi educational classes and sections according to school stage.
@@ -55,6 +84,14 @@ export function getDefaultClassesForSchoolType(
     ];
   }
 
+  if (effectiveStage === 'middle') {
+    return [
+      { id: 'c-m1', className: 'الأول المتوسط', sections: ['1', '2', '3', '4', '5'] },
+      { id: 'c-m2', className: 'الثاني المتوسط', sections: ['1', '2', '3', '4', '5'] },
+      { id: 'c-m3', className: 'الثالث المتوسط', sections: ['1', '2', '3', '4', '5'] },
+    ];
+  }
+
   if (effectiveStage === 'secondary') {
     return [
       { id: 'c-s1', className: 'الأول الثانوي', sections: ['1', '2', '3', '4', '5'] },
@@ -74,7 +111,7 @@ export function getDefaultClassesForSchoolType(
     ];
   }
 
-  // Standard Middle School (المرحلة المتوسطة) - ALWAYS includes all 3 middle grades
+  // Standard Middle School (المرحلة المتوسطة)
   return [
     { id: 'c-m1', className: 'الأول المتوسط', sections: ['1', '2', '3', '4', '5'] },
     { id: 'c-m2', className: 'الثاني المتوسط', sections: ['1', '2', '3', '4', '5'] },
@@ -85,7 +122,8 @@ export function getDefaultClassesForSchoolType(
 /**
  * Returns strictly isolated and complete classes for a specific school.
  * Crucially: it MERGES base stage classes with any custom/student-recovered classes
- * so that standard middle school grades (الأول، الثاني، الثالث المتوسط) are NEVER omitted.
+ * so that standard middle school grades (الأول، الثاني، الثالث المتوسط) are NEVER omitted,
+ * and middle schools are NEVER contaminated by secondary grades.
  */
 export function getSchoolClasses(school: School, explicitUsers?: User[]): SchoolClassSection[] {
   if (!school) return [];
@@ -95,7 +133,10 @@ export function getSchoolClasses(school: School, explicitUsers?: User[]): School
     return school.customClasses;
   }
 
-  // 2. Otherwise start with complete base classes for this school type and name
+  // 2. Determine effective stage
+  const effectiveStage = detectSchoolStage(school);
+
+  // 3. Otherwise start with complete base classes for this school type and name
   const baseClasses = getDefaultClassesForSchoolType(school.type, school.isQuranSchool, school.name);
   const classMap: Map<string, Set<string>> = new Map();
 
@@ -104,7 +145,7 @@ export function getSchoolClasses(school: School, explicitUsers?: User[]): School
     classMap.set(bc.className.trim(), new Set(bc.sections || ['1', '2', '3']));
   });
 
-  // 3. Safely merge classes recovered from students registered in this school
+  // 4. Safely merge classes recovered from students registered in this school
   try {
     const allUsers = explicitUsers || getUsers();
     const studentsInSchool = allUsers.filter(
@@ -117,6 +158,18 @@ export function getSchoolClasses(school: School, explicitUsers?: User[]): School
     studentsInSchool.forEach((s) => {
       const cName = (s.className || '').trim();
       if (cName) {
+        // Strict guard against stage contamination:
+        // A pure middle school must NEVER show secondary ('ثانوي') or elementary ('ابتدائي') classes
+        if (effectiveStage === 'middle' && (cName.includes('ثانوي') || cName.includes('ابتدائي'))) {
+          return;
+        }
+        if (effectiveStage === 'secondary' && (cName.includes('متوسط') || cName.includes('ابتدائي'))) {
+          return;
+        }
+        if (effectiveStage === 'elementary' && (cName.includes('ثانوي') || cName.includes('متوسط'))) {
+          return;
+        }
+
         const sec = (s.sectionName || '1').trim();
         if (!classMap.has(cName)) {
           classMap.set(cName, new Set([sec, '1', '2', '3']));
@@ -129,10 +182,20 @@ export function getSchoolClasses(school: School, explicitUsers?: User[]): School
     // Ignore error
   }
 
-  // Convert back to structured array with stable IDs
+  // Convert back to structured array with stable IDs, sorted in logical educational order
+  const unsortedEntries = Array.from(classMap.entries());
+  unsortedEntries.sort(([nameA], [nameB]) => {
+    const idxA = GRADE_ORDER.indexOf(nameA);
+    const idxB = GRADE_ORDER.indexOf(nameB);
+    if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+    if (idxA !== -1) return -1;
+    if (idxB !== -1) return 1;
+    return nameA.localeCompare(nameB, 'ar');
+  });
+
   let counter = 1;
   const result: SchoolClassSection[] = [];
-  for (const [className, secSet] of classMap.entries()) {
+  for (const [className, secSet] of unsortedEntries) {
     const sortedSections = Array.from(secSet).sort((a, b) => {
       const numA = parseInt(a, 10);
       const numB = parseInt(b, 10);

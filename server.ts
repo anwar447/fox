@@ -26,9 +26,11 @@ interface DatabaseSchema {
   deleted_schools: string[];
   deleted_attendance_ids: string[];
   deleted_notification_ids?: string[];
+  deleted_user_ids?: string[];
 }
 
 const KNOWN_PURGED_SCHOOLS: string[] = [];
+const PROTECTED_CORE_SCHOOLS = ['RAYA-1448', 'SCH-RAYA-1', 'SAQR-1448', 'SCH-SAQR-1', 'QURAN-100', 'SCH-QURAN-1'];
 
 const DEFAULT_SUPERADMIN = {
   id: 'usr-admin-1',
@@ -54,6 +56,7 @@ function getInitialDB(): DatabaseSchema {
     deleted_schools: [],
     deleted_attendance_ids: [],
     deleted_notification_ids: [],
+    deleted_user_ids: [],
   };
 }
 
@@ -75,7 +78,7 @@ function loadDatabase(): DatabaseSchema {
     const deletedSet = new Set<string>(
       rawDeleted
         .map((k: string) => String(k).toUpperCase())
-        .filter((k) => k !== 'RAYA-1448' && k !== 'QURAN-100' && !k.includes('SAQR') && !k.includes('صقر'))
+        .filter((k) => !PROTECTED_CORE_SCHOOLS.includes(k) && !k.includes('SAQR') && !k.includes('صقر') && !k.includes('RAYA') && !k.includes('الراية'))
     );
     const deleted_schools = Array.from(deletedSet);
 
@@ -89,6 +92,11 @@ function loadDatabase(): DatabaseSchema {
     const deletedNotifSet = new Set<string>(rawDeletedNotifs.map(String));
     const deleted_notification_ids = Array.from(deletedNotifSet);
 
+    // Track deleted users (permanently deleted students/users)
+    const rawDeletedUsers: string[] = Array.isArray(data.deleted_user_ids) ? data.deleted_user_ids : [];
+    const deletedUserSet = new Set<string>(rawDeletedUsers.map((x) => String(x).trim()).filter(Boolean));
+    const deleted_user_ids = Array.from(deletedUserSet);
+
     // Filter out any schools that match deleted registry
     const rawSchools: any[] = Array.isArray(data.schools) ? data.schools : [];
     const schools = rawSchools.filter((s) => {
@@ -97,15 +105,38 @@ function loadDatabase(): DatabaseSchema {
       return !deletedSet.has(sId) && !deletedSet.has(sCode);
     });
 
-    // Filter out users belonging to purged/deleted schools (except superadmin)
+    // Ensure core school RAYA-1448 (متوسطة الراية) is always present and properly configured
+    const hasRaya = schools.some((s) => String(s?.code || s?.id).toUpperCase() === 'RAYA-1448');
+    if (!hasRaya) {
+      schools.push({
+        id: 'sch-raya-1',
+        code: 'RAYA-1448',
+        name: 'متوسطة الراية',
+        city: 'الرياض',
+        type: 'middle',
+        subscriptionPlan: 'free_forever',
+        subscriptionEndDate: '2099-12-31',
+        customClasses: [
+          { id: 'c-ry-1', className: 'الأول المتوسط', sections: ['1', '2', '3', '4'] },
+          { id: 'c-ry-2', className: 'الثاني المتوسط', sections: ['1', '2', '3', '4'] },
+          { id: 'c-ry-3', className: 'الثالث المتوسط', sections: ['1', '2', '3', '4'] },
+        ],
+      });
+    }
+
+    // Filter out users belonging to purged/deleted schools or in deleted_user_ids (except superadmin)
     const rawUsers: any[] = Array.isArray(data.users) && data.users.length > 0 ? data.users : [DEFAULT_SUPERADMIN];
     const users = rawUsers.filter((u) => {
       if (u.role === 'superadmin' || u.schoolCode === 'SUPERADMIN') return true;
       const sCode = String(u.schoolCode || '').toUpperCase();
-      return !deletedSet.has(sCode);
+      if (deletedSet.has(sCode)) return false;
+      const uid = String(u.id || '').trim();
+      const unid = String(u.nationalId || '').trim();
+      if (deletedUserSet.has(uid) || (unid && deletedUserSet.has(unid))) return false;
+      return true;
     });
 
-    // Filter attendances belonging to deleted schools or deleted attendance IDs
+    // Filter attendances belonging to deleted schools, deleted attendance IDs, or deleted users
     const rawAtt: any[] = Array.isArray(data.attendances) ? data.attendances : [];
     const attendances = rawAtt.filter((a) => {
       const sCode = String(a.schoolCode || '').toUpperCase();
@@ -113,6 +144,9 @@ function loadDatabase(): DatabaseSchema {
       const aId = String(a.id || '');
       const compositeKey = `${a.studentId}_${a.date}`;
       if (deletedAttSet.has(aId) || deletedAttSet.has(compositeKey)) return false;
+      const sid = String(a.studentId || '').trim();
+      const snid = String(a.nationalId || '').trim();
+      if (deletedUserSet.has(sid) || (snid && deletedUserSet.has(snid))) return false;
       return true;
     });
 
@@ -136,6 +170,7 @@ function loadDatabase(): DatabaseSchema {
       deleted_schools,
       deleted_attendance_ids,
       deleted_notification_ids,
+      deleted_user_ids,
     };
 
     // Save back sanitized database immediately
@@ -178,11 +213,19 @@ app.post('/api/sync', (req, res) => {
   if (incoming) {
     if (!Array.isArray(db.deleted_schools)) db.deleted_schools = [];
 
-    // Track explicitly deleted schools
+    // Track explicitly deleted schools (prevent deleting protected core schools)
     if (Array.isArray(incoming.deleted_schools) && incoming.deleted_schools.length > 0) {
       incoming.deleted_schools.forEach((del: string) => {
         const u = String(del || '').toUpperCase();
-        if (u && !db.deleted_schools.includes(u)) {
+        if (
+          u &&
+          !PROTECTED_CORE_SCHOOLS.includes(u) &&
+          !u.includes('SAQR') &&
+          !u.includes('صقر') &&
+          !u.includes('RAYA') &&
+          !u.includes('الراية') &&
+          !db.deleted_schools.includes(u)
+        ) {
           db.deleted_schools.push(u);
         }
       });
@@ -193,6 +236,18 @@ app.post('/api/sync', (req, res) => {
         return !db.deleted_schools.includes(sId) && !db.deleted_schools.includes(sCode);
       });
     }
+
+    // Track explicitly deleted user IDs (permanently purged students)
+    if (!Array.isArray(db.deleted_user_ids)) db.deleted_user_ids = [];
+    if (Array.isArray(incoming.deleted_user_ids) && incoming.deleted_user_ids.length > 0) {
+      incoming.deleted_user_ids.forEach((id: string) => {
+        const str = String(id || '').trim();
+        if (str && !db.deleted_user_ids!.includes(str)) {
+          db.deleted_user_ids!.push(str);
+        }
+      });
+    }
+    const currentDeletedUserSet = new Set((db.deleted_user_ids || []).map((x) => String(x).trim()));
 
     // Track explicitly deleted attendance IDs
     if (!Array.isArray(db.deleted_attendance_ids)) db.deleted_attendance_ids = [];
@@ -206,7 +261,11 @@ app.post('/api/sync', (req, res) => {
     }
     const deletedAttSet = new Set(db.deleted_attendance_ids.map(String));
     db.attendances = (db.attendances || []).filter(
-      (a) => !deletedAttSet.has(String(a.id)) && !deletedAttSet.has(`${a.studentId}_${a.date}`)
+      (a) =>
+        !deletedAttSet.has(String(a.id)) &&
+        !deletedAttSet.has(`${a.studentId}_${a.date}`) &&
+        !currentDeletedUserSet.has(String(a.studentId || '').trim()) &&
+        !(a.nationalId && currentDeletedUserSet.has(String(a.nationalId).trim()))
     );
 
     // 1. Schools: Union merge by code or ID (ignoring any deleted school)
@@ -290,12 +349,20 @@ app.post('/api/sync', (req, res) => {
       db.users.forEach(mergeOneUser);
       incoming.users.forEach(mergeOneUser);
 
-      db.users = Array.from(userMap.values()).map((u) => {
-        if (u && (u.role === 'admin_assistant' || u.role === 'assistant' || u.role === 'staff')) {
-          return { ...u, role: 'employee', staffTitle: u.staffTitle || 'admin_assistant' };
-        }
-        return u;
-      });
+      db.users = Array.from(userMap.values())
+        .filter((u) => {
+          if (u.role === 'superadmin' || u.schoolCode === 'SUPERADMIN') return true;
+          const uid = String(u.id || '').trim();
+          const unid = String(u.nationalId || '').trim();
+          if (currentDeletedUserSet.has(uid) || (unid && currentDeletedUserSet.has(unid))) return false;
+          return true;
+        })
+        .map((u) => {
+          if (u && (u.role === 'admin_assistant' || u.role === 'assistant' || u.role === 'staff')) {
+            return { ...u, role: 'employee', staffTitle: u.staffTitle || 'admin_assistant' };
+          }
+          return u;
+        });
     }
 
     // 3. Attendances: Union merge by ID or composite key (respecting deleted attendances)
@@ -564,6 +631,13 @@ app.post('/api/users', (req, res) => {
     db.users.push(newUser);
   }
 
+  // Clear any tombstone in deleted_user_ids so user can re-register cleanly
+  if (Array.isArray(db.deleted_user_ids)) {
+    const uid = String(newUser.id || '').trim();
+    const unid = String(newUser.nationalId || '').trim();
+    db.deleted_user_ids = db.deleted_user_ids.filter((d) => d !== uid && d !== unid);
+  }
+
   saveDatabase(db);
   res.json({ success: true, user: newUser, users: db.users });
 });
@@ -600,15 +674,113 @@ app.post('/api/users/bulk', (req, res) => {
       } else {
         db.users.push(u);
       }
+
+      // Un-delete this user from deleted_user_ids
+      if (Array.isArray(db.deleted_user_ids)) {
+        const uid = String(u.id || '').trim();
+        db.deleted_user_ids = db.deleted_user_ids.filter((d) => d !== uid && d !== cleanNid);
+      }
     }
     saveDatabase(db);
   }
   res.json({ success: true, users: db.users });
 });
 
+// Permanent student purge endpoint
+app.post('/api/users/purge-student', (req, res) => {
+  const { studentId, studentNationalId, schoolCode } = req.body || {};
+  const cleanId = String(studentId || '').trim();
+  const cleanNid = String(studentNationalId || '').trim();
+
+  if (!Array.isArray(db.deleted_user_ids)) db.deleted_user_ids = [];
+  if (cleanId && !db.deleted_user_ids.includes(cleanId)) db.deleted_user_ids.push(cleanId);
+  if (cleanNid && !db.deleted_user_ids.includes(cleanNid)) db.deleted_user_ids.push(cleanNid);
+
+  // Remove from db.users
+  db.users = (db.users || []).filter((u) => {
+    const uid = String(u.id || '').trim();
+    const unid = String(u.nationalId || '').trim();
+    return uid !== cleanId && (!cleanNid || unid !== cleanNid);
+  });
+
+  // Remove from parent childrenNationalIds
+  if (cleanNid) {
+    db.users = db.users.map((u) => {
+      if (u.role === 'parent' && Array.isArray(u.childrenNationalIds)) {
+        return {
+          ...u,
+          childrenNationalIds: u.childrenNationalIds.filter((cid: string) => String(cid).trim() !== cleanNid),
+        };
+      }
+      return u;
+    });
+  }
+
+  // Delete attendances for this student
+  db.attendances = (db.attendances || []).filter((a) => {
+    const sid = String(a.studentId || '').trim();
+    const snid = String(a.nationalId || '').trim();
+    return sid !== cleanId && (!cleanNid || snid !== cleanNid);
+  });
+
+  // Delete permissions for this student
+  if (Array.isArray(db.permissions)) {
+    db.permissions = db.permissions.filter((p) => {
+      const sid = String(p.studentId || '').trim();
+      return sid !== cleanId;
+    });
+  }
+
+  // Delete behavior logs for this student
+  if (Array.isArray(db.behavior_logs)) {
+    db.behavior_logs = db.behavior_logs.filter((b) => {
+      const sid = String(b.studentId || '').trim();
+      return sid !== cleanId;
+    });
+  }
+
+  saveDatabase(db);
+  res.json({ success: true, message: 'Student purged permanently' });
+});
+
+// Clear deleted user tombstone endpoint (when re-registering)
+app.post('/api/users/unrecord-deleted', (req, res) => {
+  const { id } = req.body || {};
+  const cleanId = String(id || '').trim();
+  if (cleanId && Array.isArray(db.deleted_user_ids)) {
+    db.deleted_user_ids = db.deleted_user_ids.filter((x) => x !== cleanId);
+    saveDatabase(db);
+  }
+  res.json({ success: true, deleted_user_ids: db.deleted_user_ids || [] });
+});
+
 app.delete('/api/users/:id', (req, res) => {
   const id = req.params.id;
-  db.users = db.users.filter((u) => u.id !== id);
+  const targetUser = (db.users || []).find((u) => u.id === id);
+  const cleanNid = targetUser?.nationalId ? String(targetUser.nationalId).trim() : '';
+
+  if (!Array.isArray(db.deleted_user_ids)) db.deleted_user_ids = [];
+  if (id && !db.deleted_user_ids.includes(id)) db.deleted_user_ids.push(id);
+  if (cleanNid && !db.deleted_user_ids.includes(cleanNid)) db.deleted_user_ids.push(cleanNid);
+
+  db.users = (db.users || []).filter((u) => u.id !== id && (!cleanNid || String(u.nationalId).trim() !== cleanNid));
+
+  if (cleanNid) {
+    db.users = db.users.map((u) => {
+      if (u.role === 'parent' && Array.isArray(u.childrenNationalIds)) {
+        return {
+          ...u,
+          childrenNationalIds: u.childrenNationalIds.filter((cid: string) => String(cid).trim() !== cleanNid),
+        };
+      }
+      return u;
+    });
+  }
+
+  db.attendances = (db.attendances || []).filter(
+    (a) => a.studentId !== id && (!cleanNid || String(a.nationalId).trim() !== cleanNid)
+  );
+
   saveDatabase(db);
   res.json({ success: true, users: db.users });
 });

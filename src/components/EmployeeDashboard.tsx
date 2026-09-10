@@ -12,6 +12,7 @@ import { getSchoolClasses } from '../utils/schoolClasses';
 import { getTodayDateString } from '../utils/academic';
 import { soundManager } from '../utils/audio';
 import { calculateStudentBehaviorScore } from '../utils/behavior';
+import { isAbsenceSuspendedForSchool, setSchoolAbsenceSuspension } from '../utils/schoolSchedule';
 import { AbsenceActionModal } from './AbsenceActionModal';
 import { LiveClockHeader } from './LiveClockHeader';
 import { BroadcastAlertBanner } from './BroadcastAlertBanner';
@@ -29,7 +30,7 @@ import {
   Activity, ShieldAlert, LogOut, Trash2, RefreshCw, User as UserIcon,
   Crown, CreditCard, Megaphone, HardDrive, Database, ArrowLeftRight,
   FileCheck, Code2, Paperclip, Eye, ExternalLink, FileCheck2, HelpCircle, CheckCircle2,
-  Wrench, Edit3, Zap, CheckSquare, Square, Layers
+  Wrench, Edit3, Zap, CheckSquare, Square, Layers, CloudRain
 } from 'lucide-react';
 
 interface EmployeeDashboardProps {
@@ -52,6 +53,7 @@ interface EmployeeDashboardProps {
   onOpenCounselorApi?: () => void;
   onOpenPaymentModal?: (plan?: 'yearly') => void;
   onOpenClassRoster?: (className?: string, sectionName?: string) => void;
+  onSwitchToParentView?: () => void;
 }
 
 export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
@@ -74,6 +76,7 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
   onOpenCounselorApi,
   onOpenPaymentModal,
   onOpenClassRoster,
+  onSwitchToParentView,
 }) => {
   const today = getTodayDateString();
 
@@ -121,6 +124,27 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
   const [isExitModalOpen, setIsExitModalOpen] = useState(false);
   const [exitModalStudent, setExitModalStudent] = useState<User | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  // Weather / Rain Emergency Absence Suspension State
+  const [isRainModalOpen, setIsRainModalOpen] = useState(false);
+  const [rainSuspensionReason, setRainSuspensionReason] = useState(
+    currentSchool.absenceSuspensionReason || 'حالة مطرية مفاجئة وتحذيرات دفاع مدني / تعليق الدراسة'
+  );
+  const isRainAbsenceSuspended = isAbsenceSuspendedForSchool(currentSchool, today);
+
+  const handleToggleAbsenceSuspension = (suspend: boolean, customReason?: string) => {
+    setSchoolAbsenceSuspension(
+      currentSchool.code,
+      today,
+      suspend,
+      customReason || rainSuspensionReason
+    );
+    soundManager.playSuccess();
+    setIsRainModalOpen(false);
+    setAttendances(getAttendances().filter((a) => isSchoolMatch(a.schoolCode) && a.date === today));
+    setRefreshKey((k) => k + 1);
+    window.dispatchEvent(new Event('storage'));
+  };
 
   const allSchoolUsers = getUsers().filter((u) => isSchoolMatch(u.schoolCode));
   const allSchoolStudents = allSchoolUsers.filter((u) => u.role === 'student');
@@ -170,7 +194,9 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
 
   const totalStudents = allSchoolStudents.length || attendances.length || 0;
   const presentCount = attendances.filter((a) => a.finalStatus === 'present').length;
-  const absentCount = attendances.filter((a) => a.finalStatus === 'absent').length;
+  const absentCount = isRainAbsenceSuspended
+    ? 0
+    : attendances.filter((a) => a.finalStatus === 'absent').length;
   const lateCount = attendances.filter((a) => a.finalStatus === 'late').length;
   const truantList = attendances.filter((a) => a.isTruant);
   const exitedList = attendances.filter((a) => !!a.exitTime);
@@ -195,7 +221,9 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
 
   const highPermissionStudents = Object.values(studentPermCounts).filter((s) => s.count >= 3);
 
-  const attendanceRate = totalStudents > 0 ? Math.round((presentCount / totalStudents) * 100) : 0;
+  const attendanceRate = totalStudents > 0 
+    ? (isRainAbsenceSuspended ? 100 : Math.round((presentCount / totalStudents) * 100)) 
+    : 0;
 
   const handleApproveCorrection = (req: CorrectionRequest) => {
     // 1. Update correction req with decision audit trail
@@ -564,6 +592,37 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
         </div>
       </div>
 
+      {/* Rain Emergency Absence Suspension Alert Banner */}
+      {isRainAbsenceSuspended && (
+        <div className="bg-sky-50 border-2 border-sky-300 text-sky-950 rounded-3xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm animate-fadeIn">
+          <div className="flex items-start sm:items-center gap-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-sky-500 text-white flex items-center justify-center shrink-0 shadow-md shadow-sky-500/20">
+              <CloudRain className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-black text-sky-900">
+                  🌧️ تنبيه نشط: تم تفعيل إيقاف احتساب الغياب لليوم ({today})
+                </span>
+                <span className="px-2.5 py-0.5 rounded-full bg-sky-200 text-sky-900 text-[10px] font-black">
+                  معفى رسمياً
+                </span>
+              </div>
+              <p className="text-xs text-sky-800 mt-1 leading-relaxed font-medium">
+                السبب: <strong>{currentSchool.absenceSuspensionReason || 'حالة مطرية مفاجئة وتحذيرات دفاع مدني / تعليق الدراسة'}</strong> — جميع الطلاب معفون من الغياب اليوم ولن تتأثر درجات المواظبة، وتم نشر إشعار طمأنة لأولياء الأمور والطلاب في بواباتهم لمنع الاتصالات والاستفسارات المزعجة.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => handleToggleAbsenceSuspension(false)}
+            className="px-4 py-2 rounded-xl bg-white hover:bg-sky-100 border border-sky-300 text-sky-900 font-bold text-xs shrink-0 cursor-pointer shadow-xs transition-colors"
+          >
+            ☀️ استئناف رصد الغياب الاعتيادي
+          </button>
+        </div>
+      )}
+
       {/* Suspension Alert if paused by Super Admin */}
       {isSuspended && (
         <div className="bg-rose-600 text-white p-4 sm:p-5 rounded-3xl flex flex-wrap items-center justify-between gap-3 text-xs shadow-lg shadow-rose-600/20 animate-fadeIn border border-rose-500">
@@ -778,12 +837,43 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
 
             <button
               onClick={onOpenMapPicker}
-              className="py-2.5 px-3.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
-              title="ضبط السياج الجغرافي"
+              className="py-2.5 px-3.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-black text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+              title="تحديد وضبط أوقات الدوام والتأخير والغياب والسياج الجغرافي للمدرسة"
             >
-              <MapPin className="w-4 h-4 text-emerald-600" />
-              <span>السياج</span>
+              <Clock className="w-4 h-4 text-emerald-600" />
+              <span>الدوام والسياج ⏱️📍</span>
             </button>
+
+            <button
+              onClick={() => {
+                if (isRainAbsenceSuspended) {
+                  handleToggleAbsenceSuspension(false);
+                } else {
+                  setIsRainModalOpen(true);
+                }
+              }}
+              className={`py-2.5 px-3.5 rounded-xl font-black text-xs flex items-center gap-1.5 cursor-pointer transition-all ${
+                isRainAbsenceSuspended
+                  ? 'bg-sky-600 hover:bg-sky-700 text-white shadow-md shadow-sky-600/30 ring-2 ring-sky-300'
+                  : 'bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-300'
+              }`}
+              title="إيقاف احتساب الغياب لليوم نظراً لحالة مطرية أو إنذارات طارئة لمنع اتصالات الأهالي"
+            >
+              <CloudRain className="w-4 h-4 text-sky-600 group-hover:text-sky-700" />
+              <span>{isRainAbsenceSuspended ? '🌧️ الغياب موقوف اليوم (نشط)' : 'إيقاف الغياب اليوم (مطر/إنذار) 🌧️'}</span>
+            </button>
+
+            {onSwitchToParentView && (
+              <button
+                type="button"
+                onClick={onSwitchToParentView}
+                className="py-2.5 px-3.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-950 border border-amber-300 font-black text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                title="أنت إداري ولديك أبناء في المدرسة؟ التبديل الفوري لحساب ولي الأمر لمتابعة حضور وغياب أبنائك"
+              >
+                <Users className="w-4 h-4 text-amber-700" />
+                <span>وضع ولي الأمر (أبنائي) 👨‍👧‍👦</span>
+              </button>
+            )}
 
             <button
               onClick={onOpenArchiveReport}
@@ -831,8 +921,21 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400 font-medium mr-auto">
-            <span>نطاق التحضير الذاتي: <strong className="font-mono text-emerald-700 dark:text-emerald-300 font-bold">{currentSchool.radiusMeters}م</strong></span>
+          <div 
+            onClick={onOpenMapPicker}
+            className="flex flex-wrap items-center gap-2 text-xs text-slate-600 dark:text-slate-300 font-medium mr-auto bg-slate-50 dark:bg-slate-850 p-2 rounded-xl border border-slate-200 dark:border-slate-800 cursor-pointer hover:border-emerald-400 hover:bg-emerald-50/50 transition-all"
+            title="انقر لضبط أوقات الدوام وبداية التأخير وحد الغياب ونطاق السياج"
+          >
+            <span>نطاق التحضير: <strong className="font-mono text-emerald-700 dark:text-emerald-300 font-bold">{currentSchool.radiusMeters}م</strong></span>
+            <span>•</span>
+            <span>بدء التحضير: <strong className="font-mono text-slate-800 dark:text-slate-100 font-bold">{currentSchool.workStartTime || '06:45'}</strong></span>
+            <span>•</span>
+            <span>حد التأخير: <strong className="font-mono text-amber-700 dark:text-amber-400 font-bold">{currentSchool.lateCutoffTime || '07:15'}</strong></span>
+            <span>•</span>
+            <span>حد الغياب: <strong className="font-mono text-rose-700 dark:text-rose-400 font-bold">{currentSchool.absenceCutoffTime || '08:30'}</strong></span>
+            <span>•</span>
+            <span>الانصراف: <strong className="font-mono text-slate-800 dark:text-slate-100 font-bold">{currentSchool.workEndTime || '13:30'}</strong></span>
+            <span className="text-[10px] text-emerald-800 bg-emerald-100 font-black px-1.5 py-0.5 rounded mr-1">تعديل ⚙️</span>
           </div>
         </div>
 
@@ -848,9 +951,16 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
             <span className="text-xl font-black text-slate-900">{presentCount}</span>
           </div>
 
-          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 space-y-1">
+          <div className={`border rounded-2xl p-3 space-y-1 ${isRainAbsenceSuspended ? 'bg-sky-50 border-sky-300 text-sky-950' : 'bg-slate-50 border-slate-200'}`}>
             <span className="text-[11px] text-slate-500 block font-bold">الغياب</span>
-            <span className="text-xl font-black text-rose-600">{absentCount}</span>
+            {isRainAbsenceSuspended ? (
+              <div className="flex flex-col items-center">
+                <span className="text-xl font-black text-sky-700">0</span>
+                <span className="text-[10px] text-sky-800 font-black">معفى مطرياً 🌧️</span>
+              </div>
+            ) : (
+              <span className="text-xl font-black text-rose-600">{absentCount}</span>
+            )}
           </div>
 
           <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 space-y-1">
@@ -2318,6 +2428,81 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
                 className="py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs cursor-pointer shadow-md shadow-rose-600/20"
               >
                 تأكيد التصفير والتنظيف 🧹
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rain Emergency Absence Suspension Modal */}
+      {isRainModalOpen && (
+        <div
+          onClick={(e) => { if (e.target === e.currentTarget) setIsRainModalOpen(false); }}
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn"
+          dir="rtl"
+        >
+          <div className="bg-white border border-sky-300 rounded-3xl max-w-lg w-full p-6 text-right space-y-4 shadow-2xl text-slate-800">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-sky-100 text-sky-700 flex items-center justify-center">
+                  <CloudRain className="w-6 h-6 text-sky-600" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">
+                    إيقاف احتساب الغياب لليوم (حالة مطرية / إنذارات طارئة)
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium">تاريخ اليوم: {today}</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setIsRainModalOpen(false)} 
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="bg-sky-50 border border-sky-200 rounded-2xl p-4 space-y-2 text-sky-950">
+                <strong className="text-sm font-black block text-sky-900">
+                  ماذا يحدث عند تفعيل إيقاف الغياب؟
+                </strong>
+                <ul className="space-y-1.5 text-sky-900 list-disc list-inside leading-relaxed font-medium">
+                  <li>إيقاف فوري لاحتساب أي غياب على جميع طلاب المدرسة لليوم ({today}).</li>
+                  <li>تحويل أي غيابات مسجلة اليوم تلقائياً إلى (غياب معفى للدواعي المطرية والطارئة) دون خصم درجات المواظبة وبدون إنذارات.</li>
+                  <li>ظهور شارة وبنر طمأنة بارز في بوابة ولي الأمر وبوابة الطالب تفيد بأن اليوم معفى رسمياً، مما يمنع قلق أولياء الأمور ويوقف كثرة الاتصالات والاستفسارات لإدارة المدرسة.</li>
+                </ul>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">
+                  سبب التعليق الرسمي (يظهر للطلاب وأولياء الأمور في البوابة):
+                </label>
+                <input
+                  type="text"
+                  value={rainSuspensionReason}
+                  onChange={(e) => setRainSuspensionReason(e.target.value)}
+                  placeholder="مثال: حالة مطرية مفاجئة وتحذيرات دفاع مدني / تعليق الدراسة"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-slate-900 font-medium text-xs focus:outline-sky-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsRainModalOpen(false)}
+                className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
+              >
+                تراجع / إلغاء
+              </button>
+              <button
+                type="button"
+                onClick={() => handleToggleAbsenceSuspension(true)}
+                className="px-5 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-black text-xs flex items-center gap-1.5 shadow-md shadow-sky-600/20 cursor-pointer"
+              >
+                <CloudRain className="w-4 h-4" />
+                <span>تأكيد إيقاف الغياب لليوم 🌧️</span>
               </button>
             </div>
           </div>

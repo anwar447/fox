@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { User, School, Attendance, CorrectionRequest } from '../types';
 import { getAttendances, getUsers, getCorrectionRequests, saveAttendances, saveUsers, getSystemNotifications } from '../utils/storage';
 import { calculateStudentBehaviorScore } from '../utils/behavior';
+import { isAbsenceSuspendedForSchool } from '../utils/schoolSchedule';
 import { SubmitExcuseModal } from './SubmitExcuseModal';
 import { LiveClockHeader } from './LiveClockHeader';
 import { BroadcastAlertBanner } from './BroadcastAlertBanner';
@@ -9,7 +10,7 @@ import {
   UserCheck, GraduationCap, CheckCircle, XCircle, 
   AlertTriangle, Phone, FileText, Upload, Plus, Check, 
   Clock, Sparkles, Star, Award, HeartHandshake, ThumbsUp, ThumbsDown, 
-  Calendar, ShieldAlert, User as UserIcon, RefreshCw 
+  Calendar, ShieldAlert, User as UserIcon, RefreshCw, CloudRain, ArrowLeftRight 
 } from 'lucide-react';
 import { getTodayDateString } from '../utils/academic';
 
@@ -17,12 +18,16 @@ interface ParentPortalProps {
   currentUser: User;
   currentSchool: School;
   onOpenCorrection: (attendance: Attendance) => void;
+  isDualRoleTeacher?: boolean;
+  onSwitchBackToTeacher?: () => void;
 }
 
 export const ParentPortal: React.FC<ParentPortalProps> = ({
   currentUser,
   currentSchool,
   onOpenCorrection,
+  isDualRoleTeacher,
+  onSwitchBackToTeacher,
 }) => {
   const today = getTodayDateString();
   const allUsers = getUsers();
@@ -160,6 +165,39 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
         )}
       />
 
+      {/* Dual Role Teacher-as-Parent Notice Banner */}
+      {isDualRoleTeacher && onSwitchBackToTeacher && (
+        <div className="bg-gradient-to-r from-amber-500 via-indigo-600 to-indigo-700 text-white p-4 sm:p-5 rounded-3xl shadow-md flex flex-wrap items-center justify-between gap-3 animate-fadeIn">
+          <div className="flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-white/20 backdrop-blur-xs flex items-center justify-center text-white font-bold shrink-0 text-2xl shadow-xs">
+              👨‍👧‍👦
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs sm:text-sm font-black text-white">
+                  وضع ولي الأمر النشط (حسابك الأساسي: كادر تعليمي / معلم 👨‍🏫)
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-white/20 text-white text-[10px] font-bold">
+                  حساب مزدوج مدمج
+                </span>
+              </div>
+              <p className="text-xs text-indigo-100 mt-1 font-medium">
+                تتصفح الآن لمتابعة سجلات حضور وغياب وأعذار أبنائك الطلاب. يمكنك العودة لبوابة رصد الحصص والمعلمين بضغطة زر.
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onSwitchBackToTeacher}
+            className="px-4 py-2.5 rounded-xl bg-white hover:bg-slate-100 text-indigo-950 font-black text-xs shrink-0 cursor-pointer shadow-sm transition-all hover:scale-105 active:scale-95 flex items-center gap-2"
+          >
+            <ArrowLeftRight className="w-4 h-4 text-indigo-700" />
+            <span>العودة لبوابة المعلم 👨‍🏫 ↵</span>
+          </button>
+        </div>
+      )}
+
       {/* 1. Parent Welcome Banner */}
       <div className="bg-white border border-slate-200/90 rounded-3xl p-6 flex flex-wrap items-center justify-between gap-4 shadow-xs">
         <div className="flex items-center gap-3.5">
@@ -167,9 +205,16 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
             <UserCheck className="w-7 h-7" />
           </div>
           <div>
-            <span className="px-2.5 py-0.5 rounded-full bg-teal-50 text-teal-800 text-[10px] font-bold border border-teal-200">
-              بوابة ولي الأمر الذكية
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-0.5 rounded-full bg-teal-50 text-teal-800 text-[10px] font-bold border border-teal-200">
+                بوابة ولي الأمر الذكية
+              </span>
+              {isDualRoleTeacher && (
+                <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-black border border-amber-300">
+                  حساب مزدوج (معلم وولي أمر) 👨‍👧‍👦
+                </span>
+              )}
+            </div>
             <h2 className="text-xl font-black text-slate-900 mt-1">مرحباً بك، {currentUser.name}</h2>
             <p className="text-xs text-slate-500 font-medium">متابعة حضور وانضباط وسلوك الأبناء في ({currentSchool.name})</p>
           </div>
@@ -177,6 +222,17 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
 
         {/* Child Selector & Quick Excuse button */}
         <div className="flex flex-wrap items-center gap-2">
+          {isDualRoleTeacher && onSwitchBackToTeacher && (
+            <button
+              type="button"
+              onClick={onSwitchBackToTeacher}
+              className="px-3.5 py-2 rounded-2xl bg-indigo-50 hover:bg-indigo-100 border border-indigo-300 text-indigo-950 text-xs font-black flex items-center gap-1.5 cursor-pointer transition-all shadow-xs"
+              title="العودة لبوابة المعلم ورصد الحصص"
+            >
+              <ArrowLeftRight className="w-4 h-4 text-indigo-700" />
+              <span>العودة للمعلم 👨‍🏫</span>
+            </button>
+          )}
           {children.length > 1 && (
             <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl px-3 py-1.5">
               <span className="text-xs text-slate-500 font-bold">اختيار الابن:</span>
@@ -282,6 +338,28 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
         </div>
       ) : behaviorSummary ? (
         <>
+          {/* Rain Emergency Absence Suspension Banner for Parents */}
+          {isAbsenceSuspendedForSchool(currentSchool, today) && (
+            <div className="bg-sky-50 border-2 border-sky-300 rounded-3xl p-5 text-sky-950 flex items-start sm:items-center gap-4 shadow-sm animate-fadeIn">
+              <div className="w-12 h-12 rounded-2xl bg-sky-500 text-white flex items-center justify-center shrink-0 shadow-md shadow-sky-500/20">
+                <CloudRain className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full bg-sky-200 text-sky-900 font-black text-xs">
+                    🌧️ إشعار رسمي من المدرسة: إيقاف احتساب الغياب لليوم ({today})
+                  </span>
+                </div>
+                <h4 className="text-sm font-black text-sky-950">
+                  أبناؤكم معفون من احتساب الغياب نظراً لـ ({currentSchool.absenceSuspensionReason || 'الظروف المطرية والإنذارات المفاجئة'})
+                </h4>
+                <p className="text-xs text-sky-800 leading-relaxed font-medium">
+                  نطمئنكم بأنه تم إيقاف رصد الغياب على الطالب ({currentChild.name}) ولن تتأثر درجات المواظبة إطلاقاً. لا داعي لتقديم أعذار أو الاتصال بإدارة المدرسة.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* 5-Day Absence Alert Banner if triggered */}
           {behaviorSummary.hasFiveDaysAbsenceAlert && (
             <div className="bg-rose-50 border-2 border-rose-300 rounded-3xl p-5 text-rose-950 flex flex-wrap items-center justify-between gap-4 shadow-sm">

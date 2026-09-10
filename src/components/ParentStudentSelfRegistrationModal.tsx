@@ -1,11 +1,11 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   User, School, SchoolClassSection, Attendance 
 } from '../types';
 import { 
-  getUsers, saveUsers, getAttendances, saveAttendances, addUser, setUserState 
+  getUsers, saveUsers, getAttendances, saveAttendances, addUser, setUserState, unrecordDeletedUserId 
 } from '../utils/storage';
-import { getSchoolClasses } from '../utils/schoolClasses';
+import { getSchoolClasses, getDefaultClassesForSchoolType } from '../utils/schoolClasses';
 import { getTodayDateString } from '../utils/academic';
 import { 
   Building2, UserCheck, X, Check, 
@@ -50,15 +50,27 @@ export const ParentStudentSelfRegistrationModal: React.FC<ParentStudentSelfRegis
 
   const currentSchool = useMemo(() => {
     const code = (selectedSchoolCode || initialSchoolCode || '').trim();
-    if (!code && schools.length > 0) return schools[0];
-    const found = schools.find((s) => 
-      s.code?.toUpperCase() === code.toUpperCase() ||
-      s.id === code ||
-      s.name === code ||
-      s.name?.includes(code) ||
-      code.includes(s.name)
-    );
-    if (found) return found;
+    if (code) {
+      const codeUpper = code.toUpperCase();
+      const found = schools.find((s) => 
+        s.code?.toUpperCase() === codeUpper ||
+        s.id?.toUpperCase() === codeUpper ||
+        s.name?.toUpperCase() === codeUpper ||
+        (s.code && codeUpper.includes(s.code.toUpperCase())) ||
+        (s.name && (s.name.includes(code) || code.includes(s.name)))
+      );
+      if (found) return found;
+
+      // Special resilience for Raya Middle School:
+      if (codeUpper.includes('RAYA') || code.includes('الراية')) {
+        const raya = schools.find((s) => 
+          s.code?.toUpperCase().includes('RAYA') || 
+          s.id?.toUpperCase().includes('RAYA') || 
+          s.name?.includes('الراية')
+        );
+        if (raya) return raya;
+      }
+    }
     return schools[0] || null;
   }, [schools, selectedSchoolCode, initialSchoolCode]);
 
@@ -71,19 +83,15 @@ export const ParentStudentSelfRegistrationModal: React.FC<ParentStudentSelfRegis
   const [parentPassword, setParentPassword] = useState('');
 
   const availableClasses: SchoolClassSection[] = useMemo(() => {
-    const classes = currentSchool ? getSchoolClasses(currentSchool) : [];
-    if (classes.length > 0) return classes;
-    return [
-      { id: 'def-1', className: 'الأول الثانوي', sections: ['1', '2', '3', '4'] },
-      { id: 'def-2', className: 'الثاني الثانوي', sections: ['1', '2', '3', '4'] },
-      { id: 'def-3', className: 'الثالث الثانوي', sections: ['1', '2', '3', '4'] },
-      { id: 'def-4', className: 'الأول المتوسط', sections: ['1', '2'] },
-      { id: 'def-5', className: 'الثاني المتوسط', sections: ['1', '2'] },
-      { id: 'def-6', className: 'الثالث المتوسط', sections: ['1', '2'] },
-    ];
+    if (currentSchool) {
+      const classes = getSchoolClasses(currentSchool);
+      if (classes.length > 0) return classes;
+      return getDefaultClassesForSchoolType(currentSchool.type, currentSchool.isQuranSchool, currentSchool.name);
+    }
+    return getDefaultClassesForSchoolType('middle');
   }, [currentSchool]);
 
-  const defaultClass = availableClasses[0]?.className || 'الأول الثانوي';
+  const defaultClass = availableClasses[0]?.className || (currentSchool?.type === 'secondary' ? 'الأول الثانوي' : 'الأول المتوسط');
   const defaultSection = availableClasses[0]?.sections[0] || '1';
 
   const [students, setStudents] = useState<StudentFormItem[]>([
@@ -96,6 +104,29 @@ export const ParentStudentSelfRegistrationModal: React.FC<ParentStudentSelfRegis
       sectionName: defaultSection,
     },
   ]);
+
+  // Synchronize students when school or availableClasses changes so students never get assigned to secondary classes in a middle school
+  useEffect(() => {
+    if (!availableClasses || availableClasses.length === 0) return;
+    const validClassNames = new Set(availableClasses.map((c) => c.className));
+    const firstClass = availableClasses[0].className;
+    const firstSection = availableClasses[0].sections[0] || '1';
+
+    setStudents((prev) =>
+      prev.map((s) => {
+        if (!s.className || !validClassNames.has(s.className)) {
+          return {
+            ...s,
+            className: firstClass,
+            sectionName: s.sectionName && availableClasses.find((c) => c.className === firstClass)?.sections.includes(s.sectionName)
+              ? s.sectionName
+              : firstSection,
+          };
+        }
+        return s;
+      })
+    );
+  }, [availableClasses]);
 
   const [errorMsg, setErrorMsg] = useState('');
   const [isSuccess, setIsSuccess] = useState(false);
@@ -208,7 +239,7 @@ export const ParentStudentSelfRegistrationModal: React.FC<ParentStudentSelfRegis
     // 2. Create Student Users with auto-placement
     const newStudentUsers: User[] = students.map((st) => {
       const cleanSNid = st.nationalId.trim().replace(/\D/g, '');
-      const assignedClass = st.className || defaultClass || 'الأول الثانوي';
+      const assignedClass = st.className || defaultClass || (currentSchool.type === 'secondary' ? 'الأول الثانوي' : 'الأول المتوسط');
       const assignedSection = st.sectionName || '1';
       return {
         id: `usr-s-${cleanSNid}`,
@@ -223,6 +254,14 @@ export const ParentStudentSelfRegistrationModal: React.FC<ParentStudentSelfRegis
         sectionName: assignedSection,
         managedSchoolCodes: [currentSchool.code],
       };
+    });
+
+    // Unrecord any deletion tombstone so re-registering student and parent are immediately active
+    unrecordDeletedUserId(parentUser.id);
+    unrecordDeletedUserId(parentUser.nationalId);
+    newStudentUsers.forEach((st) => {
+      unrecordDeletedUserId(st.id);
+      unrecordDeletedUserId(st.nationalId);
     });
 
     const updatedUsersList = [...allExistingUsers];
@@ -269,7 +308,7 @@ export const ParentStudentSelfRegistrationModal: React.FC<ParentStudentSelfRegis
           studentName: st.name,
           nationalId: st.nationalId,
           schoolCode: currentSchool.code,
-          className: st.className || 'الأول الثانوي',
+          className: st.className || defaultClass || (currentSchool.type === 'secondary' ? 'الأول الثانوي' : 'الأول المتوسط'),
           sectionName: st.sectionName || '1',
           date: today,
           selfCheckTime: null,

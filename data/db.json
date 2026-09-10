@@ -9,10 +9,10 @@
       "lat": 24.7136,
       "lng": 46.6753,
       "radiusMeters": 500,
-      "subscriptionPlan": "yearly",
+      "subscriptionPlan": "free_forever",
       "subscriptionStatus": "active",
       "subscriptionStartDate": "2026-01-01",
-      "subscriptionEndDate": "2027-01-01",
+      "subscriptionEndDate": "2099-12-31",
       "contactMobile": "0555555555",
       "isQuranSchool": false,
       "customClasses": [
@@ -265,17 +265,57 @@
       "finalStatus": "absent",
       "isTruant": true,
       "parentMobile": "0555443322"
+    },
+    {
+      "id": "att-101",
+      "studentId": "usr-std-1",
+      "studentName": "عبدالرحمن محمد",
+      "schoolCode": "SAQR-1448",
+      "className": "الأول المتوسط",
+      "sectionName": "1",
+      "date": "2026-03-08",
+      "period": 1,
+      "finalStatus": "excused",
+      "excuseStatus": "accepted",
+      "excuseReason": "عذر طبي ومراجعة مستشفى",
+      "isTruant": false,
+      "timestamp": "2026-09-09T05:09:32.977Z"
     }
   ],
   "permissions": [],
   "behavior_logs": [],
   "absence_actions": [],
-  "corrections": [],
+  "corrections": [
+    {
+      "id": "test-excuse-101",
+      "attendanceId": "att-101",
+      "studentId": "usr-std-1",
+      "studentName": "عبدالرحمن محمد",
+      "schoolCode": "SAQR-1448",
+      "className": "الأول المتوسط",
+      "sectionName": "1",
+      "date": "2026-03-08",
+      "requestedByRole": "parent",
+      "requesterName": "محمد إبراهيم",
+      "previousStatus": "absent",
+      "requestedStatus": "excused",
+      "reason": "عذر طبي ومراجعة مستشفى",
+      "status": "approved",
+      "createdAt": "2026-09-09T05:09:32.933Z",
+      "adminDecisionNotes": "تم اعتماد العذر الطبي رسمياً",
+      "decidedByName": "أ. مساعد سعد الشهري",
+      "decidedByRole": "employee",
+      "decidedAt": "2026-09-09T05:09:32.977Z",
+      "updatedAt": "2026-09-09T05:09:32.977Z"
+    }
+  ],
   "payments": [],
   "notifications": [],
   "deleted_schools": [
     "SCH-RAYA-1",
-    "SCH-QURAN-1"
+    "SCH-QURAN-1",
+    "RAYA-1448",
+    "QURAN-100"
   ],
   "deleted_attendance_ids": [],
   "deleted_notification_ids": []
