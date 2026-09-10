@@ -106,7 +106,7 @@ export function App() {
   // Synchronize schoolCode if currentUser was missing it or if it resolved to an existing school
   useEffect(() => {
     if (currentUser && currentSchool && currentUser.role !== 'superadmin') {
-      if (currentUser.schoolCode !== currentSchool.code) {
+      if (currentUser.schoolCode !== currentSchool.code && !isParentViewOverride) {
         const allAssigned = Array.from(new Set([
           currentSchool.code,
           ...(currentUser.managedSchoolCodes || []),
@@ -114,13 +114,14 @@ export function App() {
         const updated: User = {
           ...currentUser,
           schoolCode: currentSchool.code,
+          teachingSchoolCode: currentUser.teachingSchoolCode || (currentUser.role === 'teacher' ? currentSchool.code : undefined),
           managedSchoolCodes: allAssigned,
         };
         setCurrentUser(updated);
         setUserState(updated);
       }
     }
-  }, [currentUser, currentSchool]);
+  }, [currentUser, currentSchool, isParentViewOverride]);
 
   // Modals state
   const [isLoginOpen, setIsLoginOpen] = useState(false);
@@ -400,15 +401,23 @@ export function App() {
 
   const handleSwitchSchool = (school: School) => {
     if (currentUser) {
+      // Preserve teaching school code for teachers so it is never lost when browsing other schools
+      const preservedTeachingCode = 
+        currentUser.teachingSchoolCode ||
+        (currentUser.role === 'teacher' ? currentUser.schoolCode : undefined);
+
       // Collect all assigned schools so switching school never loses any previously assigned school
       const allCodes = Array.from(new Set([
         currentUser.schoolCode,
         ...(currentUser.managedSchoolCodes || []),
+        preservedTeachingCode,
         school.code,
-      ]));
+      ].filter(Boolean) as string[]));
+
       const updatedUser: User = { 
         ...currentUser, 
         schoolCode: school.code,
+        teachingSchoolCode: preservedTeachingCode,
         managedSchoolCodes: allCodes,
       };
       setCurrentUser(updatedUser);
@@ -418,12 +427,15 @@ export function App() {
       const allUsers = getUsers();
       let hasChange = false;
       const updatedUsers = allUsers.map((u) => {
-        if (u.id === currentUser.id || u.nationalId === currentUser.nationalId) {
+        const isTarget = (u.id === currentUser.id || (currentUser.nationalId && u.nationalId === currentUser.nationalId));
+        if (isTarget) {
           hasChange = true;
           return {
             ...u,
             schoolCode: school.code,
-            managedSchoolCodes: allCodes,
+            teachingSchoolCode: u.teachingSchoolCode || preservedTeachingCode || (u.role === 'teacher' ? u.schoolCode : undefined),
+            managedSchoolCodes: Array.from(new Set([...(u.managedSchoolCodes || []), ...allCodes])),
+            assignedClasses: u.assignedClasses || currentUser.assignedClasses,
           };
         }
         return u;
@@ -433,6 +445,51 @@ export function App() {
       }
     }
     refreshAll();
+  };
+
+  const handleToggleParentView = () => {
+    if (isParentViewOverride || currentUser?.role === 'parent') {
+      // Switching BACK to Teacher/Staff portal
+      setIsParentViewOverride(false);
+      if (currentUser) {
+        const allUsers = getUsers();
+        const cleanNid = currentUser.nationalId ? currentUser.nationalId.trim() : '';
+        const teacherMatch = allUsers.find(
+          (u) =>
+            ((cleanNid && u.nationalId && u.nationalId.trim() === cleanNid) || (u.id === currentUser.id)) &&
+            (u.role === 'teacher' || u.staffTitle === 'teacher' || (u.assignedClasses && u.assignedClasses.length > 0))
+        );
+
+        const targetSchoolCode =
+          currentUser.teachingSchoolCode ||
+          teacherMatch?.teachingSchoolCode ||
+          teacherMatch?.schoolCode ||
+          (currentUser.role === 'teacher' ? currentUser.schoolCode : undefined);
+
+        if (targetSchoolCode) {
+          const targetSchool = schools.find((s) => s.code === targetSchoolCode);
+          if (targetSchool) {
+            handleSwitchSchool(targetSchool);
+          }
+        }
+
+        const restoredUser: User = {
+          ...(teacherMatch || currentUser),
+          role: 'teacher',
+          staffTitle: teacherMatch?.staffTitle || currentUser.staffTitle || 'teacher',
+          assignedClasses: teacherMatch?.assignedClasses || currentUser.assignedClasses,
+          schoolCode: targetSchoolCode || currentUser.schoolCode,
+          teachingSchoolCode: targetSchoolCode || teacherMatch?.teachingSchoolCode || teacherMatch?.schoolCode,
+        };
+
+        setCurrentUser(restoredUser);
+        setUserState(restoredUser);
+        refreshAll();
+      }
+    } else {
+      // Switching TO Parent View
+      setIsParentViewOverride(true);
+    }
   };
 
   const openPaymentWithPlan = (plan: 'yearly' | 'free_forever') => {
@@ -465,7 +522,7 @@ export function App() {
         onOpenDonationModal={() => setIsDonationOpen(true)}
         onOpenDirectLinks={() => setIsDirectLinksOpen(true)}
         isParentViewOverride={isParentViewOverride}
-        onToggleParentView={() => setIsParentViewOverride(!isParentViewOverride)}
+        onToggleParentView={handleToggleParentView}
       />
 
       {/* Official Academic Calendar Banner */}
@@ -590,9 +647,10 @@ export function App() {
               role: 'parent',
             }}
             currentSchool={currentSchool}
+            schools={schools}
             onOpenCorrection={(att) => setSelectedAttendanceForCorrection(att)}
             isDualRoleTeacher={true}
-            onSwitchBackToTeacher={() => setIsParentViewOverride(false)}
+            onSwitchBackToTeacher={handleToggleParentView}
           />
         ) : isStaffOrEmployeeRole(currentUser.role, currentUser.staffTitle) && currentSchool ? (
           <EmployeeDashboard
@@ -670,9 +728,21 @@ export function App() {
           />
         ) : currentUser.role === 'parent' && currentSchool ? (
           <ParentPortal
+            key={`parent-view-${currentSchool.code}`}
             currentUser={currentUser}
             currentSchool={currentSchool}
+            schools={schools}
             onOpenCorrection={(att) => setSelectedAttendanceForCorrection(att)}
+            isDualRoleTeacher={Boolean(
+              currentUser.staffTitle === 'teacher' ||
+              (currentUser.assignedClasses && currentUser.assignedClasses.length > 0) ||
+              currentUser.teachingSchoolCode ||
+              users.some((u) => 
+                (u.id === currentUser.id || (currentUser.nationalId && u.nationalId === currentUser.nationalId)) &&
+                (u.role === 'teacher' || u.staffTitle === 'teacher' || (u.assignedClasses && u.assignedClasses.length > 0))
+              )
+            )}
+            onSwitchBackToTeacher={handleToggleParentView}
           />
         ) : currentUser.role === 'student' && currentSchool ? (
           <StudentPortal

@@ -104,6 +104,16 @@ export const Header: React.FC<HeaderProps> = ({
     ? getUserAlternativeProfiles(currentUser, allUsers)
     : [];
 
+  const isTeacherParent = Boolean(
+    currentUser?.staffTitle === 'teacher' ||
+    (currentUser?.assignedClasses && currentUser.assignedClasses.length > 0) ||
+    currentUser?.teachingSchoolCode ||
+    allUsers.some((u) => 
+      ((u.id === currentUser?.id) || (currentUser?.nationalId && u.nationalId && u.nationalId.trim() === currentUser.nationalId.trim())) &&
+      (u.role === 'teacher' || u.staffTitle === 'teacher' || (u.assignedClasses && u.assignedClasses.length > 0))
+    )
+  );
+
   return (
     <header className="bg-white/95 backdrop-blur-md border-b border-slate-200/80 sticky top-0 z-30 px-4 py-2.5 shadow-xs" dir="rtl">
       <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
@@ -182,23 +192,23 @@ export const Header: React.FC<HeaderProps> = ({
           )}
 
           {/* Dedicated Dual Role Switcher (Teacher/Staff <-> Parent) */}
-          {currentUser && (currentUser.role === 'teacher' || currentUser.role === 'employee' || isParentViewOverride) && onToggleParentView && (
+          {currentUser && (currentUser.role === 'teacher' || currentUser.role === 'employee' || isParentViewOverride || isTeacherParent) && onToggleParentView && (
             <button
               onClick={onToggleParentView}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black transition-all shadow-xs cursor-pointer ${
-                isParentViewOverride
+                isParentViewOverride || currentUser.role === 'parent'
                   ? 'bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white border border-indigo-500 shadow-indigo-600/20 animate-pulse'
                   : 'bg-amber-50 hover:bg-amber-100 text-amber-950 border border-amber-300 hover:border-amber-400'
               }`}
               title={
-                isParentViewOverride
-                  ? 'العودة إلى بوابة المعلم / العمل المدرسي'
+                isParentViewOverride || currentUser.role === 'parent'
+                  ? 'العودة إلى بوابة المعلم ورصد الحصص'
                   : 'أنت معلم ولديك أبناء؟ انقر للتبديل الفوري لحساب ولي الأمر لمتابعة حضور وغياب وأعذار أبنائك الطلاب'
               }
             >
               <ArrowLeftRight className="w-3.5 h-3.5 shrink-0" />
               <span>
-                {isParentViewOverride
+                {isParentViewOverride || currentUser.role === 'parent'
                   ? 'العودة لبوابة المعلم 👨‍🏫'
                   : userChildren.length > 0
                     ? `وضع ولي الأمر (${userChildren.length} أبناء) 👨‍👧‍👦`

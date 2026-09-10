@@ -2,7 +2,7 @@ import {
   School, User, UserRole, Attendance, CorrectionRequest, 
   SubscriptionPaymentRequest, SystemNotification, 
   StudentPermission, StudentBehaviorLog, AdministrativeAbsenceAction,
-  SchoolClassSection
+  SchoolClassSection, isStaffOrEmployeeRole, ParentSummon
 } from '../types';
 import { INITIAL_SCHOOLS, INITIAL_USERS, INITIAL_PERMISSIONS, INITIAL_BEHAVIOR_LOGS } from '../data/seedData';
 import { getTodayDateString } from './academic';
@@ -19,6 +19,7 @@ const PAYMENTS_KEY = `hodoorak_payments_${STORAGE_VERSION}`;
 const NOTIFICATIONS_KEY = `hodoorak_notifications_${STORAGE_VERSION}`;
 const CURRENT_USER_KEY = `hodoorak_current_user_${STORAGE_VERSION}`;
 const ABSENCE_ACTIONS_KEY = `hodoorak_absence_actions_${STORAGE_VERSION}`;
+const PARENT_SUMMONS_KEY = `hodoorak_parent_summons_${STORAGE_VERSION}`;
 
 // Helper for fire-and-forget or background server API sync
 async function apiPost(endpoint: string, body: any): Promise<any> {
@@ -396,17 +397,56 @@ export function getUserAssignedSchools(
  * Returns alternative profiles for this person (e.g. A Teacher who also has a Parent profile for their child)
  */
 export function getUserAlternativeProfiles(user: User | null, allUsers?: User[]): User[] {
-  if (!user || !user.nationalId) return [];
-  const cleanNid = user.nationalId.trim();
+  if (!user || (!user.nationalId && !user.id)) return [];
+  const cleanNid = user.nationalId ? user.nationalId.trim() : '';
   const cleanMobile = user.mobile ? user.mobile.trim() : '';
   const usersList = allUsers || getUsers();
 
-  return usersList.filter((u) => {
+  const realAlternatives = usersList.filter((u) => {
     if (u.id === user.id) return false;
     const sameNid = Boolean(cleanNid && u.nationalId && u.nationalId.trim() === cleanNid);
     const sameMobile = Boolean(cleanMobile && u.mobile && u.mobile.trim() === cleanMobile);
     return (sameNid || sameMobile) && (u.role !== user.role || u.schoolCode !== user.schoolCode);
   });
+
+  if (realAlternatives.length > 0) {
+    return realAlternatives;
+  }
+
+  // Virtual dual-role synthesis:
+  // If user is currently a teacher/employee and has children, allow switching to parent view
+  if (user.role === 'teacher' || isStaffOrEmployeeRole(user.role, user.staffTitle)) {
+    const hasChildren = (user.childrenNationalIds && user.childrenNationalIds.length > 0) ||
+      usersList.some((u) => u.role === 'student' && ((cleanMobile && u.parentMobile === cleanMobile) || (cleanNid && user.childrenNationalIds?.includes(u.nationalId))));
+    if (hasChildren) {
+      return [{
+        ...user,
+        id: `parent-view-${user.id}`,
+        role: 'parent',
+      }];
+    }
+  }
+
+  // If user is currently a parent, but has teacher role in database or assignedClasses:
+  if (user.role === 'parent') {
+    const teacherMatch = usersList.find((u) => 
+      ((cleanNid && u.nationalId && u.nationalId.trim() === cleanNid) || (cleanMobile && u.mobile && u.mobile.trim() === cleanMobile)) && 
+      (u.role === 'teacher' || u.staffTitle === 'teacher')
+    );
+    if (teacherMatch) {
+      return [teacherMatch];
+    } else if (user.assignedClasses && user.assignedClasses.length > 0) {
+      return [{
+        ...user,
+        id: `teacher-view-${user.id}`,
+        role: 'teacher',
+        staffTitle: 'teacher',
+        schoolCode: user.teachingSchoolCode || user.schoolCode,
+      }];
+    }
+  }
+
+  return [];
 }
 
 export function mergeAttendances(existing: Attendance[], incoming: Attendance[]): Attendance[] {
@@ -1504,11 +1544,18 @@ export function normalizeUser(u: User, availableSchools?: School[]): User {
     managedCodes.push(schoolCode);
   }
 
+  // Ensure teachingSchoolCode is preserved for teachers
+  let teachingSchoolCode = u.teachingSchoolCode;
+  if ((role === 'teacher' || staffTitle === 'teacher') && !teachingSchoolCode && schoolCode) {
+    teachingSchoolCode = schoolCode;
+  }
+
   return {
     ...u,
     role: role as UserRole,
     staffTitle,
     schoolCode: schoolCode || u.schoolCode,
+    teachingSchoolCode,
     managedSchoolCodes: managedCodes.length > 0 ? managedCodes : u.managedSchoolCodes,
   };
 }
@@ -2616,10 +2663,19 @@ export function getCurrentUserSession(): User | null {
         const staffTitle = parsed.staffTitle || matching.find((m) => m.staffTitle)?.staffTitle;
         const name = parsed.name || matching.find((m) => m.name)?.name || parsed.name;
 
+        // Preserve assignedClasses from teacher matching record if parsed session is missing them
+        const teacherRec = matching.find((m) => (m.assignedClasses && m.assignedClasses.length > 0) || m.role === 'teacher');
+        const assignedClasses = (parsed.assignedClasses && parsed.assignedClasses.length > 0)
+          ? parsed.assignedClasses
+          : teacherRec?.assignedClasses;
+        const teachingSchoolCode = parsed.teachingSchoolCode || teacherRec?.teachingSchoolCode || (teacherRec?.role === 'teacher' ? teacherRec.schoolCode : undefined);
+
         activeUser = {
           ...parsed,
           name,
           staffTitle,
+          assignedClasses,
+          teachingSchoolCode,
           managedSchoolCodes: allManaged,
         };
       }
@@ -2680,5 +2736,59 @@ export async function resetAllDataToSeed(): Promise<void> {
   localStorage.removeItem(NOTIFICATIONS_KEY);
   localStorage.removeItem(CURRENT_USER_KEY);
   localStorage.removeItem(ABSENCE_ACTIONS_KEY);
+  localStorage.removeItem(PARENT_SUMMONS_KEY);
   window.location.reload();
+}
+
+// 10. Official Parent Summons Management
+export function getParentSummons(): ParentSummon[] {
+  try {
+    const raw = localStorage.getItem(PARENT_SUMMONS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveParentSummons(list: ParentSummon[], syncServer: boolean = true): void {
+  const clean = Array.isArray(list) ? list : [];
+  localStorage.setItem(PARENT_SUMMONS_KEY, JSON.stringify(clean));
+  if (syncServer) {
+    apiPost('/api/sync', { parent_summons: clean });
+  }
+}
+
+export function getParentSummonsForStudent(studentId: string, studentNationalId?: string): ParentSummon[] {
+  const all = getParentSummons();
+  const cleanNid = studentNationalId ? studentNationalId.trim() : '';
+  return all.filter(
+    (s) => s.studentId === studentId || (cleanNid && s.studentNationalId && s.studentNationalId.trim() === cleanNid)
+  );
+}
+
+export function getParentSummonsForSchool(schoolCode: string): ParentSummon[] {
+  const cleanCode = (schoolCode || '').toUpperCase();
+  return getParentSummons().filter((s) => s.schoolCode && s.schoolCode.toUpperCase() === cleanCode);
+}
+
+export function addParentSummon(summon: ParentSummon): void {
+  const list = getParentSummons();
+  list.unshift(summon);
+  saveParentSummons(list, true);
+}
+
+export function updateParentSummon(updated: ParentSummon): void {
+  const list = getParentSummons();
+  const idx = list.findIndex((s) => s.id === updated.id);
+  if (idx >= 0) {
+    list[idx] = updated;
+    saveParentSummons(list, true);
+  }
+}
+
+export function deleteParentSummon(id: string): void {
+  const list = getParentSummons().filter((s) => s.id !== id);
+  saveParentSummons(list, true);
 }

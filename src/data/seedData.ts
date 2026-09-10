@@ -92,6 +92,7 @@ export const INITIAL_USERS: User[] = [
       { className: 'الثاني الثانوي', sectionName: '3' },
       { className: 'الثاني الثانوي', sectionName: '4' },
     ],
+    childrenNationalIds: ['1100440044', '1100550055'],
   },
   // Principal Raya
   {
@@ -120,6 +121,7 @@ export const INITIAL_USERS: User[] = [
       { className: 'الأول المتوسط', sectionName: '2' },
     ],
     managedSchoolCodes: ['RAYA-1448'],
+    childrenNationalIds: ['1122334455'],
   },
   // Parent Zahrani
   {
@@ -174,6 +176,34 @@ export const INITIAL_USERS: User[] = [
     className: 'الأول المتوسط',
     sectionName: '1',
     managedSchoolCodes: ['RAYA-1448'],
+  },
+  // Student Turki Abu Fayda (Middle School Raya)
+  {
+    id: 'usr-std-4',
+    nationalId: '1100440044',
+    name: 'تركي محمد أبوفايدة',
+    mobile: '0599778811',
+    parentMobile: '0500000000',
+    password: '123',
+    role: 'student',
+    schoolCode: 'RAYA-1448',
+    className: 'الأول المتوسط',
+    sectionName: '2',
+    managedSchoolCodes: ['RAYA-1448'],
+  },
+  // Student Abdulaziz Abu Fayda (Quran School)
+  {
+    id: 'usr-std-5',
+    nationalId: '1100550055',
+    name: 'عبدالعزيز محمد أبوفايدة',
+    mobile: '0599778822',
+    parentMobile: '0500000000',
+    password: '123',
+    role: 'student',
+    schoolCode: 'QURAN-100',
+    className: 'حلقة الإتقان',
+    sectionName: '1',
+    managedSchoolCodes: ['QURAN-100'],
   },
   // Sample Secondary Students in Saqr Quraish
   {

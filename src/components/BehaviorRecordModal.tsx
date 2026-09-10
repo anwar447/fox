@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { User, StudentBehaviorLog } from '../types';
 import { addBehaviorLog, addSystemNotification } from '../utils/storage';
 import { getTodayDateString } from '../utils/academic';
@@ -6,13 +6,14 @@ import { soundManager } from '../utils/audio';
 import { POSITIVE_BEHAVIOR_PRESETS, NEGATIVE_BEHAVIOR_PRESETS } from '../utils/behavior';
 import { 
   X, ThumbsUp, ThumbsDown, Star, AlertTriangle, 
-  Check, Sparkles, Send, ShieldAlert, Award 
+  Check, Sparkles, Send, ShieldAlert, Award, Search, Users
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 interface BehaviorRecordModalProps {
   isOpen?: boolean;
-  student: User;
+  student?: User | null;
+  allSchoolStudents?: User[];
   currentUser: User;
   currentSchool?: any;
   onClose: () => void;
@@ -20,12 +21,34 @@ interface BehaviorRecordModalProps {
 }
 
 export const BehaviorRecordModal: React.FC<BehaviorRecordModalProps> = ({
-  student,
+  student: initialStudent,
+  allSchoolStudents = [],
   currentUser,
   onClose,
   onSaved,
 }) => {
   const today = getTodayDateString();
+  const [selectedStudentId, setSelectedStudentId] = useState<string>(initialStudent?.id || '');
+  const [studentSearch, setStudentSearch] = useState('');
+
+  const targetStudent = useMemo(() => {
+    if (initialStudent) return initialStudent;
+    return allSchoolStudents.find((s) => s.id === selectedStudentId) || null;
+  }, [initialStudent, allSchoolStudents, selectedStudentId]);
+
+  const filteredStudents = useMemo(() => {
+    if (!studentSearch.trim()) return allSchoolStudents.slice(0, 8);
+    const q = studentSearch.trim().toLowerCase();
+    return allSchoolStudents
+      .filter(
+        (s) =>
+          s.name?.toLowerCase().includes(q) ||
+          s.nationalId?.includes(q) ||
+          s.className?.includes(q)
+      )
+      .slice(0, 10);
+  }, [allSchoolStudents, studentSearch]);
+
   const [behaviorType, setBehaviorType] = useState<'positive' | 'negative'>('positive');
   const [selectedPresetIndex, setSelectedPresetIndex] = useState<number>(0);
   const [title, setTitle] = useState(POSITIVE_BEHAVIOR_PRESETS[0].title);
@@ -56,7 +79,7 @@ export const BehaviorRecordModal: React.FC<BehaviorRecordModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) return;
+    if (!targetStudent || !title.trim()) return;
 
     setIsSubmitting(true);
     const now = new Date();
@@ -64,12 +87,12 @@ export const BehaviorRecordModal: React.FC<BehaviorRecordModalProps> = ({
 
     const newLog: StudentBehaviorLog = {
       id: `beh-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      studentId: student.id,
-      studentName: student.name,
-      nationalId: student.nationalId,
-      schoolCode: student.schoolCode,
-      className: student.className || 'عام',
-      sectionName: student.sectionName || '1',
+      studentId: targetStudent.id,
+      studentName: targetStudent.name,
+      nationalId: targetStudent.nationalId,
+      schoolCode: targetStudent.schoolCode,
+      className: targetStudent.className || 'عام',
+      sectionName: targetStudent.sectionName || '1',
       date: today,
       time: timeStr,
       type: behaviorType,
@@ -89,14 +112,14 @@ export const BehaviorRecordModal: React.FC<BehaviorRecordModalProps> = ({
     addSystemNotification({
       id: `notif-beh-${Date.now()}`,
       title: behaviorType === 'positive' 
-        ? `🌟 إشادة ورصد سلوك إيجابي: ${student.name}` 
-        : `⚠️ إشعار ملاحظة سلوكية: ${student.name}`,
+        ? `🌟 إشادة ورصد سلوك إيجابي: ${targetStudent.name}` 
+        : `⚠️ إشعار ملاحظة سلوكية: ${targetStudent.name}`,
       message: behaviorType === 'positive'
-        ? `قام المعلم (${currentUser.name}) برصد سلوك إيجابي [${title}] ومنح الطالب (+${points} نقاط).`
-        : `قام المعلم (${currentUser.name}) برصد ملاحظة سلوكية [${title}] مع حسم (${points} درجات مواظبة).`,
+        ? `قام (${currentUser.name}) برصد سلوك إيجابي [${title}] ومنح الطالب (+${points} نقاط).`
+        : `تم رصد ملاحظة سلوكية [${title}] مع حسم (${points} درجات مواظبة).`,
       type: behaviorType === 'positive' ? 'success' : 'alert',
       targetRole: 'all',
-      schoolCode: student.schoolCode,
+      schoolCode: targetStudent.schoolCode,
       createdAt: new Date().toISOString(),
       read: false,
     });
@@ -114,8 +137,8 @@ export const BehaviorRecordModal: React.FC<BehaviorRecordModalProps> = ({
   const presets = behaviorType === 'positive' ? POSITIVE_BEHAVIOR_PRESETS : NEGATIVE_BEHAVIOR_PRESETS;
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4" dir="rtl">
-      <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden animate-scaleIn">
+    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto" dir="rtl">
+      <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden animate-scaleIn my-auto">
         {/* Header */}
         <div className={`p-5 flex items-center justify-between border-b ${
           behaviorType === 'positive' 
@@ -134,9 +157,15 @@ export const BehaviorRecordModal: React.FC<BehaviorRecordModalProps> = ({
               <h3 className="font-black text-slate-900 text-base">
                 رصد السلوك والمواظبة اليومي
               </h3>
-              <p className="text-xs text-slate-600 font-bold">
-                الطالب: {student.name} ({student.className} - {student.sectionName})
-              </p>
+              {targetStudent ? (
+                <p className="text-xs text-slate-600 font-bold">
+                  الطالب: {targetStudent.name} ({targetStudent.className || 'عام'} - {targetStudent.sectionName || '1'})
+                </p>
+              ) : (
+                <p className="text-xs text-amber-700 font-bold">
+                  الرجاء تحديد الطالب من القائمة أدناه
+                </p>
+              )}
             </div>
           </div>
           <button
@@ -146,6 +175,59 @@ export const BehaviorRecordModal: React.FC<BehaviorRecordModalProps> = ({
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {/* Dynamic Student Selector if initialStudent wasn't provided */}
+        {!initialStudent && (
+          <div className="p-3.5 bg-slate-50 border-b border-slate-200 space-y-2 text-xs">
+            <label className="block font-bold text-slate-700">
+              اختر الطالب المراد رصد السلوك له:
+            </label>
+            <div className="relative">
+              <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
+              <input
+                type="text"
+                value={studentSearch}
+                onChange={(e) => setStudentSearch(e.target.value)}
+                placeholder="ابحث باسم الطالب أو سجله المدني..."
+                className="w-full bg-white border border-slate-200 rounded-xl pr-9 pl-3 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-emerald-500"
+              />
+            </div>
+            {filteredStudents.length > 0 && !targetStudent && (
+              <div className="max-h-32 overflow-y-auto space-y-1 bg-white border border-slate-200 rounded-xl p-1.5 shadow-xs">
+                {filteredStudents.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedStudentId(s.id);
+                      setStudentSearch('');
+                    }}
+                    className="w-full text-right p-2 rounded-lg hover:bg-emerald-50 flex items-center justify-between text-xs cursor-pointer transition-colors"
+                  >
+                    <span className="font-bold text-slate-900">{s.name}</span>
+                    <span className="text-[10px] text-slate-500 font-mono">
+                      {s.className} ({s.nationalId})
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {targetStudent && (
+              <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-xl p-2 text-xs">
+                <span className="font-black text-emerald-900">
+                  تم اختيار: {targetStudent.name} ({targetStudent.className || 'عام'})
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedStudentId('')}
+                  className="text-[11px] text-rose-600 font-bold hover:underline cursor-pointer"
+                >
+                  تغيير الطالب ✕
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
           {/* Behavior Type Selector (Positive / Negative) */}

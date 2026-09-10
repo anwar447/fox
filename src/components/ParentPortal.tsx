@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
-import { User, School, Attendance, CorrectionRequest } from '../types';
-import { getAttendances, getUsers, getCorrectionRequests, saveAttendances, saveUsers, getSystemNotifications } from '../utils/storage';
+import { User, School, Attendance, CorrectionRequest, StudentBehaviorLog, ParentSummon } from '../types';
+import { 
+  getAttendances, getUsers, getCorrectionRequests, saveAttendances, 
+  saveUsers, getSystemNotifications, saveCurrentUserSession,
+  getBehaviorLogs, getParentSummons
+} from '../utils/storage';
 import { calculateStudentBehaviorScore } from '../utils/behavior';
 import { isAbsenceSuspendedForSchool } from '../utils/schoolSchedule';
 import { SubmitExcuseModal } from './SubmitExcuseModal';
@@ -10,13 +14,15 @@ import {
   UserCheck, GraduationCap, CheckCircle, XCircle, 
   AlertTriangle, Phone, FileText, Upload, Plus, Check, 
   Clock, Sparkles, Star, Award, HeartHandshake, ThumbsUp, ThumbsDown, 
-  Calendar, ShieldAlert, User as UserIcon, RefreshCw, CloudRain, ArrowLeftRight 
+  Calendar, ShieldAlert, User as UserIcon, RefreshCw, CloudRain, ArrowLeftRight,
+  Building2, Users, UserPlus, AlertCircle
 } from 'lucide-react';
 import { getTodayDateString } from '../utils/academic';
 
 interface ParentPortalProps {
   currentUser: User;
   currentSchool: School;
+  schools?: School[];
   onOpenCorrection: (attendance: Attendance) => void;
   isDualRoleTeacher?: boolean;
   onSwitchBackToTeacher?: () => void;
@@ -25,6 +31,7 @@ interface ParentPortalProps {
 export const ParentPortal: React.FC<ParentPortalProps> = ({
   currentUser,
   currentSchool,
+  schools = [],
   onOpenCorrection,
   isDualRoleTeacher,
   onSwitchBackToTeacher,
@@ -33,8 +40,10 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
   const allUsers = getUsers();
   const [attendances, setAttendances] = useState<Attendance[]>(getAttendances());
   const [correctionRequests, setCorrectionRequests] = useState<CorrectionRequest[]>(getCorrectionRequests());
+  const [behaviorLogs, setBehaviorLogs] = useState<StudentBehaviorLog[]>(getBehaviorLogs());
+  const [parentSummons, setParentSummons] = useState<ParentSummon[]>(getParentSummons());
 
-  // Find parent's children with robust ID and phone matching
+  // Find parent's children with robust ID and phone matching across all schools
   const children = allUsers.filter((u) => {
     if (u.role !== 'student') return false;
     const cleanUNid = (u.nationalId || '').trim();
@@ -49,13 +58,30 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
     return isChildNid || isMobileMatch;
   });
 
+  const matchingTeacherUser = allUsers.find(
+    (u) =>
+      (u.id === currentUser.id ||
+        (currentUser.nationalId && u.nationalId === currentUser.nationalId) ||
+        (currentUser.mobile && u.mobile === currentUser.mobile)) &&
+      (u.role === 'teacher' || u.staffTitle === 'teacher' || (u.assignedClasses && u.assignedClasses.length > 0))
+  );
+
+  const isTeacherParent = Boolean(
+    isDualRoleTeacher ||
+    currentUser.staffTitle === 'teacher' ||
+    (currentUser.assignedClasses && currentUser.assignedClasses.length > 0) ||
+    matchingTeacherUser
+  );
+
   const [selectedStudentId, setSelectedStudentId] = useState<string>(
     children[0]?.id || ''
   );
 
   // Link child state if no children found
+  const [isAddChildOpen, setIsAddChildOpen] = useState(false);
   const [linkChildNid, setLinkChildNid] = useState('');
   const [linkChildName, setLinkChildName] = useState('');
+  const [linkChildSchoolCode, setLinkChildSchoolCode] = useState(currentSchool.code);
   const [linkChildClass, setLinkChildClass] = useState('الأول الثانوي');
   const [linkChildSection, setLinkChildSection] = useState('1');
   const [linkStatusMsg, setLinkStatusMsg] = useState('');
@@ -72,10 +98,12 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
     const existingChild = currentUsers.find((u) => u.nationalId === cleanNid && u.role === 'student');
 
     let updatedChild: User;
+    const targetSchoolCode = linkChildSchoolCode || currentSchool.code;
     if (existingChild) {
       updatedChild = {
         ...existingChild,
         parentMobile: currentUser.mobile || existingChild.parentMobile,
+        schoolCode: existingChild.schoolCode || targetSchoolCode,
       };
     } else {
       updatedChild = {
@@ -84,11 +112,11 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
         name: linkChildName.trim() || `طالب (${cleanNid})`,
         role: 'student',
         password: cleanNid.slice(-4) || '123456',
-        schoolCode: currentSchool.code,
+        schoolCode: targetSchoolCode,
         className: linkChildClass || 'الأول الثانوي',
         sectionName: linkChildSection || '1',
         parentMobile: currentUser.mobile,
-        managedSchoolCodes: [currentSchool.code],
+        managedSchoolCodes: [targetSchoolCode],
       };
     }
 
@@ -97,14 +125,27 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
       cleanNid,
     ]));
 
+    const existingParentInDb = currentUsers.find(
+      (u) => (currentUser.id && u.id === currentUser.id) || (currentUser.nationalId && u.nationalId === currentUser.nationalId)
+    );
+
+    // CRITICAL: NEVER downgrade teacher or employee to parent
+    const preservedRole = (existingParentInDb?.role === 'teacher' || existingParentInDb?.staffTitle === 'teacher' || currentUser.staffTitle === 'teacher')
+      ? 'teacher'
+      : (existingParentInDb?.role || currentUser.role);
+
     const updatedParent: User = {
-      ...currentUser,
+      ...(existingParentInDb || currentUser),
+      role: preservedRole,
+      staffTitle: existingParentInDb?.staffTitle || currentUser.staffTitle,
+      assignedClasses: existingParentInDb?.assignedClasses || currentUser.assignedClasses,
+      teachingSchoolCode: existingParentInDb?.teachingSchoolCode || currentUser.teachingSchoolCode || existingParentInDb?.schoolCode,
       childrenNationalIds: updatedChildrenNids,
     };
 
     // Update users list
     let nextUsers = currentUsers.map((u) => {
-      if (u.id === currentUser.id || u.nationalId === currentUser.nationalId) {
+      if (u.id === currentUser.id || (currentUser.nationalId && u.nationalId === currentUser.nationalId)) {
         return updatedParent;
       }
       if (u.id === updatedChild.id || u.nationalId === updatedChild.nationalId) {
@@ -118,6 +159,9 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
     }
 
     saveUsers(nextUsers);
+    if (preservedRole === 'teacher') {
+      saveCurrentUserSession(updatedParent);
+    }
     setSelectedStudentId(updatedChild.id);
     setLinkStatusMsg(`✅ تم ربط الابن ${updatedChild.name} بنجاح!`);
     setTimeout(() => {
@@ -133,9 +177,20 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
   const [activeTab, setActiveTab] = useState<'behavior' | 'excuses' | 'attendance' | 'actions'>('behavior');
 
   const currentChild = children.find((c) => c.id === selectedStudentId) || children[0];
+  const childSchool = schools.find((s) => s.code === currentChild?.schoolCode) || currentSchool;
   const childAttendances = attendances.filter((a) => a.studentId === currentChild?.id);
   const todayAtt = childAttendances.find((a) => a.date === today);
   const childExcuses = correctionRequests.filter((r) => r.studentId === currentChild?.id);
+
+  // Distinct school names of children
+  const distinctChildSchools = Array.from(
+    new Set(
+      children.map((c) => {
+        const s = schools.find((sch) => sch.code === c.schoolCode);
+        return s ? s.name : currentSchool.name;
+      })
+    )
+  );
 
   // Calculate dynamic behavior & discipline score
   const behaviorSummary = currentChild 
@@ -145,6 +200,8 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
   const refreshData = () => {
     setAttendances(getAttendances());
     setCorrectionRequests(getCorrectionRequests());
+    setBehaviorLogs(getBehaviorLogs());
+    setParentSummons(getParentSummons());
   };
 
   const handleOpenExcuse = (dateString?: string) => {
@@ -166,7 +223,7 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
       />
 
       {/* Dual Role Teacher-as-Parent Notice Banner */}
-      {isDualRoleTeacher && onSwitchBackToTeacher && (
+      {isTeacherParent && onSwitchBackToTeacher && (
         <div className="bg-gradient-to-r from-amber-500 via-indigo-600 to-indigo-700 text-white p-4 sm:p-5 rounded-3xl shadow-md flex flex-wrap items-center justify-between gap-3 animate-fadeIn">
           <div className="flex items-center gap-3.5">
             <div className="w-11 h-11 rounded-2xl bg-white/20 backdrop-blur-xs flex items-center justify-center text-white font-bold shrink-0 text-2xl shadow-xs">
@@ -209,20 +266,24 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
               <span className="px-2.5 py-0.5 rounded-full bg-teal-50 text-teal-800 text-[10px] font-bold border border-teal-200">
                 بوابة ولي الأمر الذكية
               </span>
-              {isDualRoleTeacher && (
+              {isTeacherParent && (
                 <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-black border border-amber-300">
                   حساب مزدوج (معلم وولي أمر) 👨‍👧‍👦
                 </span>
               )}
             </div>
             <h2 className="text-xl font-black text-slate-900 mt-1">مرحباً بك، {currentUser.name}</h2>
-            <p className="text-xs text-slate-500 font-medium">متابعة حضور وانضباط وسلوك الأبناء في ({currentSchool.name})</p>
+            <p className="text-xs text-slate-500 font-medium">
+              {distinctChildSchools.length > 1
+                ? `متابعة حضور وانضباط وسلوك الأبناء عبر المدارس (${distinctChildSchools.join(' و ')})`
+                : `متابعة حضور وانضباط وسلوك الأبناء في (${childSchool.name})`}
+            </p>
           </div>
         </div>
 
         {/* Child Selector & Quick Excuse button */}
         <div className="flex flex-wrap items-center gap-2">
-          {isDualRoleTeacher && onSwitchBackToTeacher && (
+          {isTeacherParent && onSwitchBackToTeacher && (
             <button
               type="button"
               onClick={onSwitchBackToTeacher}
@@ -241,11 +302,14 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                 onChange={(e) => setSelectedStudentId(e.target.value)}
                 className="bg-white border border-slate-200 rounded-xl px-2.5 py-1 text-xs text-slate-800 font-bold focus:outline-teal-500"
               >
-                {children.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} ({c.className})
-                  </option>
-                ))}
+                {children.map((c) => {
+                  const cSchool = schools.find((s) => s.code === c.schoolCode);
+                  return (
+                    <option key={c.id} value={c.id}>
+                      {c.name} — {cSchool ? `${cSchool.name} (${c.className})` : c.className}
+                    </option>
+                  );
+                })}
               </select>
             </div>
           )}
@@ -260,7 +324,288 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
             </button>
           )}
         </div>
+
+        {/* Multi-School / Multi-Child Quick Navigation Pills */}
+        {children.length > 1 && (
+          <div className="w-full pt-4 border-t border-slate-100 flex flex-wrap items-center gap-2">
+            <span className="text-xs font-black text-slate-600 flex items-center gap-1.5 ml-1">
+              <span>الأبناء المسجلون ({children.length}):</span>
+            </span>
+            {children.map((c) => {
+              const isSelected = c.id === currentChild?.id;
+              const cSchool = schools.find((s) => s.code === c.schoolCode);
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => setSelectedStudentId(c.id)}
+                  className={`px-3.5 py-2 rounded-2xl text-xs font-black flex items-center gap-2 transition-all cursor-pointer border ${
+                    isSelected
+                      ? 'bg-teal-600 text-white border-teal-600 shadow-sm scale-105 ring-2 ring-teal-300'
+                      : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  <span>👨‍🎓 {c.name}</span>
+                  <span
+                    className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                      isSelected
+                        ? 'bg-teal-800/60 text-teal-100 border border-teal-500/30'
+                        : 'bg-white text-slate-600 border border-slate-200'
+                    }`}
+                  >
+                    {cSchool?.name || c.className}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
+
+      {/* 2. Unified Multi-School Family Grid (جميع أبنائي في مختلف المدارس في صفحة واحدة) */}
+      {children.length > 0 && (
+        <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 text-white rounded-3xl p-6 shadow-xl border border-slate-700/80 space-y-5">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-700/80 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-teal-500/20 text-teal-300 border border-teal-500/30 flex items-center justify-center shadow-inner">
+                <Users className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full bg-teal-500/20 text-teal-300 text-[10px] font-bold border border-teal-500/30">
+                    لوحة الأسرة الموحدة
+                  </span>
+                  <span className="text-xs text-slate-400 font-medium">
+                    {children.length} أبناء مسجلين عبر {distinctChildSchools.length} مدارس
+                  </span>
+                </div>
+                <h3 className="text-base sm:text-lg font-black text-white mt-0.5">
+                  جميع أبنائي في مختلف المدارس في صفحة واحدة 👨‍👧‍👦
+                </h3>
+                <p className="text-xs text-slate-300 font-medium">
+                  نظرة فورية موحدة على حالة الحضور، الانضباط، والغياب اليومي لجميع الأبناء دون الحاجة للتنقل بين الأنظمة والحسابات.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsAddChildOpen(!isAddChildOpen)}
+              className="px-3.5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-black flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
+            >
+              <UserPlus className="w-4 h-4" />
+              <span>{isAddChildOpen ? 'إلغاء الربط' : '+ ربط ابن من مدرسة أخرى'}</span>
+            </button>
+          </div>
+
+          {/* Inline Link Child form if toggled */}
+          {isAddChildOpen && (
+            <div className="bg-slate-800/90 border border-teal-500/40 rounded-2xl p-5 space-y-4 animate-fadeIn">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-black text-teal-300 flex items-center gap-2">
+                  <UserPlus className="w-4 h-4" />
+                  <span>ربط ابن جديد من أي مدرسة في المملكة بحسابك الموحد</span>
+                </h4>
+                <button
+                  type="button"
+                  onClick={() => setIsAddChildOpen(false)}
+                  className="text-slate-400 hover:text-white text-xs cursor-pointer"
+                >
+                  ✕ إغلاق
+                </button>
+              </div>
+              <form onSubmit={handleLinkChild} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-right">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-300 mb-1">رقم هوية الابن *</label>
+                  <input
+                    type="text"
+                    required
+                    maxLength={10}
+                    value={linkChildNid}
+                    onChange={(e) => setLinkChildNid(e.target.value)}
+                    placeholder="10 أرقام"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-300 mb-1">اسم الابن</label>
+                  <input
+                    type="text"
+                    value={linkChildName}
+                    onChange={(e) => setLinkChildName(e.target.value)}
+                    placeholder="اسم الابن كاملاً"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-300 mb-1">المدرسة التابع لها *</label>
+                  <select
+                    value={linkChildSchoolCode}
+                    onChange={(e) => setLinkChildSchoolCode(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-bold"
+                  >
+                    {schools.map((s) => (
+                      <option key={s.code} value={s.code}>
+                        {s.name} ({s.city})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-end">
+                  <button
+                    type="submit"
+                    className="w-full py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-black text-xs transition-all cursor-pointer shadow-md"
+                  >
+                    تأكيد الربط الفوري ↵
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* The Multi-School Cards Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {children.map((child) => {
+              const isSelected = child.id === currentChild?.id;
+              const cSchool = schools.find((s) => s.code === child.schoolCode);
+              const cAttendances = attendances.filter((a) => a.studentId === child.id);
+              const cTodayAtt = cAttendances.find((a) => a.date === today);
+              const cAbsences = cAttendances.filter((a) => a.finalStatus === 'absent').length;
+              const cLates = cAttendances.filter((a) => a.finalStatus === 'late').length;
+              const cLogs = behaviorLogs.filter((b: StudentBehaviorLog) => b.studentId === child.id);
+              const cSummons = parentSummons.filter((s: ParentSummon) => s.studentId === child.id && s.status === 'pending');
+
+              return (
+                <div
+                  key={child.id}
+                  onClick={() => setSelectedStudentId(child.id)}
+                  className={`p-5 rounded-2xl transition-all cursor-pointer text-right flex flex-col justify-between relative overflow-hidden border-2 ${
+                    isSelected
+                      ? 'bg-slate-800/95 border-teal-400 shadow-lg shadow-teal-500/10 ring-2 ring-teal-400/40'
+                      : 'bg-slate-800/50 hover:bg-slate-800/80 border-slate-700/80 hover:border-slate-600'
+                  }`}
+                >
+                  {isSelected && (
+                    <div className="absolute top-0 left-0 bg-teal-500 text-slate-950 text-[10px] font-black px-3 py-0.5 rounded-br-xl shadow-xs">
+                      الابن المعروض تفاصيله حالياً 👁️
+                    </div>
+                  )}
+
+                  <div className="space-y-3">
+                    {/* Header: Child name + Grade */}
+                    <div className="flex items-center gap-3">
+                      <div className="w-11 h-11 rounded-xl bg-teal-500/20 border border-teal-500/30 text-teal-300 flex items-center justify-center text-lg shrink-0">
+                        👨‍🎓
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <h4 className="text-sm font-black text-white truncate">{child.name}</h4>
+                        <p className="text-[11px] text-slate-300 font-medium">
+                          {child.className} • شعبة {child.sectionName || '1'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* School Badge */}
+                    <div className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-700/60 flex items-center justify-between gap-2 text-xs">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Building2 className="w-4 h-4 text-teal-400 shrink-0" />
+                        <span className="font-bold text-slate-200 truncate">{cSchool?.name || child.schoolCode}</span>
+                      </div>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-mono shrink-0">
+                        {cSchool?.city || 'المملكة'}
+                      </span>
+                    </div>
+
+                    {/* Live Today Status */}
+                    <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900/40 border border-slate-800">
+                      <span className="text-[11px] font-medium text-slate-400">حالة حضور اليوم:</span>
+                      {cTodayAtt?.finalStatus === 'present' ? (
+                        <span className="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold flex items-center gap-1">
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                          حاضر بالمدرسة ✅
+                        </span>
+                      ) : cTodayAtt?.finalStatus === 'absent' ? (
+                        <span className="px-2.5 py-1 rounded-lg bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[11px] font-bold flex items-center gap-1">
+                          <span className="w-2 h-2 rounded-full bg-rose-400"></span>
+                          غائب اليوم ❌
+                        </span>
+                      ) : cTodayAtt?.finalStatus === 'late' ? (
+                        <span className="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[11px] font-bold flex items-center gap-1">
+                          <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                          متأخر صباحاً ⚠️
+                        </span>
+                      ) : cTodayAtt?.finalStatus === 'excused' ? (
+                        <span className="px-2.5 py-1 rounded-lg bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[11px] font-bold flex items-center gap-1">
+                          غياب بعذر مقبول 📋
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-1 rounded-lg bg-slate-700/40 text-slate-300 text-[11px] font-medium">
+                          قيد التحضير والرصد ⏳
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Quick Metrics */}
+                    <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                      <div className="p-2 rounded-xl bg-slate-900/50 border border-slate-700/50">
+                        <span className="text-[10px] text-slate-400 block">أيام الغياب</span>
+                        <span className={`font-black text-sm ${cAbsences > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                          {cAbsences}
+                        </span>
+                      </div>
+                      <div className="p-2 rounded-xl bg-slate-900/50 border border-slate-700/50">
+                        <span className="text-[10px] text-slate-400 block">مرات التأخر</span>
+                        <span className={`font-black text-sm ${cLates > 0 ? 'text-amber-400' : 'text-slate-300'}`}>
+                          {cLates}
+                        </span>
+                      </div>
+                      <div className="p-2 rounded-xl bg-slate-900/50 border border-slate-700/50">
+                        <span className="text-[10px] text-slate-400 block">ملاحظات وسلوك</span>
+                        <span className="font-black text-sm text-teal-300">
+                          {cLogs.length}
+                        </span>
+                      </div>
+                    </div>
+
+                    {cSummons.length > 0 && (
+                      <div className="p-2 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-200 text-[11px] font-bold flex items-center gap-1.5">
+                        <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                        <span>يوجد استدعاء رسمي من إدارة المدرسة معلق</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Card Actions */}
+                  <div className="pt-3 mt-3 border-t border-slate-700/70 flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedStudentId(child.id);
+                        handleOpenExcuse(undefined);
+                      }}
+                      className="px-2.5 py-1.5 rounded-lg bg-teal-600/30 hover:bg-teal-600/50 text-teal-200 text-[11px] font-bold border border-teal-500/40 transition-colors flex items-center gap-1 cursor-pointer"
+                    >
+                      <FileText className="w-3 h-3" />
+                      <span>تقديم عذر 📤</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedStudentId(child.id)}
+                      className={`text-xs font-black transition-all flex items-center gap-1 cursor-pointer ${
+                        isSelected ? 'text-teal-400' : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <span>{isSelected ? 'المعروض بالأسفل' : 'تفصيل السجل ↵'}</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {!currentChild ? (
         <div className="bg-white border border-slate-200 rounded-3xl p-8 text-center space-y-5 shadow-sm max-w-lg mx-auto">
@@ -304,6 +649,23 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold"
               />
             </div>
+
+            {schools.length > 1 && (
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">المدرسة التابع لها الابن *</label>
+                <select
+                  value={linkChildSchoolCode}
+                  onChange={(e) => setLinkChildSchoolCode(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold"
+                >
+                  {schools.map((s) => (
+                    <option key={s.code} value={s.code}>
+                      {s.name} ({s.code})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-2">
               <div>
@@ -411,8 +773,14 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                       درجة السلوك والمواظبة: {currentChild.name}
                     </h3>
                   </div>
-                  <p className="text-xs text-slate-400 font-medium">
-                    {currentChild.className} - فصل {currentChild.sectionName} | هوية: {currentChild.nationalId}
+                  <p className="text-xs text-slate-400 font-medium flex flex-wrap items-center gap-2 mt-1">
+                    <span className="px-2.5 py-0.5 rounded-lg bg-teal-950/80 text-teal-300 font-bold border border-teal-700/60 text-[11px] flex items-center gap-1">
+                      <span>🏫</span>
+                      <span>{childSchool.name}</span>
+                    </span>
+                    <span>
+                      {currentChild.className} - فصل {currentChild.sectionName} | هوية: {currentChild.nationalId}
+                    </span>
                   </p>
                 </div>
               </div>
@@ -838,7 +1206,7 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
       {isExcuseModalOpen && currentChild && (
         <SubmitExcuseModal
           student={currentChild}
-          currentSchool={currentSchool}
+          currentSchool={childSchool}
           submittedByRole="parent"
           requesterName={currentUser.name}
           defaultDate={selectedExcuseDate}

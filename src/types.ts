@@ -77,6 +77,7 @@ export interface User {
   childrenNationalIds?: string[];
   assignedClasses?: { className: string; sectionName: string }[];
   managedSchoolCodes?: string[]; // المدارس التابعة للمدير (بحد أقصى مدرستين)
+  teachingSchoolCode?: string; // كود المدرسة الأساسية التي يدرس فيها المعلم
 }
 
 export interface AdministrativeAbsenceAction {
@@ -254,4 +255,27 @@ export interface SystemNotification {
   retractedAt?: string;
   retractionReason?: string;
   retractedByName?: string;
+}
+
+export interface ParentSummon {
+  id: string;
+  studentId: string;
+  studentName: string;
+  studentNationalId?: string;
+  schoolCode: string;
+  className: string;
+  sectionName: string;
+  parentPhone?: string;
+  reasonCategory: 'absence' | 'academic' | 'behavior' | 'tardiness' | 'emergency' | 'other';
+  reasonTitle: string;
+  details?: string;
+  appointmentDate: string; // e.g. 2026-09-12
+  appointmentTime: string; // e.g. 09:30 ص
+  meetingPlace: string; // e.g. إدارة المدرسة / مكتب وكيل شؤون الطلاب / المرشد الطلابي
+  status: 'pending' | 'attended' | 'cancelled';
+  issuedById: string;
+  issuedByName: string;
+  issuedByRole: string;
+  createdAt: string;
+  attendedAt?: string;
 }

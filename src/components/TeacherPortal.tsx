@@ -60,9 +60,35 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
   const [permissionsVersion, setPermissionsVersion] = useState(0);
   const [behaviorVersion, setBehaviorVersion] = useState(0);
 
-  // Assigned schools for this teacher/user
-  const teacherSchools = schools.filter(
-    (s) => s.code === currentSchool.code || currentUser.managedSchoolCodes?.includes(s.code) || s.code === currentUser.schoolCode
+  // Assigned schools for this teacher/user (including teachingSchoolCode and any school where they have assigned classes or account)
+  const allTeacherSchoolCodes = new Set<string>([
+    currentSchool.code,
+    currentUser.schoolCode,
+    currentUser.teachingSchoolCode || '',
+    ...(currentUser.managedSchoolCodes || []),
+  ].filter(Boolean));
+
+  // Also scan allUsers to find any schools where this teacher is registered
+  allUsers.forEach((u) => {
+    const isSamePerson = 
+      (u.id === currentUser.id) || 
+      (currentUser.nationalId && u.nationalId && u.nationalId.trim() === currentUser.nationalId.trim()) ||
+      (currentUser.mobile && u.mobile && u.mobile.trim() === currentUser.mobile.trim());
+    if (isSamePerson && (u.role === 'teacher' || u.staffTitle === 'teacher' || (u.assignedClasses && u.assignedClasses.length > 0))) {
+      if (u.schoolCode) allTeacherSchoolCodes.add(u.schoolCode);
+      if (u.teachingSchoolCode) allTeacherSchoolCodes.add(u.teachingSchoolCode);
+      if (Array.isArray(u.managedSchoolCodes)) u.managedSchoolCodes.forEach((c) => c && allTeacherSchoolCodes.add(c));
+    }
+  });
+
+  const teacherSchools = schools.filter((s) => allTeacherSchoolCodes.has(s.code));
+
+  // Primary teaching school resolution
+  const primaryTeachingSchool = schools.find((s) => s.code === (currentUser.teachingSchoolCode || currentUser.schoolCode));
+  const isViewingDifferentSchool = Boolean(
+    primaryTeachingSchool &&
+    primaryTeachingSchool.code !== currentSchool.code &&
+    (currentUser.assignedClasses && currentUser.assignedClasses.length > 0)
   );
 
   // Student Behavior Modal State
@@ -113,6 +139,13 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
 
   const initialClass = teacherClasses[0] || classes[0] || 'الأول المتوسط';
   const [selectedClass, setSelectedClass] = useState<string>(initialClass);
+
+  // Sync selectedClass whenever school or classes list changes
+  useEffect(() => {
+    if (classes.length > 0 && !classes.includes(selectedClass)) {
+      setSelectedClass(teacherClasses[0] || classes[0]);
+    }
+  }, [currentSchool.code, classes, selectedClass, teacherClasses]);
 
   // Group sections for selectedClass
   const teacherSections = activeUser.assignedClasses
@@ -378,6 +411,38 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
         )}
       />
 
+      {/* Primary Teaching School Notice & Quick Switcher */}
+      {isViewingDifferentSchool && primaryTeachingSchool && onSwitchSchool && (
+        <div className="bg-amber-50 border-2 border-amber-300 rounded-3xl p-4 sm:p-5 flex flex-wrap items-center justify-between gap-3 text-amber-950 animate-fadeIn shadow-xs">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-bold text-xl shadow-xs shrink-0">
+              🏢
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-black text-xs sm:text-sm text-amber-950">
+                  تنبيه المدرسة النشطة: أنت تتصفح حالياً ({currentSchool.name})
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 text-[10px] font-black">
+                  مدرستك الأساسية: {primaryTeachingSchool.name}
+                </span>
+              </div>
+              <p className="text-xs text-amber-800 mt-1 font-medium">
+                فصولك وطلابك المسندين مسجلين في مدرسة ({primaryTeachingSchool.name}). يمكنك التبديل إليها فوراً لبدء التحضير.
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => onSwitchSchool(primaryTeachingSchool)}
+            className="px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-black text-xs shrink-0 cursor-pointer shadow-sm transition-all hover:scale-105 active:scale-95 flex items-center gap-1.5"
+          >
+            <span>التبديل إلى ({primaryTeachingSchool.name}) ↵</span>
+          </button>
+        </div>
+      )}
+
       {/* Teacher Header */}
       <div className="bg-white border border-slate-200/90 rounded-3xl p-6 flex flex-wrap items-center justify-between gap-4 shadow-xs">
         <div className="flex items-center gap-3">
@@ -642,6 +707,20 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
                 <p className="text-xs text-slate-500 leading-relaxed">
                   يمكن للطلاب أو أولياء الأمور التسجيل عبر رابط الانضمام للمدرسة، أو يمكنك كمعلم إضافة طلاب هذا الفصل سريعاً وتفعيل التحضير فوراً.
                 </p>
+                {isViewingDifferentSchool && primaryTeachingSchool && onSwitchSchool && (
+                  <div className="pt-2">
+                    <p className="text-xs text-amber-900 font-bold mb-2">
+                      💡 ملاحظة: فصولك وموادك مسندة في مدرسة ({primaryTeachingSchool.name}).
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => onSwitchSchool(primaryTeachingSchool)}
+                      className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-black text-xs inline-flex items-center gap-1.5 cursor-pointer shadow-sm transition-all"
+                    >
+                      <span>الانتقال إلى ({primaryTeachingSchool.name}) ورصد الطلاب ↵</span>
+                    </button>
+                  </div>
+                )}
               </div>
               <div>
                 <button

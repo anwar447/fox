@@ -22,6 +22,8 @@ import { DataBackupAndStorageModal } from './DataBackupAndStorageModal';
 import { AdminStudentExitModal } from './AdminStudentExitModal';
 import { StudentAbsenceDirectoryModal } from './StudentAbsenceDirectoryModal';
 import { AttendanceEditModal } from './AttendanceEditModal';
+import { ParentSummonModal } from './ParentSummonModal';
+import { BehaviorRecordModal } from './BehaviorRecordModal';
 import { 
   Building2, Users, FileText, ScanLine, 
   MapPin, Share2, Upload, Archive, AlertTriangle, 
@@ -30,7 +32,7 @@ import {
   Activity, ShieldAlert, LogOut, Trash2, RefreshCw, User as UserIcon,
   Crown, CreditCard, Megaphone, HardDrive, Database, ArrowLeftRight,
   FileCheck, Code2, Paperclip, Eye, ExternalLink, FileCheck2, HelpCircle, CheckCircle2,
-  Wrench, Edit3, Zap, CheckSquare, Square, Layers, CloudRain
+  Wrench, Edit3, Zap, CheckSquare, Square, Layers, CloudRain, Mail, Star
 } from 'lucide-react';
 
 interface EmployeeDashboardProps {
@@ -123,6 +125,10 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
   const [isBackupOpen, setIsBackupOpen] = useState(false);
   const [isExitModalOpen, setIsExitModalOpen] = useState(false);
   const [exitModalStudent, setExitModalStudent] = useState<User | null>(null);
+  const [isParentSummonModalOpen, setIsParentSummonModalOpen] = useState(false);
+  const [summonModalStudent, setSummonModalStudent] = useState<User | null>(null);
+  const [isBehaviorModalOpen, setIsBehaviorModalOpen] = useState(false);
+  const [behaviorModalStudent, setBehaviorModalStudent] = useState<User | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
   // Weather / Rain Emergency Absence Suspension State
@@ -1559,8 +1565,32 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
             </button>
 
             <button
-              onClick={() => (onOpenClassManagerTab ? onOpenClassManagerTab('classes') : onOpenClassExcelManager())}
+              onClick={() => {
+                setSummonModalStudent(null);
+                setIsParentSummonModalOpen(true);
+              }}
+              className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black flex items-center gap-1.5 cursor-pointer shadow-xs transition-all"
+              title="إصدار استدعاء رسمي لولي أمر أي طالب في المدرسة عبر واتساب وإشعار النظام وطباعة الخطاب"
+            >
+              <Mail className="w-3.5 h-3.5" />
+              <span>استدعاء ولي أمر ✉️</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setBehaviorModalStudent(null);
+                setIsBehaviorModalOpen(true);
+              }}
               className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-black flex items-center gap-1.5 cursor-pointer shadow-xs transition-all"
+              title="رصد سلوك إيجابي أو سلبي وتعديل نقاط المواظبة لأي طالب في المدرسة"
+            >
+              <Star className="w-3.5 h-3.5 fill-white/20" />
+              <span>رصد سلوك ومواظبة ⭐</span>
+            </button>
+
+            <button
+              onClick={() => (onOpenClassManagerTab ? onOpenClassManagerTab('classes') : onOpenClassExcelManager())}
+              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-black flex items-center gap-1.5 cursor-pointer shadow-xs transition-all"
               title="تعديل وتخصيص أسماء الفصول والشعب وتزويد صفوف جديدة أو حذف الزائد بأمان دون فقدان أي بيانات"
             >
               <Layers className="w-3.5 h-3.5" />
@@ -1838,8 +1868,32 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
                           )}
                           {studentUser && (
                             <button
-                              onClick={() => setActionModalStudent(studentUser)}
+                              onClick={() => {
+                                setSummonModalStudent(studentUser);
+                                setIsParentSummonModalOpen(true);
+                              }}
                               className="p-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 cursor-pointer"
+                              title="استدعاء ولي أمر الطالب (خطاب، واتساب، موعد رسمي)"
+                            >
+                              <Mail className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {studentUser && (
+                            <button
+                              onClick={() => {
+                                setBehaviorModalStudent(studentUser);
+                                setIsBehaviorModalOpen(true);
+                              }}
+                              className="p-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 cursor-pointer"
+                              title="رصد سلوك ومواظبة (إيجابي / سلبي)"
+                            >
+                              <Star className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {studentUser && (
+                            <button
+                              onClick={() => setActionModalStudent(studentUser)}
+                              className="p-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 cursor-pointer"
                               title="إجراء إداري"
                             >
                               <ShieldAlert className="w-3.5 h-3.5" />
@@ -2507,6 +2561,44 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Parent Summon Modal */}
+      {isParentSummonModalOpen && (
+        <ParentSummonModal
+          isOpen={isParentSummonModalOpen}
+          onClose={() => {
+            setIsParentSummonModalOpen(false);
+            setSummonModalStudent(null);
+          }}
+          student={summonModalStudent || undefined}
+          allSchoolStudents={allSchoolStudents}
+          currentSchool={currentSchool}
+          currentUser={currentUser}
+          onSummonCreated={() => {
+            setRefreshKey((k) => k + 1);
+          }}
+        />
+      )}
+
+      {/* Behavior Record Modal */}
+      {isBehaviorModalOpen && (
+        <BehaviorRecordModal
+          isOpen={isBehaviorModalOpen}
+          onClose={() => {
+            setIsBehaviorModalOpen(false);
+            setBehaviorModalStudent(null);
+          }}
+          student={behaviorModalStudent || undefined}
+          allSchoolStudents={allSchoolStudents}
+          currentUser={currentUser}
+          currentSchool={currentSchool}
+          onSaved={() => {
+            setIsBehaviorModalOpen(false);
+            setBehaviorModalStudent(null);
+            setRefreshKey((k) => k + 1);
+          }}
+        />
       )}
     </div>
   );

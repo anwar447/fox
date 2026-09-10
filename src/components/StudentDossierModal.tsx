@@ -11,12 +11,13 @@ import { CompensatoryPointsModal } from './CompensatoryPointsModal';
 import { BehaviorRecordModal } from './BehaviorRecordModal';
 import { AbsenceActionModal } from './AbsenceActionModal';
 import { AttendanceEditModal } from './AttendanceEditModal';
+import { ParentSummonModal } from './ParentSummonModal';
 import { 
   GraduationCap, Calendar, CheckCircle, XCircle, 
   AlertTriangle, Phone, X, QrCode, FileText, Activity, 
   LogOut, ShieldAlert, Clock, Star, Sparkles, Award, 
   ThumbsUp, ThumbsDown, HeartHandshake, Plus, User as UserIcon, RefreshCw,
-  Edit3, Trash2, Zap, Wrench, ShieldCheck
+  Edit3, Trash2, Zap, Wrench, ShieldCheck, Mail
 } from 'lucide-react';
 
 interface StudentDossierModalProps {
@@ -54,6 +55,7 @@ export const StudentDossierModal: React.FC<StudentDossierModalProps> = ({
   const [isCompensatoryModalOpen, setIsCompensatoryModalOpen] = useState(false);
   const [isBehaviorModalOpen, setIsBehaviorModalOpen] = useState(false);
   const [isAbsenceActionModalOpen, setIsAbsenceActionModalOpen] = useState(false);
+  const [isParentSummonModalOpen, setIsParentSummonModalOpen] = useState(false);
 
   // Modals & confirmation for attendance editing & deletion
   const [selectedAttendanceForEdit, setSelectedAttendanceForEdit] = useState<Attendance | null>(null);
@@ -322,6 +324,14 @@ export const StudentDossierModal: React.FC<StudentDossierModalProps> = ({
             >
               <ShieldAlert className="w-3.5 h-3.5" />
               <span>إجراء إداري / إنذار غياب 📋</span>
+            </button>
+
+            <button
+              onClick={() => setIsParentSummonModalOpen(true)}
+              className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-rose-700 to-red-600 hover:from-rose-600 hover:to-red-500 text-white text-[11px] font-black flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
+            >
+              <Mail className="w-3.5 h-3.5" />
+              <span>استدعاء ولي الأمر رسمي ✉️</span>
             </button>
           </div>
         </div>
@@ -773,6 +783,20 @@ export const StudentDossierModal: React.FC<StudentDossierModalProps> = ({
           currentSchool={school}
           onSaved={() => {
             setIsAbsenceActionModalOpen(false);
+            setDataVersion((v) => v + 1);
+          }}
+        />
+      )}
+
+      {/* Parent Summon Modal */}
+      {isParentSummonModalOpen && (
+        <ParentSummonModal
+          isOpen={isParentSummonModalOpen}
+          onClose={() => setIsParentSummonModalOpen(false)}
+          student={student}
+          currentSchool={school}
+          currentUser={currentUser}
+          onSummonCreated={() => {
             setDataVersion((v) => v + 1);
           }}
         />

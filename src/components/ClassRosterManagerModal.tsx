@@ -2,15 +2,20 @@ import React, { useState, useMemo } from 'react';
 import { School, User } from '../types';
 import { 
   getUsers, deleteUser, transferStudentsToClassSection, 
-  updateStudentProfileAndCascade, addSystemNotification 
+  updateStudentProfileAndCascade, addSystemNotification,
+  getCurrentUser
 } from '../utils/storage';
 import { getSchoolClasses } from '../utils/schoolClasses';
 import { soundManager } from '../utils/audio';
+import { StudentDossierModal } from './StudentDossierModal';
+import { ParentSummonModal } from './ParentSummonModal';
+import { BehaviorRecordModal } from './BehaviorRecordModal';
 import { 
   Printer, ArrowRightLeft, Edit3, Trash2, Search, 
   Users, Building2, Check, X, Phone, AlertCircle, 
   Sparkles, CheckCircle2, RefreshCw, Layers, 
-  UserCheck, Eye, Download, ShieldCheck
+  UserCheck, Eye, Download, ShieldCheck, Mail,
+  GraduationCap, Star
 } from 'lucide-react';
 
 interface ClassRosterManagerModalProps {
@@ -22,6 +27,10 @@ interface ClassRosterManagerModalProps {
   onOpenClassEditor?: () => void;
   onOpenExcelManager?: () => void;
   onUpdated?: () => void;
+  onOpenStudentDossier?: (student: User) => void;
+  onOpenParentSummon?: (student: User) => void;
+  onOpenBehaviorRecord?: (student: User) => void;
+  currentUser?: User;
 }
 
 export interface ClassRosterViewProps {
@@ -33,6 +42,10 @@ export interface ClassRosterViewProps {
   onUpdated?: () => void;
   isEmbedded?: boolean;
   onClose?: () => void;
+  onOpenStudentDossier?: (student: User) => void;
+  onOpenParentSummon?: (student: User) => void;
+  onOpenBehaviorRecord?: (student: User) => void;
+  currentUser?: User;
 }
 
 export const ClassRosterView: React.FC<ClassRosterViewProps> = ({
@@ -44,7 +57,16 @@ export const ClassRosterView: React.FC<ClassRosterViewProps> = ({
   onUpdated,
   isEmbedded = false,
   onClose,
+  onOpenStudentDossier,
+  onOpenParentSummon,
+  onOpenBehaviorRecord,
+  currentUser: passedCurrentUser,
 }) => {
+  const currentUser = passedCurrentUser || getCurrentUser() || ({} as User);
+  const [activeDossierStudent, setActiveDossierStudent] = useState<User | null>(null);
+  const [activeSummonStudent, setActiveSummonStudent] = useState<User | null>(null);
+  const [activeBehaviorStudent, setActiveBehaviorStudent] = useState<User | null>(null);
+
   const schoolClasses = useMemo(() => getSchoolClasses(school), [school]);
   
   // State for filtering
@@ -588,7 +610,17 @@ export const ClassRosterView: React.FC<ClassRosterViewProps> = ({
                         <div className="no-print w-7 h-7 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center font-bold text-xs shrink-0">
                           {student.name.charAt(0)}
                         </div>
-                        <span>{student.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (onOpenStudentDossier) onOpenStudentDossier(student);
+                            else setActiveDossierStudent(student);
+                          }}
+                          className="text-right hover:text-indigo-600 hover:underline cursor-pointer transition-colors font-bold"
+                          title="اضغط لفتح الملف الأكاديمي الشامل والمواظبة"
+                        >
+                          {student.name}
+                        </button>
                       </div>
                     </td>
                     <td className="p-3 font-mono font-medium text-slate-700">
@@ -627,17 +659,61 @@ export const ClassRosterView: React.FC<ClassRosterViewProps> = ({
 
                     {/* Actions column - Hidden in Print */}
                     <td className="no-print p-3 text-center">
-                      <div className="flex items-center justify-center gap-1.5">
+                      <div className="flex items-center justify-center gap-1">
+                        {/* 1. Academic Dossier */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (onOpenStudentDossier) onOpenStudentDossier(student);
+                            else setActiveDossierStudent(student);
+                          }}
+                          className="p-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border border-indigo-200 cursor-pointer transition-all flex items-center gap-1 font-bold text-[11px]"
+                          title="الملف الأكاديمي الشامل وسجل الحضور والمواظبة"
+                        >
+                          <GraduationCap className="w-3.5 h-3.5 text-indigo-600" />
+                          <span>الملف</span>
+                        </button>
+
+                        {/* 2. Parent Summons */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (onOpenParentSummon) onOpenParentSummon(student);
+                            else setActiveSummonStudent(student);
+                          }}
+                          className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-900 border border-rose-200 cursor-pointer transition-all flex items-center gap-1 font-bold text-[11px]"
+                          title="استدعاء ولي الأمر رسمي (إشعار + واتساب + طباعة خطاب)"
+                        >
+                          <Mail className="w-3.5 h-3.5 text-rose-600" />
+                          <span>استدعاء</span>
+                        </button>
+
+                        {/* 3. Behavior points (+/-) */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (onOpenBehaviorRecord) onOpenBehaviorRecord(student);
+                            else setActiveBehaviorStudent(student);
+                          }}
+                          className="p-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 cursor-pointer transition-all flex items-center gap-1 font-bold text-[11px]"
+                          title="منح سلوك إيجابي أو رصد ملاحظة سلوكية"
+                        >
+                          <Star className="w-3.5 h-3.5 text-amber-600 fill-amber-500/20" />
+                          <span>سلوك</span>
+                        </button>
+
+                        {/* 4. Transfer */}
                         <button
                           type="button"
                           onClick={() => openSingleTransfer(student)}
-                          className="p-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 cursor-pointer transition-all flex items-center gap-1 font-bold text-[11px]"
+                          className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 cursor-pointer transition-all flex items-center gap-1 font-bold text-[11px]"
                           title="نقل الطالب إلى صف أو شعبة أخرى"
                         >
-                          <ArrowRightLeft className="w-3.5 h-3.5 text-amber-600" />
+                          <ArrowRightLeft className="w-3.5 h-3.5 text-slate-600" />
                           <span>نقل</span>
                         </button>
 
+                        {/* 5. Edit */}
                         <button
                           type="button"
                           onClick={() => openEditModal(student)}
@@ -645,9 +721,9 @@ export const ClassRosterView: React.FC<ClassRosterViewProps> = ({
                           title="تعديل بيانات الطالب"
                         >
                           <Edit3 className="w-3.5 h-3.5 text-blue-600" />
-                          <span>تعديل</span>
                         </button>
 
+                        {/* 6. Delete */}
                         <button
                           type="button"
                           onClick={() => setDeletingStudent(student)}
@@ -993,6 +1069,53 @@ export const ClassRosterView: React.FC<ClassRosterViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* 4. Student Dossier Modal */}
+      {activeDossierStudent && (
+        <StudentDossierModal
+          isOpen={!!activeDossierStudent}
+          onClose={() => setActiveDossierStudent(null)}
+          student={activeDossierStudent}
+          school={school}
+          onOpenQrCard={() => setActiveDossierStudent(null)}
+          onAttendanceUpdated={() => {
+            setRefreshKey((k) => k + 1);
+            if (onUpdated) onUpdated();
+          }}
+        />
+      )}
+
+      {/* 5. Parent Summon Modal */}
+      {activeSummonStudent && (
+        <ParentSummonModal
+          isOpen={!!activeSummonStudent}
+          onClose={() => setActiveSummonStudent(null)}
+          student={activeSummonStudent}
+          allSchoolStudents={allSchoolStudents}
+          currentSchool={school}
+          currentUser={currentUser}
+          onSummonCreated={() => {
+            setRefreshKey((k) => k + 1);
+            if (onUpdated) onUpdated();
+          }}
+        />
+      )}
+
+      {/* 6. Behavior Record Modal */}
+      {activeBehaviorStudent && (
+        <BehaviorRecordModal
+          isOpen={!!activeBehaviorStudent}
+          onClose={() => setActiveBehaviorStudent(null)}
+          student={activeBehaviorStudent}
+          currentUser={currentUser}
+          currentSchool={school}
+          onSaved={() => {
+            setActiveBehaviorStudent(null);
+            setRefreshKey((k) => k + 1);
+            if (onUpdated) onUpdated();
+          }}
+        />
+      )}
     </div>
   );
 
@@ -1008,6 +1131,10 @@ export const ClassRosterManagerModal: React.FC<ClassRosterManagerModalProps> = (
   onOpenClassEditor,
   onOpenExcelManager,
   onUpdated,
+  onOpenStudentDossier,
+  onOpenParentSummon,
+  onOpenBehaviorRecord,
+  currentUser,
 }) => {
   if (!isOpen) return null;
 
@@ -1022,6 +1149,10 @@ export const ClassRosterManagerModal: React.FC<ClassRosterManagerModalProps> = (
         onUpdated={onUpdated}
         isEmbedded={false}
         onClose={onClose}
+        onOpenStudentDossier={onOpenStudentDossier}
+        onOpenParentSummon={onOpenParentSummon}
+        onOpenBehaviorRecord={onOpenBehaviorRecord}
+        currentUser={currentUser}
       />
     </div>
   );
