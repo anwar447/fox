@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User, School, Attendance, CorrectionRequest, StudentBehaviorLog, ParentSummon } from '../types';
 import { 
   getAttendances, getUsers, getCorrectionRequests, saveAttendances, 
   saveUsers, getSystemNotifications, saveCurrentUserSession,
   getBehaviorLogs, getParentSummons
 } from '../utils/storage';
+import { onRealtimeAttendanceUpdate, onRealtimeCorrectionUpdate, onRealtimeUserUpdate } from '../utils/realtime';
 import { calculateStudentBehaviorScore } from '../utils/behavior';
 import { isAbsenceSuspendedForSchool } from '../utils/schoolSchedule';
 import { SubmitExcuseModal } from './SubmitExcuseModal';
@@ -37,25 +38,45 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
   onSwitchBackToTeacher,
 }) => {
   const today = getTodayDateString();
-  const allUsers = getUsers();
+  const [allUsers, setAllUsers] = useState<User[]>(() => getUsers());
   const [attendances, setAttendances] = useState<Attendance[]>(getAttendances());
   const [correctionRequests, setCorrectionRequests] = useState<CorrectionRequest[]>(getCorrectionRequests());
   const [behaviorLogs, setBehaviorLogs] = useState<StudentBehaviorLog[]>(getBehaviorLogs());
   const [parentSummons, setParentSummons] = useState<ParentSummon[]>(getParentSummons());
 
-  // Find parent's children with robust ID and phone matching across all schools
+  // Real-time synchronization subscription (updates immediately when admin/teacher changes status)
+  useEffect(() => {
+    const unsubAtt = onRealtimeAttendanceUpdate((allAtts) => {
+      setAttendances(allAtts);
+    });
+    const unsubCor = onRealtimeCorrectionUpdate((allCors) => {
+      setCorrectionRequests(allCors);
+    });
+    const unsubUsers = onRealtimeUserUpdate((updatedUsers) => {
+      setAllUsers(updatedUsers);
+    });
+    return () => {
+      unsubAtt();
+      unsubCor();
+      unsubUsers();
+    };
+  }, []);
+
+  // Find parent's children with robust ID, parent NID, and phone matching across all schools
   const children = allUsers.filter((u) => {
     if (u.role !== 'student') return false;
     const cleanUNid = (u.nationalId || '').trim();
     const isChildNid = currentUser.childrenNationalIds?.some((nid) => nid?.trim() === cleanUNid);
+    const cleanParentNid = (currentUser.nationalId || '').trim();
+    const isParentNidMatch = Boolean(cleanParentNid && u.parentNationalId && u.parentNationalId.trim() === cleanParentNid);
     const cleanParentMob = (currentUser.mobile || '').trim().replace(/\D/g, '');
-    const cleanStudentParentMob = (u.parentMobile || '').trim().replace(/\D/g, '');
+    const cleanStudentParentMob = (u.parentMobile || u.parentPhone || '').trim().replace(/\D/g, '');
     const isMobileMatch = Boolean(cleanParentMob && cleanStudentParentMob && (
       cleanParentMob === cleanStudentParentMob ||
       cleanParentMob.endsWith(cleanStudentParentMob) ||
       cleanStudentParentMob.endsWith(cleanParentMob)
     ));
-    return isChildNid || isMobileMatch;
+    return isChildNid || isParentNidMatch || isMobileMatch;
   });
 
   const matchingTeacherUser = allUsers.find(

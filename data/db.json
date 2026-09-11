@@ -47,6 +47,48 @@
           ]
         }
       ]
+    },
+    {
+      "id": "sch-raya-1",
+      "code": "RAYA-1448",
+      "name": "متوسطة الراية",
+      "city": "الرياض",
+      "type": "middle",
+      "subscriptionPlan": "free_forever",
+      "subscriptionEndDate": "2099-12-31",
+      "customClasses": [
+        {
+          "id": "c-ry-1",
+          "className": "الأول المتوسط",
+          "sections": [
+            "1",
+            "2"
+          ]
+        },
+        {
+          "id": "c-ry-2",
+          "className": "الثاني المتوسط",
+          "sections": [
+            "1",
+            "2"
+          ]
+        },
+        {
+          "id": "c-ry-3",
+          "className": "الثالث المتوسط",
+          "sections": [
+            "1",
+            "2"
+          ]
+        }
+      ],
+      "lat": 24.7136,
+      "lng": 46.6753,
+      "radiusMeters": 500,
+      "subscriptionStatus": "active",
+      "subscriptionStartDate": "2026-01-01",
+      "contactMobile": "0551122334",
+      "isQuranSchool": false
     }
   ],
   "users": [
@@ -113,7 +155,8 @@
       "managedSchoolCodes": [
         "RAYA-1448"
       ],
-      "childrenNationalIds": []
+      "childrenNationalIds": [],
+      "teachingSchoolCode": "RAYA-1448"
     },
     {
       "id": "usr-tch-2",
@@ -137,7 +180,8 @@
       "managedSchoolCodes": [
         "RAYA-1448"
       ],
-      "childrenNationalIds": []
+      "childrenNationalIds": [],
+      "teachingSchoolCode": "RAYA-1448"
     },
     {
       "id": "usr-prn-1",
@@ -311,12 +355,8 @@
   ],
   "payments": [],
   "notifications": [],
-  "deleted_schools": [
-    "SCH-RAYA-1",
-    "SCH-QURAN-1",
-    "RAYA-1448",
-    "QURAN-100"
-  ],
+  "deleted_schools": [],
   "deleted_attendance_ids": [],
-  "deleted_notification_ids": []
+  "deleted_notification_ids": [],
+  "deleted_user_ids": []
 }

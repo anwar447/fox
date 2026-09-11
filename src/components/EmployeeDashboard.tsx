@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { School, User, Attendance, CorrectionRequest } from '../types';
 import { 
   getAttendances, saveAttendances, getUsers, saveUsers,
@@ -8,6 +8,7 @@ import {
   deleteAttendance, deleteAttendances, bulkConvertAttendanceRecordsToPresent,
   getStudentExcuseStats
 } from '../utils/storage';
+import { onRealtimeAttendanceUpdate, onRealtimeCorrectionUpdate, onRealtimeUserUpdate } from '../utils/realtime';
 import { getSchoolClasses } from '../utils/schoolClasses';
 import { getTodayDateString } from '../utils/academic';
 import { soundManager } from '../utils/audio';
@@ -107,6 +108,28 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
   const [allSchoolCorrections, setAllSchoolCorrections] = useState<CorrectionRequest[]>(() =>
     getCorrectionRequests().filter((c) => isSchoolMatch(c.schoolCode))
   );
+
+  const [usersList, setUsersList] = useState<User[]>(() => getUsers());
+
+  // Real-time synchronization subscription for administrative dashboard
+  // Immediately reflects teacher recordings, parent excuses, and newly registered students/parents
+  useEffect(() => {
+    const unsubAtt = onRealtimeAttendanceUpdate((allAtts) => {
+      setAttendances(allAtts.filter((a) => isSchoolMatch(a.schoolCode) && a.date === today));
+    });
+    const unsubCor = onRealtimeCorrectionUpdate((allCors) => {
+      setCorrections(allCors.filter((c) => isSchoolMatch(c.schoolCode) && c.status === 'pending'));
+      setAllSchoolCorrections(allCors.filter((c) => isSchoolMatch(c.schoolCode)));
+    });
+    const unsubUsers = onRealtimeUserUpdate((allUsers) => {
+      setUsersList(allUsers);
+    });
+    return () => {
+      unsubAtt();
+      unsubCor();
+      unsubUsers();
+    };
+  }, [currentSchool.code, currentSchool.id, today]);
   const [excuseFilterTab, setExcuseFilterTab] = useState<'pending' | 'resolved'>('pending');
   const [rejectingRequest, setRejectingRequest] = useState<CorrectionRequest | null>(null);
   const [rejectReason, setRejectReason] = useState('');
@@ -152,7 +175,7 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
     window.dispatchEvent(new Event('storage'));
   };
 
-  const allSchoolUsers = getUsers().filter((u) => isSchoolMatch(u.schoolCode));
+  const allSchoolUsers = usersList.filter((u) => isSchoolMatch(u.schoolCode));
   const allSchoolStudents = allSchoolUsers.filter((u) => u.role === 'student');
   const allSchoolTeachers = allSchoolUsers.filter((u) => u.role === 'teacher');
 
@@ -677,11 +700,11 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
           </div>
           <div className="flex flex-wrap items-center gap-2 shrink-0">
             <button
-              onClick={onOpenClassExcelManager}
+              onClick={() => onOpenClassRoster ? onOpenClassRoster() : onOpenClassExcelManager()}
               className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer"
             >
-              <FileSpreadsheet className="w-3.5 h-3.5" />
-              <span>رفع كشوفات نور (Excel)</span>
+              <Users className="w-3.5 h-3.5" />
+              <span>إدارة شؤون الطلاب وكشوفات نور</span>
             </button>
             <button
               onClick={onOpenStaffRegistrationLink}
@@ -812,13 +835,17 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
               <span>تقرير المدير</span>
             </button>
 
-            <button
-              onClick={onOpenClassExcelManager}
-              className="py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-indigo-800 border border-slate-200 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
-            >
-              <FileSpreadsheet className="w-4 h-4 text-indigo-600" />
-              <span>كشوفات نور</span>
-            </button>
+            {/* Merged Student Affairs & Noor Rosters Management */}
+            {onOpenClassRoster && (
+              <button
+                onClick={() => onOpenClassRoster()}
+                className="py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-black text-xs flex items-center gap-2 cursor-pointer shadow-md transition-all hover:scale-[1.02] active:scale-[0.98]"
+                title="إدارة شؤون الطلاب، استيراد كشوفات نور (Excel)، نقل الطلاب بين الصفوف، وتحديث البيانات والطباعة المعتمدة"
+              >
+                <Users className="w-4 h-4 text-amber-400" />
+                <span>إدارة شؤون الطلاب وكشوفات نور 👨‍🎓📋</span>
+              </button>
+            )}
 
             {/* Direct Classes & Sections Management Button */}
             <button
@@ -829,17 +856,6 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
               <Layers className="w-4 h-4" />
               <span>هيكلة الصفوف 🏫</span>
             </button>
-
-            {onOpenClassRoster && (
-              <button
-                onClick={() => onOpenClassRoster()}
-                className="py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-black text-xs flex items-center gap-1.5 cursor-pointer shadow-md transition-all hover:scale-[1.02] active:scale-[0.98]"
-                title="عرض كشوفات الطلاب ونقلهم بين الصفوف والطباعة"
-              >
-                <Users className="w-4 h-4 text-amber-400" />
-                <span>كشوفات الطلاب والنقل والطباعة 📋🖨️</span>
-              </button>
-            )}
 
             <button
               onClick={onOpenMapPicker}

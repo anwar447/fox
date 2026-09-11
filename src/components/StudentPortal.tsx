@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User, School, Attendance, CorrectionRequest } from '../types';
 import { getAttendances, saveAttendances, getCorrectionRequests, updateUserAvatar, getSystemNotifications } from '../utils/storage';
+import { onRealtimeAttendanceUpdate, onRealtimeCorrectionUpdate } from '../utils/realtime';
 import { calculateDistance, getCurrentCoordinates } from '../utils/geo';
 import { soundManager } from '../utils/audio';
 import { getTodayDateString } from '../utils/academic';
@@ -48,6 +49,20 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
 
   // Active Tab: 'overview' | 'unexcused' | 'excuses' | 'behavior' | 'actions'
   const [activeTab, setActiveTab] = useState<'overview' | 'unexcused' | 'excuses' | 'behavior' | 'actions'>('overview');
+
+  // Real-time synchronization subscription (reflects admin/teacher status changes immediately)
+  useEffect(() => {
+    const unsubAtt = onRealtimeAttendanceUpdate((allAtts) => {
+      setAttendances(allAtts);
+    });
+    const unsubCor = onRealtimeCorrectionUpdate((allCors) => {
+      setCorrectionRequests(allCors);
+    });
+    return () => {
+      unsubAtt();
+      unsubCor();
+    };
+  }, []);
 
   const studentAttendances = attendances.filter(
     (a) => a.studentId === currentUser.id || (currentUser.nationalId && a.nationalId === currentUser.nationalId)
@@ -336,20 +351,46 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
         <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
           <div className="flex justify-between items-center text-xs">
             <span className="text-slate-600 font-bold">حالة الحضور اليوم ({today}):</span>
-            {todayRecord?.selfCheckTime ? (
-              <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-200 flex items-center gap-1">
+            {todayRecord?.finalStatus === 'present' ? (
+              <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-200 flex items-center gap-1 shadow-sm">
                 <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
-                <span>حاضر (وقت البوابة: {todayRecord.selfCheckTime})</span>
+                <span>حاضر اليوم {todayRecord.selfCheckTime ? `(بوابة: ${todayRecord.selfCheckTime})` : '(برصد الإدارة/المعلم)'}</span>
+              </span>
+            ) : todayRecord?.finalStatus === 'absent' ? (
+              <span className="px-3 py-1 rounded-full bg-rose-100 text-rose-800 font-bold border border-rose-200 flex items-center gap-1 shadow-sm">
+                <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                <span>غائب اليوم ❌ (رصد رسمي)</span>
+              </span>
+            ) : todayRecord?.finalStatus === 'late' ? (
+              <span className="px-3 py-1 rounded-full bg-amber-100 text-amber-900 font-bold border border-amber-200 flex items-center gap-1 shadow-sm">
+                <Clock className="w-3.5 h-3.5 text-amber-600" />
+                <span>متأخر صباحاً ⚠️</span>
               </span>
             ) : (
-              <span className="px-3 py-1 rounded-full bg-amber-100 text-amber-900 font-bold border border-amber-200">
-                لم يتم التحضير الذاتي بعد
+              <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-700 font-bold border border-slate-200">
+                لم يتم الرصد بعد
               </span>
             )}
           </div>
 
-          {/* Self check-in button */}
-          {!todayRecord?.selfCheckTime ? (
+          {/* If absent, provide immediate button to submit excuse */}
+          {todayRecord?.finalStatus === 'absent' && (
+            <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 flex items-center justify-between gap-3 text-xs">
+              <span className="text-rose-900 font-bold">⚠️ مسجل غائب اليوم. يمكنك إرسال عذر إلكتروني فوري لمدير المدرسة:</span>
+              <button
+                onClick={() => {
+                  setSelectedExcuseDate(today);
+                  setIsExcuseModalOpen(true);
+                }}
+                className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold whitespace-nowrap transition-colors shadow-sm"
+              >
+                تقديم عذر غياب 📤
+              </button>
+            </div>
+          )}
+
+          {/* Self check-in button when not already verified */}
+          {todayRecord?.finalStatus !== 'present' && !todayRecord?.selfCheckTime ? (
             <div className="space-y-2 pt-1">
               <button
                 onClick={handleSelfCheckIn}
@@ -363,7 +404,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                 <p className="text-xs text-center font-bold text-amber-800 bg-amber-50 p-2 rounded-xl border border-amber-200">{geoStatus}</p>
               )}
             </div>
-          ) : (
+          ) : todayRecord?.finalStatus === 'present' ? (
             <div className="pt-1 flex items-center justify-between text-xs text-emerald-800 font-bold bg-emerald-50 p-3 rounded-xl border border-emerald-200">
               <span>🎉 أحسنت! تم تسجيل حضورك بنجاح لليوم الدراسي.</span>
               {todayRecord.exitTime && (
@@ -372,7 +413,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                 </span>
               )}
             </div>
-          )}
+          ) : null}
         </div>
       </div>
 

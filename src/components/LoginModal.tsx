@@ -219,6 +219,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       if (u.role !== 'student') return false;
       const cleanUNid = (u.nationalId || '').trim();
       const isChildNid = directChildrenIds.includes(cleanUNid);
+      const isParentNid = Boolean(cleanDigits && u.parentNationalId && u.parentNationalId.trim() === cleanDigits);
       const isMobMatch = Boolean(
         parentMobileToTest && (
           u.parentMobile === parentMobileToTest ||
@@ -226,7 +227,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
           (parentMobileToTest.length >= 9 && u.parentMobile?.endsWith(parentMobileToTest.slice(-9)))
         )
       );
-      return isChildNid || isMobMatch;
+      return isChildNid || isParentNid || isMobMatch;
     });
 
     // If user explicitly checked "Login as Parent" in the form
@@ -290,10 +291,14 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         mobile: parentMobileToTest,
         password: cleanPass,
         role: 'parent',
-        schoolCode: primaryChild?.schoolCode || schools[0]?.code,
-        childrenNationalIds: childrenFound.map((c) => c.nationalId),
+        schoolCode: primaryChild?.schoolCode || parentMatch?.schoolCode || schools[0]?.code,
+        childrenNationalIds: Array.from(new Set([
+          ...(parentMatch?.childrenNationalIds || []),
+          ...childrenFound.map((c) => c.nationalId),
+        ])).filter(Boolean) as string[],
         managedSchoolCodes: Array.from(new Set([
           ...(parentMatch?.managedSchoolCodes || []),
+          parentMatch?.schoolCode,
           ...childrenFound.map((c) => c.schoolCode),
         ])).filter(Boolean) as string[],
       };

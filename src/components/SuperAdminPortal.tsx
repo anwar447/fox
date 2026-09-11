@@ -117,13 +117,15 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({
     }
   };
 
-  const handleDeleteSchool = (school: School) => {
-    deleteSchool(school.id || school.code, school.code);
+  const handleDeleteSchool = async (school: School) => {
+    const targetIdOrCode = school.id || school.code;
+    const targetCode = school.code;
+    await deleteSchool(targetIdOrCode, targetCode);
     onRefresh();
     setSchoolToDelete(null);
     setStatusMsg({
       type: 'info',
-      text: `🗑️ تم حذف مدرسة (${school.name}) وكودها (${school.code}) من المنظومة بنجاح.`
+      text: `🗑️ تم حذف مدرسة (${school.name}) وكودها (${school.code}) نهائياً من قاعدة البيانات والمنظومة.`
     });
   };
 

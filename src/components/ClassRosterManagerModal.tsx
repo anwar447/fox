@@ -315,19 +315,33 @@ export const ClassRosterView: React.FC<ClassRosterViewProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-base sm:text-lg font-black text-slate-900">
-                كشوفات الطلاب والفصول • النقل والطباعة 📋🖨️
+                إدارة شؤون الطلاب وكشوفات نظام نور 👨‍🎓📋
               </h3>
               <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-900 font-bold text-xs border border-emerald-200">
                 {totalSchoolStudentsCount} طالب مسجل بالمدرسة
               </span>
             </div>
             <p className="text-xs text-slate-500">
-              مدرسة: <span className="font-bold text-slate-800">{school?.name || ''}</span> | معرفة أعداد الطلاب وأسمائهم، نقلهم بين الصفوف، تعديل البيانات، وطباعة الكشف المعتمد
+              مدرسة: <span className="font-bold text-slate-800">{school?.name || ''}</span> | استيراد كشوفات نور (Excel)، نقل وتسكين الطلاب، تعديل البيانات، والطباعة الرسمية
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
+          {onOpenExcelManager && (
+            <button
+              onClick={() => {
+                if (onClose && !isEmbedded) onClose();
+                onOpenExcelManager();
+              }}
+              className="py-2 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm cursor-pointer transition-all hover:scale-105 active:scale-95"
+              title="استيراد وتحديث كشوفات الطلاب من ملف نظام نور الرسمي (Excel)"
+            >
+              <Download className="w-3.5 h-3.5 text-emerald-100" />
+              <span>استيراد كشف نور Excel 📥</span>
+            </button>
+          )}
+
           <button
             onClick={handlePrintRoster}
             className="py-2 px-3.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-black text-xs flex items-center gap-1.5 shadow-sm cursor-pointer transition-all hover:scale-105 active:scale-95"
@@ -348,20 +362,6 @@ export const ClassRosterView: React.FC<ClassRosterViewProps> = ({
             >
               <Layers className="w-3.5 h-3.5 text-amber-600" />
               <span>هيكلة الصفوف 🏫</span>
-            </button>
-          )}
-
-          {onOpenExcelManager && (
-            <button
-              onClick={() => {
-                if (onClose && !isEmbedded) onClose();
-                onOpenExcelManager();
-              }}
-              className="py-2 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold text-xs flex items-center gap-1 cursor-pointer transition-colors"
-              title="رفع كشف نور Excel"
-            >
-              <Download className="w-3.5 h-3.5 text-emerald-600" />
-              <span>رفع كشف نور 📥</span>
             </button>
           )}
 
@@ -557,8 +557,21 @@ export const ClassRosterView: React.FC<ClassRosterViewProps> = ({
               لا يوجد طلاب مسجلين في هذا الكشف حالياً
             </p>
             <p className="text-xs text-slate-400 max-w-sm mx-auto">
-              يمكنك إضافة طلاب عبر استيراد ملف نور Excel أو إضافة طالب يدوياً من الأزرار العلوية.
+              يمكنك إضافة وتحديث الطلاب عبر استيراد ملف نور الرسمي (Excel) أو إضافة طالب يدوياً.
             </p>
+            {onOpenExcelManager && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (onClose && !isEmbedded) onClose();
+                  onOpenExcelManager();
+                }}
+                className="mt-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer shadow-sm transition-transform active:scale-95"
+              >
+                <Download className="w-4 h-4" />
+                <span>استيراد كشف نور Excel الآن 📥</span>
+              </button>
+            )}
           </div>
         ) : (
           <table className="w-full text-right border-collapse text-xs">

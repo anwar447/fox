@@ -66,6 +66,7 @@ export interface User {
   mobile?: string;
   parentMobile?: string;
   parentPhone?: string;
+  parentNationalId?: string;
   password?: string;
   role: UserRole;
   staffTitle?: StaffTitle;

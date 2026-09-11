@@ -192,4 +192,28 @@ html.dark ::-webkit-scrollbar-thumb:hover {
     size: A4 portrait;
     margin: 12mm 15mm;
   }
+
+  /* Support printing inside modal overlays */
+  .fixed.inset-0:has(.print-area) {
+    position: static !important;
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    backdrop-filter: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    max-height: none !important;
+    height: auto !important;
+    overflow: visible !important;
+    display: block !important;
+  }
+  .print-area {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    border: 2px solid #000 !important;
+    margin: 0 auto !important;
+    page-break-inside: avoid;
+  }
 }

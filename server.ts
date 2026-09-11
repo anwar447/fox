@@ -30,7 +30,6 @@ interface DatabaseSchema {
 }
 
 const KNOWN_PURGED_SCHOOLS: string[] = [];
-const PROTECTED_CORE_SCHOOLS = ['RAYA-1448', 'SCH-RAYA-1', 'SAQR-1448', 'SCH-SAQR-1', 'QURAN-100', 'SCH-QURAN-1'];
 
 const DEFAULT_SUPERADMIN = {
   id: 'usr-admin-1',
@@ -73,12 +72,12 @@ function loadDatabase(): DatabaseSchema {
     const content = fs.readFileSync(DB_FILE, 'utf-8');
     const data = JSON.parse(content);
 
-    // Explicitly deleted schools only (never hardcode real schools)
+    // Explicitly deleted schools registry (permanent across all schools)
     const rawDeleted: string[] = Array.isArray(data.deleted_schools) ? data.deleted_schools : [];
     const deletedSet = new Set<string>(
       rawDeleted
         .map((k: string) => String(k).toUpperCase())
-        .filter((k) => !PROTECTED_CORE_SCHOOLS.includes(k) && !k.includes('SAQR') && !k.includes('صقر') && !k.includes('RAYA') && !k.includes('الراية'))
+        .filter(Boolean)
     );
     const deleted_schools = Array.from(deletedSet);
 
@@ -104,25 +103,6 @@ function loadDatabase(): DatabaseSchema {
       const sCode = String(s?.code || '').toUpperCase();
       return !deletedSet.has(sId) && !deletedSet.has(sCode);
     });
-
-    // Ensure core school RAYA-1448 (متوسطة الراية) is always present and properly configured
-    const hasRaya = schools.some((s) => String(s?.code || s?.id).toUpperCase() === 'RAYA-1448');
-    if (!hasRaya) {
-      schools.push({
-        id: 'sch-raya-1',
-        code: 'RAYA-1448',
-        name: 'متوسطة الراية',
-        city: 'الرياض',
-        type: 'middle',
-        subscriptionPlan: 'free_forever',
-        subscriptionEndDate: '2099-12-31',
-        customClasses: [
-          { id: 'c-ry-1', className: 'الأول المتوسط', sections: ['1', '2', '3', '4'] },
-          { id: 'c-ry-2', className: 'الثاني المتوسط', sections: ['1', '2', '3', '4'] },
-          { id: 'c-ry-3', className: 'الثالث المتوسط', sections: ['1', '2', '3', '4'] },
-        ],
-      });
-    }
 
     // Filter out users belonging to purged/deleted schools or in deleted_user_ids (except superadmin)
     const rawUsers: any[] = Array.isArray(data.users) && data.users.length > 0 ? data.users : [DEFAULT_SUPERADMIN];
@@ -195,6 +175,49 @@ function saveDatabase(data: DatabaseSchema): void {
 
 let db = loadDatabase();
 
+// ==========================================
+// REAL-TIME SERVER-SENT EVENTS (SSE) ENGINE
+// ==========================================
+const sseClients = new Set<express.Response>();
+
+export function broadcastRealtimeEvent(eventType: string, data: any) {
+  const payload = `event: ${eventType}\ndata: ${JSON.stringify(data)}\n\n`;
+  for (const client of sseClients) {
+    try {
+      client.write(payload);
+    } catch {
+      sseClients.delete(client);
+    }
+  }
+}
+
+// Real-time Event Stream Endpoint
+app.get('/api/events', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+
+  // Initial connection acknowledgment
+  res.write(`event: connected\ndata: ${JSON.stringify({ status: 'connected', time: Date.now() })}\n\n`);
+  sseClients.add(res);
+
+  // Heartbeat ping every 15s to keep container/proxy connection open
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(': ping\n\n');
+    } catch {
+      clearInterval(heartbeat);
+      sseClients.delete(res);
+    }
+  }, 15000);
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    sseClients.delete(res);
+  });
+});
+
 // ========================
 // API ROUTES
 // ========================
@@ -213,19 +236,11 @@ app.post('/api/sync', (req, res) => {
   if (incoming) {
     if (!Array.isArray(db.deleted_schools)) db.deleted_schools = [];
 
-    // Track explicitly deleted schools (prevent deleting protected core schools)
+    // Track explicitly deleted schools
     if (Array.isArray(incoming.deleted_schools) && incoming.deleted_schools.length > 0) {
       incoming.deleted_schools.forEach((del: string) => {
         const u = String(del || '').toUpperCase();
-        if (
-          u &&
-          !PROTECTED_CORE_SCHOOLS.includes(u) &&
-          !u.includes('SAQR') &&
-          !u.includes('صقر') &&
-          !u.includes('RAYA') &&
-          !u.includes('الراية') &&
-          !db.deleted_schools.includes(u)
-        ) {
+        if (u && !db.deleted_schools.includes(u)) {
           db.deleted_schools.push(u);
         }
       });
@@ -486,6 +501,22 @@ app.post('/api/sync', (req, res) => {
     }
 
     saveDatabase(db);
+    if (incoming.attendances || incoming.deleted_attendance_ids) {
+      broadcastRealtimeEvent('attendances_updated', {
+        attendances: db.attendances,
+        deleted_attendance_ids: db.deleted_attendance_ids,
+        timestamp: Date.now(),
+      });
+    }
+    if (incoming.corrections) {
+      broadcastRealtimeEvent('corrections_updated', { corrections: db.corrections, timestamp: Date.now() });
+    }
+    if (incoming.notifications || incoming.deleted_notification_ids) {
+      broadcastRealtimeEvent('notifications_updated', { notifications: db.notifications, timestamp: Date.now() });
+    }
+    if (incoming.users || incoming.deleted_user_ids) {
+      broadcastRealtimeEvent('users_updated', { users: db.users, timestamp: Date.now() });
+    }
   }
   res.json({ success: true, data: db });
 });
@@ -566,26 +597,79 @@ app.delete('/api/schools/:idOrCode', (req, res) => {
   const param = req.params.idOrCode;
   const paramUpper = String(param || '').toUpperCase();
   if (!Array.isArray(db.deleted_schools)) db.deleted_schools = [];
-  if (paramUpper && !db.deleted_schools.includes(paramUpper)) {
-    db.deleted_schools.push(paramUpper);
-  }
 
-  // Find matching school to also record both its ID and its CODE in deleted_schools
+  // Find matching schools to collect all corresponding IDs and Codes
   const matched = db.schools.filter(
     (s) => String(s.id || '').toUpperCase() === paramUpper || String(s.code || '').toUpperCase() === paramUpper
   );
+
+  const toDeleteKeys = new Set<string>();
+  if (paramUpper) toDeleteKeys.add(paramUpper);
   matched.forEach((m) => {
-    if (m.id && !db.deleted_schools.includes(m.id.toUpperCase())) db.deleted_schools.push(m.id.toUpperCase());
-    if (m.code && !db.deleted_schools.includes(m.code.toUpperCase())) db.deleted_schools.push(m.code.toUpperCase());
+    if (m.id) toDeleteKeys.add(String(m.id).toUpperCase());
+    if (m.code) toDeleteKeys.add(String(m.code).toUpperCase());
   });
 
-  // Purge school
+  const keysArray = Array.from(toDeleteKeys);
+  keysArray.forEach((key) => {
+    if (!db.deleted_schools.includes(key)) {
+      db.deleted_schools.push(key);
+    }
+  });
+
+  // 1. Purge school completely from db.schools
   db.schools = db.schools.filter((s) => {
     const sId = String(s.id || '').toUpperCase();
     const sCode = String(s.code || '').toUpperCase();
-    return sId !== paramUpper && sCode !== paramUpper;
+    return !toDeleteKeys.has(sId) && !toDeleteKeys.has(sCode);
   });
 
+  // 2. Cascade purge users associated with this school (except superadmin)
+  db.users = (db.users || []).filter((u) => {
+    if (u.role === 'superadmin' || u.schoolCode === 'SUPERADMIN') return true;
+    const uCode = String(u.schoolCode || '').toUpperCase();
+    if (keysArray.includes(uCode)) {
+      if (Array.isArray(u.managedSchoolCodes) && u.managedSchoolCodes.length > 1) {
+        u.managedSchoolCodes = u.managedSchoolCodes.filter((c: string) => !keysArray.includes(c.toUpperCase()));
+        u.schoolCode = u.managedSchoolCodes[0] || '';
+        return true;
+      }
+      return false; // Purge user associated exclusively with this deleted school
+    }
+    return true;
+  });
+
+  // 3. Cascade purge attendances for this school
+  db.attendances = (db.attendances || []).filter(
+    (a) => !keysArray.includes(String(a.schoolCode || '').toUpperCase())
+  );
+
+  // 4. Cascade purge permissions
+  db.permissions = (db.permissions || []).filter(
+    (p) => !keysArray.includes(String(p.schoolCode || '').toUpperCase())
+  );
+
+  // 5. Cascade purge behavior_logs
+  db.behavior_logs = (db.behavior_logs || []).filter(
+    (b) => !keysArray.includes(String(b.schoolCode || '').toUpperCase())
+  );
+
+  // 6. Cascade purge absence_actions
+  db.absence_actions = (db.absence_actions || []).filter(
+    (aa) => !keysArray.includes(String(aa.schoolCode || '').toUpperCase())
+  );
+
+  // 7. Cascade purge corrections
+  db.corrections = (db.corrections || []).filter(
+    (c) => !keysArray.includes(String(c.schoolCode || '').toUpperCase())
+  );
+
+  // 8. Cascade purge payments
+  db.payments = (db.payments || []).filter(
+    (p) => !keysArray.includes(String(p.schoolCode || '').toUpperCase())
+  );
+
+  // Save changes directly to data/db.json
   saveDatabase(db);
   res.json({ success: true, schools: db.schools, deleted_schools: db.deleted_schools });
 });
@@ -639,6 +723,7 @@ app.post('/api/users', (req, res) => {
   }
 
   saveDatabase(db);
+  broadcastRealtimeEvent('users_updated', { users: db.users, timestamp: Date.now() });
   res.json({ success: true, user: newUser, users: db.users });
 });
 
@@ -682,6 +767,7 @@ app.post('/api/users/bulk', (req, res) => {
       }
     }
     saveDatabase(db);
+    broadcastRealtimeEvent('users_updated', { users: db.users, timestamp: Date.now() });
   }
   res.json({ success: true, users: db.users });
 });
@@ -794,32 +880,46 @@ app.post('/api/attendances', (req, res) => {
   const incoming = req.body;
   if (Array.isArray(incoming)) {
     for (const att of incoming) {
-      const idx = db.attendances.findIndex((a) => a.id === att.id);
+      const idx = db.attendances.findIndex(
+        (a) => a.id === att.id || (att.studentId && a.studentId === att.studentId && a.date === att.date)
+      );
       if (idx >= 0) {
-        db.attendances[idx] = att;
+        db.attendances[idx] = { ...db.attendances[idx], ...att };
       } else {
         db.attendances.push(att);
       }
     }
-  } else if (incoming && incoming.id) {
-    const idx = db.attendances.findIndex((a) => a.id === incoming.id);
+  } else if (incoming && (incoming.id || incoming.studentId)) {
+    const idx = db.attendances.findIndex(
+      (a) => a.id === incoming.id || (incoming.studentId && a.studentId === incoming.studentId && a.date === incoming.date)
+    );
     if (idx >= 0) {
-      db.attendances[idx] = incoming;
+      db.attendances[idx] = { ...db.attendances[idx], ...incoming };
     } else {
       db.attendances.push(incoming);
     }
   }
   saveDatabase(db);
+  broadcastRealtimeEvent('attendances_updated', {
+    attendances: db.attendances,
+    timestamp: Date.now(),
+  });
   res.json({ success: true, attendances: db.attendances });
 });
 
 app.put('/api/attendances/:id', (req, res) => {
   const id = req.params.id;
   const updates = req.body;
-  const idx = db.attendances.findIndex((a) => a.id === id);
+  const idx = db.attendances.findIndex(
+    (a) => a.id === id || (updates.studentId && a.studentId === updates.studentId && a.date === updates.date)
+  );
   if (idx >= 0) {
     db.attendances[idx] = { ...db.attendances[idx], ...updates };
     saveDatabase(db);
+    broadcastRealtimeEvent('attendances_updated', {
+      attendances: db.attendances,
+      timestamp: Date.now(),
+    });
     res.json({ success: true, attendance: db.attendances[idx], attendances: db.attendances });
   } else {
     res.status(404).json({ success: false, message: 'Attendance record not found' });
@@ -834,6 +934,11 @@ app.delete('/api/attendances/:id', (req, res) => {
   }
   db.attendances = db.attendances.filter((a) => a.id !== id);
   saveDatabase(db);
+  broadcastRealtimeEvent('attendances_updated', {
+    attendances: db.attendances,
+    deleted_attendance_ids: db.deleted_attendance_ids,
+    timestamp: Date.now(),
+  });
   res.json({ success: true, attendances: db.attendances, deleted_attendance_ids: db.deleted_attendance_ids });
 });
 
@@ -850,6 +955,11 @@ app.post('/api/attendances/delete-batch', (req, res) => {
     const set = new Set(db.deleted_attendance_ids);
     db.attendances = db.attendances.filter((a) => !set.has(String(a.id)) && !set.has(`${a.studentId}_${a.date}`));
     saveDatabase(db);
+    broadcastRealtimeEvent('attendances_updated', {
+      attendances: db.attendances,
+      deleted_attendance_ids: db.deleted_attendance_ids,
+      timestamp: Date.now(),
+    });
   }
   res.json({ success: true, attendances: db.attendances, deleted_attendance_ids: db.deleted_attendance_ids });
 });
@@ -903,6 +1013,7 @@ app.post('/api/corrections', (req, res) => {
       db.corrections.unshift(incoming);
     }
     saveDatabase(db);
+    broadcastRealtimeEvent('corrections_updated', { corrections: db.corrections, timestamp: Date.now() });
   }
   res.json({ success: true, corrections: db.corrections });
 });
@@ -957,6 +1068,8 @@ app.post('/api/corrections/:id/approve', (req, res) => {
     }
 
     saveDatabase(db);
+    broadcastRealtimeEvent('attendances_updated', { attendances: db.attendances, timestamp: Date.now() });
+    broadcastRealtimeEvent('corrections_updated', { corrections: db.corrections, timestamp: Date.now() });
     res.json({ success: true, correction: cor, attendances: db.attendances });
   } else {
     // If not found by ID, attempt to locate by body if provided
@@ -970,6 +1083,7 @@ app.post('/api/corrections/:id/approve', (req, res) => {
         db.corrections[altIdx].approvalType = isConditional ? 'conditional' : 'official';
         db.corrections[altIdx].adminDecisionNotes = adminDecisionNotes || (isConditional ? 'تم قبول عذره لهذه المرة فقط، ويرجى إحضار عذر رسمي في المرة القادمة.' : 'تم اعتماد وقبول العذر الرسمي واستعادة درجات المواظبة بنجاح.');
         saveDatabase(db);
+        broadcastRealtimeEvent('corrections_updated', { corrections: db.corrections, timestamp: Date.now() });
         return res.json({ success: true, correction: db.corrections[altIdx] });
       }
     }
@@ -1000,6 +1114,8 @@ app.post('/api/corrections/:id/reject', (req, res) => {
     }
 
     saveDatabase(db);
+    broadcastRealtimeEvent('attendances_updated', { attendances: db.attendances, timestamp: Date.now() });
+    broadcastRealtimeEvent('corrections_updated', { corrections: db.corrections, timestamp: Date.now() });
     res.json({ success: true, correction: cor, attendances: db.attendances });
   } else {
     res.status(404).json({ success: false, message: 'Correction request not found' });

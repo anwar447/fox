@@ -247,6 +247,7 @@ export const ParentStudentSelfRegistrationModal: React.FC<ParentStudentSelfRegis
         name: st.name.trim(),
         mobile: st.mobile.trim() || undefined,
         parentMobile: cleanParentMobile,
+        parentNationalId: cleanParentNid,
         password: cleanSNid.slice(-4) || '123456',
         role: 'student' as const,
         schoolCode: currentSchool.code,
@@ -271,10 +272,20 @@ export const ParentStudentSelfRegistrationModal: React.FC<ParentStudentSelfRegis
     if (pIdx >= 0) {
       const existingChildren = updatedUsersList[pIdx].childrenNationalIds || [];
       const mergedChildren = Array.from(new Set([...existingChildren, ...studentNids]));
+      const mergedSchools = Array.from(new Set([
+        ...(updatedUsersList[pIdx].managedSchoolCodes || []),
+        updatedUsersList[pIdx].schoolCode,
+        currentSchool.code,
+      ])).filter(Boolean);
+      parentUser.childrenNationalIds = mergedChildren;
+      parentUser.managedSchoolCodes = mergedSchools;
+      parentUser.id = updatedUsersList[pIdx].id;
       updatedUsersList[pIdx] = {
         ...updatedUsersList[pIdx],
         ...parentUser,
+        schoolCode: currentSchool.code || updatedUsersList[pIdx].schoolCode,
         childrenNationalIds: mergedChildren,
+        managedSchoolCodes: mergedSchools,
       };
     } else {
       updatedUsersList.push(parentUser);
@@ -284,7 +295,20 @@ export const ParentStudentSelfRegistrationModal: React.FC<ParentStudentSelfRegis
     newStudentUsers.forEach((st) => {
       const sIdx = updatedUsersList.findIndex((u) => u.nationalId === st.nationalId);
       if (sIdx >= 0) {
-        updatedUsersList[sIdx] = { ...updatedUsersList[sIdx], ...st };
+        const prev = updatedUsersList[sIdx];
+        const mergedSchools = Array.from(new Set([
+          ...(prev.managedSchoolCodes || []),
+          currentSchool.code,
+        ])).filter(Boolean);
+        updatedUsersList[sIdx] = { 
+          ...prev, 
+          ...st,
+          id: prev.id || st.id,
+          schoolCode: currentSchool.code,
+          managedSchoolCodes: mergedSchools,
+          parentMobile: cleanParentMobile,
+          parentNationalId: cleanParentNid,
+        };
       } else {
         updatedUsersList.push(st);
       }
@@ -327,7 +351,6 @@ export const ParentStudentSelfRegistrationModal: React.FC<ParentStudentSelfRegis
     setCreatedParent(parentUser);
     setCreatedStudents(newStudentUsers);
     setIsSuccess(true);
-    onRegistrationSuccess(parentUser, newStudentUsers);
   };
 
   return (

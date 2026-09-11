@@ -10,7 +10,7 @@ import {
   X, Phone, MessageSquare, Printer, CheckCircle2, 
   AlertTriangle, Calendar, Clock, MapPin, Send, 
   Trash2, UserCheck, ShieldAlert, Award, FileText,
-  Search, Users, Building2
+  Search, Users, Building2, ExternalLink
 } from 'lucide-react';
 
 interface ParentSummonModalProps {
@@ -200,6 +200,285 @@ export const ParentSummonModal: React.FC<ParentSummonModalProps> = ({
 
     const message = `المكرم ولي أمر الطالب: *${summon.studentName}* المحترم\nالسلام عليكم ورحمة الله وبركاته،\n\nنأمل منكم التكرم بمراجعة إدارة *${currentSchool.name}* (${summon.meetingPlace})\n📅 في يوم: *${summon.appointmentDate}*\n⏰ في تمام الساعة: *${summon.appointmentTime}*\n\nوذلك لمناقشة الموضوع الهام التالي:\n📌 *${summon.reasonTitle}*\n${summon.details ? `📝 تفاصيل: ${summon.details}\n` : ''}\nشاكرين ومقدرين لكم كريم تعاونكم المستمر في مصلحة الطالب ومستقبله.\n\n— *إدارة المدرسة*`;
     return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+  };
+
+  // Robust Printing Function with iframe isolation and fallback
+  const handlePrintOfficialSummon = (summon: ParentSummon, forceNewWindow = false) => {
+    soundManager.playBeep();
+
+    const printableHtml = `
+      <!DOCTYPE html>
+      <html dir="rtl" lang="ar">
+      <head>
+        <meta charset="utf-8" />
+        <title>إشعار استدعاء رسمي - ${summon.studentName}</title>
+        <style>
+          @page {
+            size: A4 portrait;
+            margin: 14mm 16mm;
+          }
+          * { box-sizing: border-box; }
+          body {
+            font-family: 'Tajawal', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            direction: rtl;
+            margin: 0;
+            padding: 16px;
+            color: #0f172a;
+            background: #ffffff;
+            line-height: 1.6;
+            font-size: 13pt;
+          }
+          .sheet-frame {
+            border: 2.5px solid #0f172a;
+            border-radius: 12px;
+            padding: 24px 28px;
+            background: #ffffff;
+          }
+          .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #0f172a;
+            padding-bottom: 16px;
+            margin-bottom: 20px;
+          }
+          .header-col {
+            font-size: 11pt;
+            font-weight: bold;
+            line-height: 1.5;
+          }
+          .header-right { text-align: right; }
+          .header-center { text-align: center; }
+          .header-left { text-align: left; font-family: monospace; }
+          .emblem { font-size: 26pt; line-height: 1; }
+          .title {
+            text-align: center;
+            font-size: 17pt;
+            font-weight: 900;
+            margin: 10px 0 18px;
+            text-decoration: underline;
+            text-underline-offset: 6px;
+          }
+          .salutation {
+            font-size: 13pt;
+            font-weight: bold;
+            margin-bottom: 12px;
+          }
+          .student-badge {
+            display: inline-block;
+            background: #f1f5f9;
+            border: 1px solid #cbd5e1;
+            padding: 2px 10px;
+            border-radius: 6px;
+            font-weight: 900;
+            font-size: 14pt;
+          }
+          .greeting { font-size: 12pt; margin-bottom: 12px; }
+          .intro {
+            text-align: justify;
+            font-size: 12pt;
+            line-height: 1.8;
+            margin-bottom: 16px;
+          }
+          .table-box {
+            background: #f8fafc;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 16px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px 16px;
+            font-size: 11.5pt;
+          }
+          .table-box div { line-height: 1.6; }
+          .full-col { grid-column: span 2; }
+          .reason-box {
+            background: #fff1f2;
+            border: 1px solid #fecdd3;
+            border-right: 5px solid #e11d48;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 18px;
+          }
+          .reason-title {
+            font-weight: 900;
+            color: #881337;
+            font-size: 12.5pt;
+            margin-bottom: 4px;
+          }
+          .reason-desc {
+            color: #4c0519;
+            font-size: 11pt;
+            line-height: 1.6;
+          }
+          .pledge-text {
+            font-size: 11.5pt;
+            text-align: justify;
+            margin-bottom: 30px;
+            line-height: 1.7;
+          }
+          .signatures {
+            margin-top: 25px;
+            display: flex;
+            justify-content: space-between;
+            text-align: center;
+            font-size: 11pt;
+            font-weight: bold;
+          }
+          .sig-item { min-width: 140px; }
+          .sig-space { height: 45px; }
+          .footer {
+            margin-top: 25px;
+            border-top: 1px dashed #94a3b8;
+            padding-top: 10px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 9.5pt;
+            color: #64748b;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="sheet-frame">
+          <div class="header">
+            <div class="header-col header-right">
+              المملكة العربية السعودية<br/>
+              وزارة التعليم<br/>
+              إدارة التعليم بالمنطقة<br/>
+              مدرسة: <strong>${currentSchool.name}</strong>
+            </div>
+            <div class="header-col header-center">
+              <div class="emblem">🏫</div>
+              <div style="font-size: 10pt; color: #334155; margin-top: 4px;">كود المدرسة: ${currentSchool.code}</div>
+            </div>
+            <div class="header-col header-left">
+              الرقم: ${summon.id.substring(4, 12).toUpperCase()}<br/>
+              التاريخ: ${today}<br/>
+              المرفقات: لا يوجد
+            </div>
+          </div>
+
+          <div class="title">إشعار استدعاء رسمي لولي أمر طالب</div>
+
+          <div class="salutation">
+            المكرم ولي أمر الطالب: <span class="student-badge">${summon.studentName}</span> المحترم
+          </div>
+
+          <div class="greeting">السلام عليكم ورحمة الله وبركاته، أما بعد:</div>
+
+          <div class="intro">
+            انطلاقاً من حرص إدارة المدرسة على مصلحة ابنكم ومستقبله التعليمي والسلوكي، وتعزيزاً للشراكة المستمرة بين البيت والمدرسة، نأمل منكم التكرم بمراجعة إدارة المدرسة في الموعد والمقر المحددين أدناه:
+          </div>
+
+          <div class="table-box">
+            <div>📌 <strong>الصف والشعبة:</strong> ${summon.className} (شعبة ${summon.sectionName || '1'})</div>
+            <div>🆔 <strong>السجل المدني:</strong> <span style="font-family: monospace; font-weight: bold;">${summon.studentNationalId || '—'}</span></div>
+            <div>📅 <strong>موعد الحضور:</strong> يوم <strong style="font-weight: 900;">${summon.appointmentDate}</strong></div>
+            <div>⏰ <strong>الساعة:</strong> <strong style="font-weight: 900;">${summon.appointmentTime}</strong></div>
+            <div class="full-col">🏢 <strong>مقر المقابلة:</strong> ${summon.meetingPlace}</div>
+          </div>
+
+          <div class="reason-box">
+            <div class="reason-title">سبب الاستدعاء: ${summon.reasonTitle}</div>
+            ${summon.details ? `<div class="reason-desc">${summon.details}</div>` : ''}
+          </div>
+
+          <div class="pledge-text">
+            نأمل منكم التقيد بالموعد المحدد لما في ذلك من أهمية بالغة تصب في مصلحة الطالب ومسيرته التعليمية وفق لائحة السلوك والمواظبة المعتمدة من وزارة التعليم.
+          </div>
+
+          <div class="signatures">
+            <div class="sig-item">
+              <div>وكيل شؤون الطلاب / الموجه الطلابي</div>
+              <div class="sig-space"></div>
+              <div>........................................</div>
+            </div>
+            <div class="sig-item">
+              <div>مدير / مديرة المدرسة</div>
+              <div class="sig-space"></div>
+              <div>${currentUser.staffTitle === 'principal' ? currentUser.name : 'ختم وتوقيع الإدارة'}</div>
+            </div>
+            <div class="sig-item">
+              <div>توقيع ولي الأمر بالعلم والحضور</div>
+              <div class="sig-space"></div>
+              <div>........................................</div>
+            </div>
+          </div>
+
+          <div class="footer">
+            <span>منظومة حُضُورَكْ الذكية — نظام الإدارة المدرسية الموحد</span>
+            <span>تم التحرير بواسطة: ${summon.issuedByName} (${summon.issuedByRole})</span>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    if (forceNewWindow) {
+      try {
+        const pWin = window.open('', '_blank');
+        if (pWin) {
+          pWin.document.write(printableHtml);
+          pWin.document.close();
+          setTimeout(() => {
+            pWin.focus();
+            pWin.print();
+          }, 350);
+          return;
+        }
+      } catch {}
+    }
+
+    // Attempt 1: Print via hidden iframe (works everywhere inside iframe & container without popup blocker!)
+    try {
+      let iframe = document.getElementById('print-summon-iframe') as HTMLIFrameElement;
+      if (!iframe) {
+        iframe = document.createElement('iframe');
+        iframe.id = 'print-summon-iframe';
+        iframe.style.position = 'fixed';
+        iframe.style.right = '0';
+        iframe.style.bottom = '0';
+        iframe.style.width = '0';
+        iframe.style.height = '0';
+        iframe.style.border = 'none';
+        document.body.appendChild(iframe);
+      }
+      const iframeDoc = iframe.contentWindow?.document || iframe.contentDocument;
+      if (iframeDoc) {
+        iframeDoc.open();
+        iframeDoc.write(printableHtml);
+        iframeDoc.close();
+        setTimeout(() => {
+          try {
+            iframe.contentWindow?.focus();
+            iframe.contentWindow?.print();
+          } catch {
+            window.print();
+          }
+        }, 300);
+        return;
+      }
+    } catch (err) {
+      console.warn('Iframe print error, falling back to window.open/print', err);
+    }
+
+    // Attempt 2: Popup fallback
+    try {
+      const pWin = window.open('', '_blank');
+      if (pWin) {
+        pWin.document.write(printableHtml);
+        pWin.document.close();
+        setTimeout(() => {
+          pWin.focus();
+          pWin.print();
+        }, 350);
+        return;
+      }
+    } catch {}
+
+    // Fallback: direct window.print()
+    window.print();
   };
 
   const summonToPrint = lastCreatedSummon || studentSummons[0] || null;
@@ -542,14 +821,27 @@ export const ParentSummonModal: React.FC<ParentSummonModalProps> = ({
                   )}
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => window.print()}
-                  className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-black text-xs flex items-center gap-2 shadow-md cursor-pointer"
-                >
-                  <Printer className="w-4 h-4 text-amber-400" />
-                  <span>طباعة الخطاب الرسمي (Print) 🖨️</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handlePrintOfficialSummon(summonToPrint, false)}
+                    className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-black text-xs flex items-center gap-2 shadow-md cursor-pointer transition-all hover:scale-[1.02] active:scale-[0.98]"
+                    title="بدء طباعة الخطاب الرسمي فوراً بأعلى دقة"
+                  >
+                    <Printer className="w-4 h-4 text-amber-400" />
+                    <span>طباعة الخطاب الرسمي 🖨️</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handlePrintOfficialSummon(summonToPrint, true)}
+                    className="px-3 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold text-xs flex items-center gap-1.5 shadow-2xs cursor-pointer transition-colors"
+                    title="فتح الخطاب في نافذة مستقلة للطباعة أو التنزيل كملف PDF"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>نافذة مستقلة / PDF ↗</span>
+                  </button>
+                </div>
               </div>
 
               {/* Printable Official Ministry Summons Sheet */}
@@ -681,14 +973,24 @@ export const ParentSummonModal: React.FC<ParentSummonModalProps> = ({
                       <div className="flex items-center gap-1.5 text-xs">
                         <button
                           type="button"
+                          onClick={() => handlePrintOfficialSummon(s, false)}
+                          className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                          title="طباعة الخطاب مباشرة"
+                        >
+                          <Printer className="w-3.5 h-3.5 text-amber-400" />
+                          <span>طباعة 🖨️</span>
+                        </button>
+
+                        <button
+                          type="button"
                           onClick={() => {
                             setLastCreatedSummon(s);
                             setActiveTab('print');
                           }}
                           className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold flex items-center gap-1 cursor-pointer"
                         >
-                          <Printer className="w-3.5 h-3.5" />
-                          <span>معاينة الخطاب</span>
+                          <FileText className="w-3.5 h-3.5" />
+                          <span>معاينة وتواصل</span>
                         </button>
 
                         {s.status === 'pending' && (

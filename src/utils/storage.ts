@@ -7,6 +7,7 @@ import {
 import { INITIAL_SCHOOLS, INITIAL_USERS, INITIAL_PERMISSIONS, INITIAL_BEHAVIOR_LOGS } from '../data/seedData';
 import { getTodayDateString } from './academic';
 import { getDefaultClassesForSchoolType } from './schoolClasses';
+import { broadcastAttendanceChange, broadcastCorrectionChange, broadcastNotificationChange, broadcastUserChange } from './realtime';
 
 const STORAGE_VERSION = 'v4_clean';
 const SCHOOLS_KEY = `hodoorak_schools_${STORAGE_VERSION}`;
@@ -87,7 +88,6 @@ export function recordDeletedAttendanceId(id: string): void {
   } catch {}
 }
 
-const PROTECTED_CORE_SCHOOLS = ['RAYA-1448', 'SCH-RAYA-1', 'SAQR-1448', 'SCH-SAQR-1', 'QURAN-100', 'SCH-QURAN-1'];
 const DELETED_USERS_KEY = 'hodoorak_deleted_users_registry';
 
 export function getDeletedUserIds(): string[] {
@@ -128,16 +128,7 @@ export function getDeletedSchools(): string[] {
     const raw = localStorage.getItem(DELETED_SCHOOLS_KEY);
     const parsed: string[] = raw ? JSON.parse(raw) : [];
     const set = new Set<string>(
-      parsed
-        .map((s) => String(s).toUpperCase())
-        .filter(
-          (s) =>
-            !PROTECTED_CORE_SCHOOLS.includes(s) &&
-            !s.includes('RAYA') &&
-            !s.includes('الراية') &&
-            !s.includes('SAQR') &&
-            !s.includes('صقر')
-        )
+      parsed.map((s) => String(s).toUpperCase()).filter(Boolean)
     );
     const result = Array.from(set);
     if (raw && parsed.length !== result.length) {
@@ -149,25 +140,17 @@ export function getDeletedSchools(): string[] {
   }
 }
 
-export function recordDeletedSchool(idOrCode: string, extraCode?: string): void {
+export function recordDeletedSchool(...idOrCodes: (string | undefined)[]): void {
   try {
     const list = getDeletedSchools();
-    const toAdd = [idOrCode, extraCode]
+    const toAdd = idOrCodes
       .filter(Boolean)
-      .map((val) => String(val).toUpperCase())
-      .filter(
-        (u) =>
-          !PROTECTED_CORE_SCHOOLS.includes(u) &&
-          !u.includes('RAYA') &&
-          !u.includes('الراية') &&
-          !u.includes('SAQR') &&
-          !u.includes('صقر')
-      );
+      .map((val) => String(val).toUpperCase().trim())
+      .filter(Boolean);
 
     if (toAdd.length === 0) return;
 
-    toAdd.forEach((val) => {
-      const upper = String(val).toUpperCase();
+    toAdd.forEach((upper) => {
       if (!list.includes(upper)) list.push(upper);
     });
     localStorage.setItem(DELETED_SCHOOLS_KEY, JSON.stringify(list));
@@ -184,10 +167,7 @@ export function recordDeletedSchool(idOrCode: string, extraCode?: string): void 
               const filtered = parsed.filter((s: School) => {
                 const sCode = String(s.code || '').toUpperCase();
                 const sId = String(s.id || '').toUpperCase();
-                return !toAdd.some((del) => {
-                  const delUpper = String(del).toUpperCase();
-                  return delUpper === sCode || delUpper === sId;
-                });
+                return !toAdd.some((del) => del === sCode || del === sId);
               });
               localStorage.setItem(k, JSON.stringify(filtered));
             }
@@ -452,27 +432,33 @@ export function getUserAlternativeProfiles(user: User | null, allUsers?: User[])
 export function mergeAttendances(existing: Attendance[], incoming: Attendance[]): Attendance[] {
   const deletedSet = new Set(getDeletedAttendanceIds());
   const map = new Map<string, Attendance>();
+  
+  const getKey = (a: Attendance) => (a.studentId && a.date ? `${a.studentId}_${a.date}` : a.id);
+
   existing.forEach((a) => {
     if (a) {
-      const key = a.id || `${a.studentId}_${a.date}`;
+      const key = getKey(a);
       if (!deletedSet.has(String(a.id)) && !deletedSet.has(`${a.studentId}_${a.date}`)) {
         map.set(key, a);
       }
     }
   });
+
   incoming.forEach((a) => {
     if (a) {
-      const key = a.id || `${a.studentId}_${a.date}`;
+      const key = getKey(a);
       if (!deletedSet.has(String(a.id)) && !deletedSet.has(`${a.studentId}_${a.date}`)) {
         if (map.has(key)) {
           const prev = map.get(key)!;
           // Protect accepted/conditional excuse status from being reverted by stale attendance records
           const isPrevExcused = prev.excuseStatus === 'accepted' || prev.excuseStatus === 'conditional_accepted';
           const isIncomingExcused = a.excuseStatus === 'accepted' || a.excuseStatus === 'conditional_accepted';
-          const preserveAccepted = isPrevExcused && !isIncomingExcused;
+          const preserveAccepted = isPrevExcused && !isIncomingExcused && a.finalStatus !== 'present';
           map.set(key, {
             ...prev,
             ...a,
+            // Keep persistent id if previously established
+            id: prev.id || a.id,
             ...(preserveAccepted ? { 
               excuseStatus: prev.excuseStatus, 
               excuseDecisionType: prev.excuseDecisionType,
@@ -725,16 +711,7 @@ export function getSchools(): School[] {
         saveSchools(nonDeletedInitial, false);
         return nonDeletedInitial;
       }
-    }
-
-    // Ensure protected core schools like RAYA-1448 always exist
-    const rayaFound = current.some((s) => String(s?.code || s?.id).toUpperCase() === 'RAYA-1448');
-    if (!rayaFound) {
-      const rayaInitial = INITIAL_SCHOOLS.find((s) => String(s?.code || s?.id).toUpperCase() === 'RAYA-1448');
-      if (rayaInitial) {
-        current.push(rayaInitial);
-        localStorage.setItem(SCHOOLS_KEY, JSON.stringify(current));
-      }
+      return [];
     }
 
     // Harmonize all schools to free permanent license
@@ -745,7 +722,12 @@ export function getSchools(): School[] {
     }));
     return normalized;
   } catch {
-    return INITIAL_SCHOOLS;
+    const deletedList = getDeletedSchools();
+    return INITIAL_SCHOOLS.filter((s) => {
+      const sCode = String(s?.code || '').toUpperCase();
+      const sId = String(s?.id || '').toUpperCase();
+      return !deletedList.includes(sCode) && !deletedList.includes(sId);
+    });
   }
 }
 
@@ -1465,26 +1447,92 @@ export function addSchoolSection(
   return { success: true };
 }
 
-export function deleteSchool(schoolIdOrCode: string, extraCode?: string): void {
-  recordDeletedSchool(schoolIdOrCode, extraCode);
+export async function deleteSchool(schoolIdOrCode: string, extraCode?: string): Promise<void> {
+  const targetKey = String(schoolIdOrCode || '').toUpperCase().trim();
+  const targetExtra = extraCode ? String(extraCode).toUpperCase().trim() : '';
+
+  // Find school in current list to get all identifiers
+  const existingSchools = getSchools();
+  const matched = existingSchools.find(
+    (s) =>
+      String(s.id || '').toUpperCase() === targetKey ||
+      String(s.code || '').toUpperCase() === targetKey ||
+      (targetExtra && (String(s.id || '').toUpperCase() === targetExtra || String(s.code || '').toUpperCase() === targetExtra))
+  );
+
+  const allKeysToDelete = Array.from(
+    new Set([
+      targetKey,
+      targetExtra,
+      matched?.id ? String(matched.id).toUpperCase() : '',
+      matched?.code ? String(matched.code).toUpperCase() : '',
+    ].filter(Boolean))
+  );
+
+  // 1. Record in deleted schools registry
+  recordDeletedSchool(...allKeysToDelete);
   const deleted = getDeletedSchools();
 
-  const list = getSchools().filter((s) => {
+  // 2. Remove from schools list and persist locally
+  const remainingSchools = existingSchools.filter((s) => {
     const sId = String(s.id || '').toUpperCase();
     const sCode = String(s.code || '').toUpperCase();
-    return !deleted.includes(sId) && !deleted.includes(sCode);
+    return !allKeysToDelete.includes(sId) && !allKeysToDelete.includes(sCode) && !deleted.includes(sId) && !deleted.includes(sCode);
   });
-  saveSchools(list, false);
+  saveSchools(remainingSchools, false);
 
-  // Send DELETE to server API
-  fetch(`/api/schools/${encodeURIComponent(schoolIdOrCode)}`, { method: 'DELETE' }).catch(() => {});
-  if (extraCode && extraCode !== schoolIdOrCode) {
-    fetch(`/api/schools/${encodeURIComponent(extraCode)}`, { method: 'DELETE' }).catch(() => {});
+  // 3. Cascade remove associated users (except superadmin)
+  const allUsers = getUsers();
+  const remainingUsers = allUsers.filter((u) => {
+    if (u.role === 'superadmin' || u.schoolCode === 'SUPERADMIN') return true;
+    const uCode = String(u.schoolCode || '').toUpperCase();
+    if (allKeysToDelete.includes(uCode)) {
+      if (Array.isArray(u.managedSchoolCodes) && u.managedSchoolCodes.length > 1) {
+        u.managedSchoolCodes = u.managedSchoolCodes.filter((c) => !allKeysToDelete.includes(c.toUpperCase()));
+        u.schoolCode = u.managedSchoolCodes[0] || '';
+        return true;
+      }
+      return false; // Purge user associated exclusively with this deleted school
+    }
+    return true;
+  });
+  saveUsers(remainingUsers, false);
+
+  // 4. Cascade remove attendances for this school
+  const allAttendances = getAttendances();
+  const remainingAttendances = allAttendances.filter(
+    (a) => !allKeysToDelete.includes(String(a.schoolCode || '').toUpperCase())
+  );
+  saveAttendances(remainingAttendances, false);
+
+  // 5. Cascade remove parent summons for this school
+  const allSummons = getParentSummons();
+  const remainingSummons = allSummons.filter(
+    (s) => !allKeysToDelete.includes(String(s.schoolCode || '').toUpperCase())
+  );
+  saveParentSummons(remainingSummons, false);
+
+  // 6. Delete on server backend via DELETE endpoints
+  try {
+    if (schoolIdOrCode) {
+      await fetch(`/api/schools/${encodeURIComponent(schoolIdOrCode)}`, { method: 'DELETE' });
+    }
+    if (extraCode && extraCode !== schoolIdOrCode) {
+      await fetch(`/api/schools/${encodeURIComponent(extraCode)}`, { method: 'DELETE' });
+    }
+    if (matched?.code && matched.code !== schoolIdOrCode && matched.code !== extraCode) {
+      await fetch(`/api/schools/${encodeURIComponent(matched.code)}`, { method: 'DELETE' });
+    }
+  } catch (err) {
+    console.warn('DELETE /api/schools API call failed:', err);
   }
 
-  // Push updated list with deleted markers to sync endpoint
-  apiPost('/api/sync', { 
-    schools: list,
+  // 7. Push updated list with deleted markers to sync endpoint
+  await apiPost('/api/sync', { 
+    schools: remainingSchools,
+    users: remainingUsers,
+    attendances: remainingAttendances,
+    parent_summons: remainingSummons,
     deleted_schools: deleted 
   });
 }
@@ -1607,6 +1655,11 @@ export function saveUsers(users: User[], syncServer: boolean = true): void {
   });
 
   localStorage.setItem(USERS_KEY, JSON.stringify(cleanUsers));
+  try {
+    broadcastUserChange(cleanUsers);
+  } catch (e) {
+    console.error('Error broadcasting user change:', e);
+  }
   if (syncServer) {
     apiPost('/api/sync', { users: cleanUsers, deleted_user_ids: getDeletedUserIds() });
   }
@@ -1840,6 +1893,12 @@ export function saveAttendances(attendances: Attendance[], syncServer: boolean =
     (a) => !deletedSet.has(String(a.id)) && !deletedSet.has(`${a.studentId}_${a.date}`)
   );
   localStorage.setItem(ATTENDANCES_KEY, JSON.stringify(cleanList));
+  // Broadcast immediately to in-app components and all open browser tabs
+  try {
+    broadcastAttendanceChange(cleanList);
+  } catch (e) {
+    console.error('Error broadcasting attendance change:', e);
+  }
   if (syncServer) {
     apiPost('/api/attendances', cleanList);
   }
@@ -2328,6 +2387,11 @@ export function getCorrectionRequests(): CorrectionRequest[] {
 
 export function saveCorrectionRequests(reqs: CorrectionRequest[], syncServer: boolean = true): void {
   localStorage.setItem(CORRECTIONS_KEY, JSON.stringify(reqs));
+  try {
+    broadcastCorrectionChange(reqs);
+  } catch (e) {
+    console.error(e);
+  }
   if (syncServer) {
     apiPost('/api/sync', { corrections: reqs });
   }
@@ -2518,6 +2582,11 @@ export function saveSystemNotifications(n: SystemNotification[], syncServer: boo
   const deleted = new Set(getDeletedNotificationIds());
   const clean = (Array.isArray(n) ? n : []).filter((item) => item?.id && !deleted.has(String(item.id)));
   localStorage.setItem(NOTIFICATIONS_KEY, JSON.stringify(clean));
+  try {
+    broadcastNotificationChange(clean);
+  } catch (e) {
+    console.error(e);
+  }
   if (syncServer) {
     apiPost('/api/sync', { 
       notifications: clean,
@@ -2726,17 +2795,14 @@ export async function resetAllDataToSeed(): Promise<void> {
     console.warn('Reset all API call failed:', err);
   }
 
-  localStorage.removeItem(SCHOOLS_KEY);
-  localStorage.removeItem(USERS_KEY);
-  localStorage.removeItem(ATTENDANCES_KEY);
-  localStorage.removeItem(PERMISSIONS_KEY);
-  localStorage.removeItem(BEHAVIOR_KEY);
-  localStorage.removeItem(CORRECTIONS_KEY);
-  localStorage.removeItem(PAYMENTS_KEY);
-  localStorage.removeItem(NOTIFICATIONS_KEY);
-  localStorage.removeItem(CURRENT_USER_KEY);
-  localStorage.removeItem(ABSENCE_ACTIONS_KEY);
-  localStorage.removeItem(PARENT_SUMMONS_KEY);
+  const keysToRemove: string[] = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && (k.startsWith('hodoorak_') || k.startsWith('deleted_'))) {
+      keysToRemove.push(k);
+    }
+  }
+  keysToRemove.forEach((k) => localStorage.removeItem(k));
   window.location.reload();
 }
 

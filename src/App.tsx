@@ -172,7 +172,7 @@ export function App() {
     const doSync = () => {
       syncDataFromServer().then((data) => {
         if (data) {
-          if (Array.isArray(data.schools) && data.schools.length > 0) {
+          if (Array.isArray(data.schools)) {
             setSchools(data.schools);
           }
           if (Array.isArray(data.users) && data.users.length > 0) {
@@ -681,10 +681,12 @@ export function App() {
             onOpenGatekeeperScanner={() => setIsGatekeeperScannerOpen(true)}
             onOpenMapPicker={() => setIsMapPickerOpen(true)}
             onOpenClassExcelManager={() => {
+              setSchoolForClassManager(currentSchool);
               setClassManagerInitialTab('excel');
               setIsClassExcelManagerOpen(true);
             }}
             onOpenClassManagerTab={(tab) => {
+              setSchoolForClassManager(currentSchool);
               setClassManagerInitialTab(tab);
               setIsClassExcelManagerOpen(true);
             }}
@@ -1047,10 +1049,12 @@ export function App() {
           initialClass={rosterSelectedClass}
           initialSection={rosterSelectedSection}
           onOpenClassEditor={() => {
+            setSchoolForClassManager(schoolForClassRoster || impersonatedSchool || currentSchool);
             setClassManagerInitialTab('classes');
             setIsClassExcelManagerOpen(true);
           }}
           onOpenExcelManager={() => {
+            setSchoolForClassManager(schoolForClassRoster || impersonatedSchool || currentSchool);
             setClassManagerInitialTab('excel');
             setIsClassExcelManagerOpen(true);
           }}

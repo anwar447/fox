@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, School, Attendance, AttendanceStatus, StudentPermission } from '../types';
 import { getAttendances, saveAttendances, getUsers, getPermissions, getBehaviorLogs, getSystemNotifications } from '../utils/storage';
+import { onRealtimeAttendanceUpdate, onRealtimeUserUpdate } from '../utils/realtime';
 import { calculateStudentBehaviorScore } from '../utils/behavior';
 import { soundManager } from '../utils/audio';
 import { getTodayDateString } from '../utils/academic';
@@ -40,8 +41,22 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({
   onSwitchToParentView,
 }) => {
   const today = getTodayDateString();
-  const allUsers = getUsers();
-  const allAttendances = getAttendances();
+  const [allUsers, setAllUsers] = useState<User[]>(() => getUsers());
+  const [allAttendances, setAllAttendances] = useState<Attendance[]>(() => getAttendances());
+
+  // Real-time synchronization for teacher portal
+  useEffect(() => {
+    const unsubAtt = onRealtimeAttendanceUpdate((updatedAtts) => {
+      setAllAttendances(updatedAtts);
+    });
+    const unsubUsers = onRealtimeUserUpdate((updatedUsers) => {
+      setAllUsers(updatedUsers);
+    });
+    return () => {
+      unsubAtt();
+      unsubUsers();
+    };
+  }, []);
 
   // Find linked or matching children for this teacher if they are also a parent
   const userChildren = allUsers.filter((u) => {
